@@ -39,7 +39,8 @@ export const SOURCE_COLORS: Record<string, string> = {
   Idrico: "#06b6d4",
   Idroelettrico: "#06b6d4",
   Bioenergie: "#84cc16",
-  Geotermoelettrico: "#ef4444",
+  // Distinct from Termoelettrico: both appear in the generation-plants dataset.
+  Geotermoelettrico: "#a855f7",
   Termoelettrico: "#ef4444",
 };
 

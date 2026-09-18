@@ -50,3 +50,6 @@ desktop.ini
 .env.*
 !.env.example
 *.log
+
+# --- Internal working documents (not part of the public project) ---
+notes/

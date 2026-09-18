@@ -40,8 +40,12 @@ Build it first (see README → "Running the full desktop app"):
   }
 
   Write-Host "== [1/3] Type-check & build frontend ==" -ForegroundColor Cyan
-  if (-not $SkipTypecheck) { npm run typecheck }
-  if ($LASTEXITCODE -ne 0) { throw "typecheck failed" }
+  if (-not $SkipTypecheck) {
+    npm run typecheck
+    if ($LASTEXITCODE -ne 0) { throw "typecheck failed" }
+  } else {
+    Write-Host "   typecheck skipped (-SkipTypecheck)"
+  }
   npm run build
   if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 

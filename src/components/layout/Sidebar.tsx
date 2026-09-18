@@ -84,7 +84,7 @@ function NavItem({
 function NavSection({ title, items }: { title: string; items: typeof WORKSPACE }) {
   return (
     <div>
-      <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-600">
+      <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">
         {title}
       </p>
       <div className="space-y-0.5">
@@ -135,7 +135,7 @@ export function Sidebar() {
             {theme === "dark" ? <Sun className="h-4 w-4 text-brand-300" /> : <Moon className="h-4 w-4 text-brand-300" />}
             {theme === "dark" ? "Light mode" : "Dark mode"}
           </span>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-600">v{APP_VERSION}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">v{APP_VERSION}</span>
         </button>
       </div>
     </aside>

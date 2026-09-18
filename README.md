@@ -98,6 +98,8 @@ side by side and no fixed port is ever exposed. The frontend resolves it at runt
 │   ├── run_backend.py        sidecar entry point (port from argv[1]/TERNA_PORT)
 │   └── app-backend.spec      PyInstaller recipe
 ├── scripts/release.ps1       typecheck → build → bundle (+ optional code signing)
+├── docs/                     screenshots and the code-signing guide
+├── .github/workflows/        CI (typecheck, build, backend tests) and Release
 └── .env.example              frontend dev overrides
 ```
 
@@ -294,7 +296,11 @@ changes are verified by running the app.
 
 Windows shows *“Windows protected your PC — unknown publisher”* for **unsigned**
 executables. SmartScreen cannot be disabled by configuration; it is a trust
-decision made by Windows. The options are:
+decision made by Windows. [`docs/signing.md`](docs/signing.md) compares the
+options that actually work — free signing for open-source projects (SignPath
+Foundation), a commercial OV/EV certificate, or Azure Artifact Signing — and
+explains how to plug each one into `scripts/release.ps1` or into the `Release`
+GitHub Actions workflow. The options are:
 
 | Build | First-run experience |
 | --- | --- |
@@ -337,7 +343,14 @@ Tauri then signs the app executable, the uninstaller and the NSIS installer
   region names differ in casing between endpoints (`Valle D'Aosta` vs `Valle d'Aosta`),
   which shows up as two entries in the region filter.
 - **Rate limiting** is the practical ceiling of a full multi-year sync: requests
-  are paced at ~1/second and a full refresh takes a few minutes.
+  are paced at ~1/second, so a full refresh takes a few minutes. Terna also
+  enforces a broader request quota beyond QPS (HTTP 403, `Developer Over Rate`):
+  a four-year "download everything" run issues ~108 requests and can trip it.
+  The sync never aborts — it retries with backoff, records the affected steps as
+  `failed_steps` and can be re-run later to fill the gaps.
+- **Zero values are stored as returned**: for a few province/year cells the API
+  reports `0` (or omits the value) for one capacity index, typically hydro
+  *Lorda* — harmless for totals, visible if you filter that province.
 
 ## Contributing
 
