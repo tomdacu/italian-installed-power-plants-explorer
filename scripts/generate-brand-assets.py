@@ -58,21 +58,6 @@ def gradient(size: tuple[int, int], start: tuple[int, int, int], end: tuple[int,
     return small.resize(size, Image.Resampling.LANCZOS)
 
 
-def curve_points(scale: float) -> list[tuple[int, int]]:
-    p0 = (244, 704)
-    p1 = (324, 514)
-    p2 = (500, 368)
-    p3 = (778, 240)
-    points: list[tuple[int, int]] = []
-    for i in range(41):
-        t = i / 40
-        u = 1 - t
-        x = u**3 * p0[0] + 3 * u**2 * t * p1[0] + 3 * u * t**2 * p2[0] + t**3 * p3[0]
-        y = u**3 * p0[1] + 3 * u**2 * t * p1[1] + 3 * u * t**2 * p2[1] + t**3 * p3[1]
-        points.append((round(x * scale), round(y * scale)))
-    return points
-
-
 def brand_icon(size: int = 1024) -> Image.Image:
     """Return the vector brand mark rasterised at the requested size (RGBA)."""
     return ImageOps.fit(
