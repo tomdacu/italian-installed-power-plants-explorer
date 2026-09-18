@@ -48,9 +48,9 @@ machine — nothing is proxied through a third-party server.
 
 ### Screenshots
 
-| Dashboard | Data sync |
-| --- | --- |
-| ![Dashboard](docs/screenshot-dashboard.png) | ![Data sync](docs/screenshot-sync.png) |
+| Dashboard (dark) | Dashboard (light) | Data sync |
+| --- | --- | --- |
+| ![Dashboard dark](docs/screenshot-dashboard.png) | ![Dashboard light](docs/screenshot-dashboard-light.png) | ![Data sync](docs/screenshot-sync.png) |
 
 ## Architecture
 

@@ -57,7 +57,20 @@ export const DEFAULT_PALETTE = [
   "#f97316",
 ];
 
-export function colorFor(key: string, index: number): string {
+// National installed-capacity data is a different measure (GW, not MW). Keep
+// its series in a dedicated evergreen family instead of reusing source colors.
+export const INSTALLED_CAPACITY_PALETTE = [
+  "#0a8f66",
+  "#14b07f",
+  "#2fd98f",
+  "#71e2b5",
+  "#076048",
+];
+
+export function colorFor(key: string, index: number, dataset?: string): string {
+  if (dataset === "installed_capacity") {
+    return INSTALLED_CAPACITY_PALETTE[index % INSTALLED_CAPACITY_PALETTE.length];
+  }
   return SOURCE_COLORS[key] ?? DEFAULT_PALETTE[index % DEFAULT_PALETTE.length];
 }
 

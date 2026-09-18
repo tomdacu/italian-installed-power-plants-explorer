@@ -15,6 +15,7 @@ import type { RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 type SeriesRow = Record<string, number | string>;
 
@@ -93,8 +94,8 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
             <defs>
               {series.data.names.map((s, i) => (
                 <linearGradient key={s} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={colorFor(s, i)} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={colorFor(s, i)} stopOpacity={0.04} />
+                  <stop offset="0%" stopColor={colorFor(s, i, filters.dataset)} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={colorFor(s, i, filters.dataset)} stopOpacity={0.04} />
                 </linearGradient>
               ))}
             </defs>
@@ -104,8 +105,8 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 11 }}
-              tickFormatter={(v) => fmt(v as number)}
-              width={64}
+              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              width={88}
               axisLine={false}
               tickLine={false}
             />
@@ -121,7 +122,7 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
                 type="monotone"
                 dataKey={s}
                 stackId="1"
-                stroke={colorFor(s, i)}
+                stroke={colorFor(s, i, filters.dataset)}
                 strokeWidth={2}
                 fill={`url(#grad-${i})`}
                 activeDot={{ r: 4, strokeWidth: 2 }}
@@ -129,11 +130,7 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
             ))}
           </AreaChart>
         </ResponsiveContainer>
-      ) : (
-        <div className="grid h-[200px] place-items-center text-sm text-ink-500 dark:text-ink-400">
-          No data for the current filters
-        </div>
-      )}
+      ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>
   );
 }

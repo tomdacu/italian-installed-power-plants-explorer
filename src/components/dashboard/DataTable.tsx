@@ -60,7 +60,7 @@ function rowText(r: CapacityRecord): string {
 
 export function DataTable({ filters }: { filters: RecordFilters }) {
   const [sortKey, setSortKey] = useState<SortKey>("year");
-  const [order, setOrder] = useState<Order>("asc");
+  const [order, setOrder] = useState<Order>("desc");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;

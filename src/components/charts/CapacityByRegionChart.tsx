@@ -15,6 +15,7 @@ import type { GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 export function CapacityByRegionChart({
   filters,
@@ -62,7 +63,7 @@ export function CapacityByRegionChart({
               type="number"
               stroke="currentColor"
               className="text-ink-400"
-              tickFormatter={(v) => fmt(v as number)}
+              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
               tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -83,16 +84,12 @@ export function CapacityByRegionChart({
             />
             <Bar dataKey={valueKey} name={isGw ? "Installed capacity GW" : "Efficient power MW"} radius={[0, 8, 8, 0]} maxBarSize={18}>
               {top.map((r, i) => (
-                <Cell key={r[groupBy] ?? i} fill={colorFor(String(r[groupBy] ?? ""), i)} />
+                <Cell key={r[groupBy] ?? i} fill={colorFor(String(r[groupBy] ?? ""), i, filters.dataset)} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      ) : (
-        <div className="grid h-[200px] place-items-center text-sm text-ink-500 dark:text-ink-400">
-          No data for the current filters
-        </div>
-      )}
+      ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>
   );
 }

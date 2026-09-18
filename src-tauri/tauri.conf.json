@@ -49,7 +49,10 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English", "Italian"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "installerIcon": "icons/icon.ico"
       }
     },
     "android": {

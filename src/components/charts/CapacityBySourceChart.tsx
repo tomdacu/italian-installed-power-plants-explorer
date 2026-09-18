@@ -15,6 +15,7 @@ import type { GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
   // installed_capacity rows carry `type` instead of `source`.
@@ -54,7 +55,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
               type="number"
               stroke="currentColor"
               className="text-ink-400"
-              tickFormatter={(v) => fmt(v as number)}
+              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
               tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -75,16 +76,12 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
             />
             <Bar dataKey={valueKey} name={isInstalled ? "Installed capacity GW" : "Efficient power MW"} radius={[0, 8, 8, 0]} maxBarSize={26}>
               {records.map((r, i) => (
-                <Cell key={r[splitKey] ?? i} fill={colorFor(String(r[splitKey] ?? ""), i)} />
+                <Cell key={r[splitKey] ?? i} fill={colorFor(String(r[splitKey] ?? ""), i, filters.dataset)} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      ) : (
-        <div className="grid h-[200px] place-items-center text-sm text-ink-500 dark:text-ink-400">
-          No data for the current filters
-        </div>
-      )}
+      ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>
   );
 }

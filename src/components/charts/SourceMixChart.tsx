@@ -14,6 +14,7 @@ import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { useYearlySplit } from "./CapacityOverTimeChart";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 /** Stacked bars of the same yearly breakdown — shares the query (and cache
  * entry) with the capacity-over-time chart, so no extra request is made. */
@@ -47,8 +48,8 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 11 }}
-              tickFormatter={(v) => fmt(v as number)}
-              width={64}
+              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              width={88}
               axisLine={false}
               tickLine={false}
             />
@@ -59,15 +60,11 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
             />
             <Legend iconType="circle" iconSize={8} />
             {data.names.map((s, i) => (
-              <Bar key={s} dataKey={s} stackId="mix" fill={colorFor(s, i)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+              <Bar key={s} dataKey={s} stackId="mix" fill={colorFor(s, i, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>
-      ) : (
-        <div className="grid h-[200px] place-items-center text-sm text-ink-500 dark:text-ink-400">
-          No data for the current filters
-        </div>
-      )}
+      ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>
   );
 }

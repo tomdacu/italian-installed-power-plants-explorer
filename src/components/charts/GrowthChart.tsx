@@ -14,6 +14,7 @@ import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { colorFor } from "@/lib/utils";
 import { useYearlySplit } from "./CapacityOverTimeChart";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 /**
  * Year-on-year additions per source: the annual change of installed stock.
@@ -63,8 +64,8 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 11 }}
-              tickFormatter={(v) => fmt(v as number)}
-              width={64}
+              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              width={88}
               axisLine={false}
               tickLine={false}
             />
@@ -75,15 +76,15 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
             />
             <Legend iconType="circle" iconSize={8} />
             {growth.names.map((s, i) => (
-              <Bar key={s} dataKey={s} stackId="growth" fill={colorFor(s, i)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+              <Bar key={s} dataKey={s} stackId="growth" fill={colorFor(s, i, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>
-      ) : (
-        <div className="grid h-[200px] place-items-center text-sm text-ink-500 dark:text-ink-400">
+      ) : data && data.data.length > 0 ? (
+        <div className="grid h-[200px] place-items-center text-center text-sm text-ink-500 dark:text-ink-400">
           Select at least two years to see annual additions
         </div>
-      )}
+      ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>
   );
 }
