@@ -98,7 +98,7 @@ side by side and no fixed port is ever exposed. The frontend resolves it at runt
 │   ├── run_backend.py        sidecar entry point (port from argv[1]/TERNA_PORT)
 │   └── app-backend.spec      PyInstaller recipe
 ├── scripts/release.ps1       typecheck → build → bundle (+ optional code signing)
-├── docs/                     screenshots and the code-signing guide
+├── docs/                     screenshots, code-signing guide, data validation
 ├── .github/workflows/        CI (typecheck, build, backend tests) and Release
 └── .env.example              frontend dev overrides
 ```
@@ -262,6 +262,13 @@ Units caveat: the Terna `/installed-capacity` payload labels the field
 `installed_capacity_GWh` but returns GW values (`"59.7902"` = 59.7902 GW). The
 backend stores them as `installed_capacity_gw` and parses dot-decimal strings
 correctly; do not trust the upstream field name.
+
+[`docs/data-validation.md`](docs/data-validation.md) documents the validation of
+these numbers against the raw API and against Terna's official yearbook: wind,
+geothermal and thermoelectric totals match to the decimal, while the API's
+hydro and older photovoltaic series use a narrower perimeter than the published
+statistics. Quote the yearbook (or GSE) for official national figures; use this
+app for trends, regional breakdowns and exports.
 
 ## Testing
 

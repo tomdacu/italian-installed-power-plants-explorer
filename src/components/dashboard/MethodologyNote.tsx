@@ -17,7 +17,9 @@ export function MethodologyNote() {
         </p>
         <p>
           Source: Terna Developer API (efficient power). Values can differ from Terna Gaudì / statistical
-          publications, which report nominal power with a different methodology and perimeter.
+          publications, which report nominal power with a different methodology and perimeter: wind, geothermal
+          and thermoelectric totals match the official yearbook to the decimal, while the API's hydro series
+          excludes pure pumped storage and its older photovoltaic figures are lower than the revised yearbook.
         </p>
       </div>
     </section>

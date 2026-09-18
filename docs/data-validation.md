@@ -1,0 +1,90 @@
+# Data validation
+
+How the numbers this app shows were checked, and how they relate to Terna's
+official statistics. Reproduce it with your own credentials at any time.
+
+## What was checked
+
+| Level | Method | Result |
+| --- | --- | --- |
+| Raw payload → cache | Full sync of 2021–2024 × 4 datasets (108 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
+| Cache → API | 46 automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | 45/46 |
+| Cache → official statistics | Per-source totals compared with Terna's yearbook *Dati statistici sull'energia elettrica in Italia* (section "Impianti di generazione", Tab. 8) | see below |
+
+The single failing check is an upstream quirk, not a defect: for a handful of
+province/year cells Terna returns `0` (or omits the value) for one capacity
+index — mostly hydro *Lorda* — so `Lorda ≥ Netta` does not hold there. The app
+stores what the API returns; totals are unaffected.
+
+## Comparison with the official Terna yearbook
+
+Values in MW, potenza efficiente **lorda** at 31 December, aggregated with a
+single capacity index (no double counting).
+
+| Year | Source | App (Terna Developer API for 2024 exports) | Terna yearbook (Tab. 8) | Δ |
+| --- | --- | --- | --- | --- |
+| 2021 | Eolico | 11 289.81 | 11 289.8 | **exact** |
+| 2021 | Geotermoelettrico | 817.09 | 817.1 | **exact** |
+| 2021 | Fotovoltaico | 20 130.19 | 22 594.3 | −2 464.1 |
+| 2021 | Idrico | 16 409.71 | 23 147.3 | −6 737.6 |
+| 2022 | Eolico | 11 858.43 | 11 858.4 | **exact** |
+| 2022 | Fotovoltaico | 23 291.02 | 25 063.9 | −1 772.9 |
+| 2022 | Idrico | 14 162.34 | 23 209.6 | −9 047.3 |
+| 2023 | Eolico | 12 335.54 | 12 335.5 | **exact** |
+| 2023 | Fotovoltaico | 26 979.79 | 30 319.4 | −3 339.6 |
+| 2023 | Idrico | 16 809.39 | 23 260.5 | −6 451.1 |
+| 2024 | Eolico | 12 990.30 | 12 990.3 | **exact** |
+| 2024 | Fotovoltaico | 37 002.14 | 37 002.1 | **exact** |
+| 2024 | Geotermoelettrico | 817.09 | 817.1 | **exact** |
+| 2024 | Idrico | 19 637.16 | 23 623.5 | −3 986.3 |
+| 2024 | Termoelettrico | 62 109.91 | 62 109.9 | **exact** |
+
+Cross-checks with independent publications: GSE *Rapporto Statistico 2024 Solare
+Fotovoltaico* reports 37 002 MW of photovoltaic at 31/12/2024, identical to both
+Terna and this app; the Terna/SISTAN summary for 2024 reports 137.6 GW of gross
+efficient power (+5.7%) and 74.5 GW of renewable capacity.
+
+## What the differences mean
+
+- **Exact matches on wind, geothermal and thermoelectric** confirm that the
+  sync, the unit parsing and the aggregation are correct.
+- **Hydro**: the API series is lower than the yearbook. In 2024 the gap equals
+  the pure pumped-storage capacity that GSE removes when it reconciles Terna's
+  hydro figure (3 986.3 MW); in 2021–2023 the gap is larger and not explained by
+  pumping alone, so the endpoint's perimeter (producers vs self-producers, plant
+  size, date of the snapshot) is narrower than the yearbook's.
+- **Photovoltaic 2021–2023**: the API reports less than the yearbook, while 2024
+  matches to the decimal — consistent with the yearbook being revised
+  retroactively while the API's older years are not.
+- **National installed capacity dataset**: the `/installed-capacity` endpoint
+  returns rounded GW values on its own perimeter (2022: thermal 58.8 GW, hydro
+  22.8, PV 24.2, wind 11.7, geothermal 0.9) that do **not** coincide with the
+  yearbook's (thermal 63.2, hydro 23.2, PV 25.1, wind 11.9, geothermal 0.8).
+  Do not compare that dataset 1:1 with published statistics.
+
+Practical rule: this app reports the **Terna Developer API**, so it is the right
+tool for trends, regional comparisons and export — not for quoting official
+national statistics, where Terna's yearbook (or GSE) is the reference.
+
+## Reproducing the validation
+
+```powershell
+# sidecar on the fixed dev port
+python -B -m uvicorn backend.src.terna_backend.api:app --port 8765
+
+# full sync of four years (needs credentials; ~108 API requests, a few minutes)
+curl.exe -X POST http://127.0.0.1:8765/sync/jobs -H "Content-Type: application/json" `
+  -d '{\"years\":[2021,2022,2023,2024],\"datasets\":[\"renewable_source_capacity\",\"generation_plants\",\"installed_capacity\",\"thermoelectric_capacity\"],\"sources\":[\"Bioenergie\",\"Eolico\",\"Fotovoltaico\",\"Geotermoelettrico\",\"Idrico\",\"Termoelettrico\"],\"capacity_types\":[\"Lorda\",\"Netta\"]}'
+
+# per-source totals for one year
+curl.exe "http://127.0.0.1:8765/analytics/timeseries?dataset=renewable_source_capacity&capacity_type=Lorda&year_from=2024&year_to=2024&group_by=source"
+```
+
+## API quota
+
+Besides the per-second limit (`Developer Over Qps`), Terna enforces a broader
+request quota: a four-year "download everything" run (~108 requests) can trip
+`403 Developer Over Rate`, after which requests keep failing until the quota
+window resets. The sync never aborts — it retries with backoff, reports the
+affected steps as `failed_steps`, and already stored steps are upserted, so
+re-running it later fills the gaps without duplicating rows.
