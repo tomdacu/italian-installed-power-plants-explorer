@@ -64,7 +64,22 @@ Build it first (see README → "Running the full desktop app"):
 
   Write-Host "== [3/3] Artifacts ==" -ForegroundColor Cyan
   $bundleDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
-  Get-ChildItem $bundleDir -Filter *.exe | ForEach-Object { Write-Host "   $($_.FullName)" }
+  $productName = (Get-Content (Join-Path $root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).productName
+  # The bundle folder can still hold installers from earlier product names or
+  # versions: list only what this build produced, and flag the leftovers so
+  # nobody uploads the wrong file to a release.
+  $fresh = Get-ChildItem $bundleDir -Filter "*.exe" | Where-Object { $_.Name -like "$productName*" }
+  if (-not $fresh) { throw "no installer matching '$productName' found in $bundleDir" }
+  foreach ($installer in $fresh) {
+    $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
+    Write-Host "   $($installer.FullName)"
+    Write-Host "   $([math]::Round($installer.Length / 1MB, 1)) MB  SHA-256 $hash"
+  }
+  $stale = Get-ChildItem $bundleDir -Filter "*.exe" | Where-Object { $_.Name -notlike "$productName*" }
+  if ($stale) {
+    Write-Warning "   stale installers in the same folder (not from this build - do not publish):"
+    foreach ($old in $stale) { Write-Warning "     $($old.Name)" }
+  }
 
   if (-not $Thumbprint) {
     Write-Host ""
