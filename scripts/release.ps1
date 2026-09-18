@@ -68,28 +68,39 @@ Build it first (see README → "Running the full desktop app"):
 
   Write-Host "== [3/4] Packaging the portable build ==" -ForegroundColor Cyan
   $releaseDir = Join-Path $root "src-tauri\target\release"
+  $staging = Join-Path $releaseDir "assets"
+  Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+  # Portable layout: app.exe plus the sidecar folder, zipped under a
+  # space-free name (GitHub turns spaces into %20 in asset URLs).
   $portableDir = Join-Path $releaseDir "portable"
   Remove-Item $portableDir -Recurse -Force -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
   Copy-Item (Join-Path $releaseDir "app.exe") $portableDir
   Copy-Item (Join-Path $releaseDir "bin") $portableDir -Recurse
-  $zip = Join-Path $releaseDir ("{0}_{1}_x64-portable.zip" -f $productName, $version)
-  Remove-Item $zip -Force -ErrorAction SilentlyContinue
-  Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $zip -CompressionLevel Optimal
-  Write-Host "   $zip"
+  $slug = $productName -replace "\s+", ""
+  $portableZip = Join-Path $staging ("{0}_{1}_x64-portable.zip" -f $slug, $version)
+  Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $portableZip -CompressionLevel Optimal
 
   Write-Host "== [4/4] Artifacts ==" -ForegroundColor Cyan
   $bundleDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
   # The bundle folder can still hold installers from earlier product names or
-  # versions: list only what this build produced, and flag the leftovers so
+  # versions: take only what this build produced, and flag the leftovers so
   # nobody uploads the wrong file to a release.
-  $fresh = Get-ChildItem $bundleDir -Filter "*.exe" | Where-Object { $_.Name -like "$productName*" }
-  if (-not $fresh) { throw "no installer matching '$productName' found in $bundleDir" }
-  foreach ($installer in $fresh) {
-    $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash
-    Write-Host "   $($installer.FullName)"
-    Write-Host "   $([math]::Round($installer.Length / 1MB, 1)) MB  SHA-256 $hash"
+  $installer = Get-ChildItem $bundleDir -Filter "*.exe" | Where-Object { $_.Name -like "$productName*" } | Select-Object -First 1
+  if (-not $installer) { throw "no installer matching '$productName' found in $bundleDir" }
+  $setup = Join-Path $staging ("{0}_{1}_x64-setup.exe" -f $slug, $version)
+  Copy-Item $installer.FullName $setup
+
+  foreach ($asset in @($setup, $portableZip)) {
+    $hash = (Get-FileHash $asset -Algorithm SHA256).Hash
+    Add-Content -Path (Join-Path $staging "SHA256SUMS.txt") -Value "$hash  $(Split-Path -Leaf $asset)"
+    Write-Host "   $(Split-Path -Leaf $asset)"
+    Write-Host "   $([math]::Round((Get-Item $asset).Length / 1MB, 1)) MB  SHA-256 $hash"
   }
+  Write-Host "   $staging\SHA256SUMS.txt"
+
   $stale = Get-ChildItem $bundleDir -Filter "*.exe" | Where-Object { $_.Name -notlike "$productName*" }
   if ($stale) {
     Write-Warning "   stale installers in the same folder (not from this build - do not publish):"

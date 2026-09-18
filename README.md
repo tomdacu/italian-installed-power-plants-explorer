@@ -339,16 +339,27 @@ powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Thumbprint <cert-t
 ```
 
 Tauri then signs the app executable, the uninstaller and the NSIS installer
-(SHA-256 + RFC-3161 timestamping). Distribute the produced file from the
-`src-tauri/target/release/bundle/nsis/` folder — do not commit it.
+(SHA-256 + RFC-3161 timestamping). Both `npm run release` and the release
+workflow stage the publishable files — with space-free names and a checksum
+manifest — in `src-tauri/target/release/assets/`:
+
+| File | Audience |
+| --- | --- |
+| `ItalianCapacityExplorer_<version>_x64-setup.exe` | everyone: double-click, per-user install, Start menu entry, uninstaller, WebView2 bootstrapped |
+| `ItalianCapacityExplorer_<version>_x64-portable.zip` | no-install: extract to a folder and run `app.exe` |
+| `SHA256SUMS.txt` | download verification (`Get-FileHash <file> -Algorithm SHA256`) |
+
+Never commit these: attach them to a GitHub Release, whose notes follow
+[`.github/release-notes.md`](.github/release-notes.md).
 
 ### Portable build (no installer)
 
-The release pipeline also writes
-`<product name>_<version>_x64-portable.zip` (~29 MB): unzip it anywhere and run
-`app.exe` — the backend sidecar sits in `bin\app-backend\` next to it, so nothing
-has to be installed.
+Unzip the archive anywhere and run `app.exe` — the backend sidecar sits in
+`bin\app-backend\` next to it, so nothing has to be installed.
 
+- Running `app.exe` **from inside the zipped folder** (Windows' compressed-folder
+  view) starts the app without its backend, because the sibling folder is not
+  there: extract everything first.
 - The unpacked folder is ~61 MB (837 files) and the app picks a free local port
   at every launch, exactly like the installed build.
 - The **first launch from a freshly unzipped folder can take ~1 minute**: the
