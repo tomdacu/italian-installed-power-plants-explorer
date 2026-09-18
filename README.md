@@ -267,7 +267,7 @@ correctly; do not trust the upstream field name.
 npm run typecheck     # strict TypeScript, no emit
 npm run build         # production bundle (also validates the Vite build)
 
-python -B -m pytest backend/tests -p no:cacheprovider   # 19 tests, mocked Terna API
+python -B -m pytest backend/tests -p no:cacheprovider   # 22 tests, mocked Terna API
 ```
 
 The backend suite runs without credentials and without network access. There is
