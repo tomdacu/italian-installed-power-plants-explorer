@@ -197,5 +197,5 @@ def export_csv(filters: RecordFilters = Depends(filters_from_query)) -> Response
     return Response(
         content=csv_data,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="terna-installed-capacity.csv"'},
+        headers={"Content-Disposition": 'attachment; filename="italian-installed-capacity.csv"'},
     )

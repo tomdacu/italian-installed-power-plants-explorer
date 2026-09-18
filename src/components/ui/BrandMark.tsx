@@ -1,6 +1,6 @@
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 64 64" className={className} role="img" aria-label="Terna Capacity Explorer">
+    <svg viewBox="0 0 64 64" className={className} role="img" aria-label="Italian Capacity Explorer">
       <defs>
         <linearGradient id="brandmark-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#2fd98f" />

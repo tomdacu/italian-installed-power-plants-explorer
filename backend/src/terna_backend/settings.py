@@ -8,7 +8,21 @@ from pathlib import Path
 
 import keyring
 
-SERVICE_NAME = "terna-installed-capacity"
+SERVICE_NAME = "italian-capacity-explorer"
+#: Names used before the app was renamed. Kept so an existing install keeps its
+#: credentials and cached data instead of silently starting from scratch.
+LEGACY_SERVICE_NAME = "terna-installed-capacity"
+APP_DIR_NAME = "ItalianCapacityExplorer"
+LEGACY_APP_DIR_NAME = "TernaInstalledCapacity"
+
+
+def _app_data_root() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        return Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+    if system == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    return Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local" / "share"))
 
 
 def app_data_dir() -> Path:
@@ -16,14 +30,15 @@ def app_data_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
 
-    system = platform.system().lower()
-    if system == "windows":
-        base = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
-    elif system == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "TernaInstalledCapacity"
+    root = _app_data_root()
+    target = root / APP_DIR_NAME
+    legacy = root / LEGACY_APP_DIR_NAME
+    if not target.exists() and legacy.exists():
+        try:
+            legacy.rename(target)  # one-time migration, same parent directory
+        except OSError:
+            return legacy
+    return target
 
 
 @dataclass(frozen=True)
@@ -61,10 +76,11 @@ class SettingsStore:
         client_id = payload.pop("client_id", None)
         self.settings_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         if client_id:
-            try:
-                keyring.delete_password(SERVICE_NAME, client_id)
-            except keyring.errors.PasswordDeleteError:
-                pass
+            for service in (SERVICE_NAME, LEGACY_SERVICE_NAME):
+                try:
+                    keyring.delete_password(service, client_id)
+                except (keyring.errors.PasswordDeleteError, keyring.errors.KeyringError):
+                    pass
 
     def get_client_secret(self, client_id: str | None = None) -> str | None:
         env_secret = os.getenv("TERNA_CLIENT_SECRET")
@@ -74,7 +90,18 @@ class SettingsStore:
         if not resolved_client_id:
             return None
         try:
-            return keyring.get_password(SERVICE_NAME, resolved_client_id)
+            secret = keyring.get_password(SERVICE_NAME, resolved_client_id)
+            if secret:
+                return secret
+            # Credentials stored before the app was renamed: migrate them to
+            # the new service name on first read.
+            legacy = keyring.get_password(LEGACY_SERVICE_NAME, resolved_client_id)
+            if legacy:
+                try:
+                    keyring.set_password(SERVICE_NAME, resolved_client_id, legacy)
+                except keyring.errors.KeyringError:
+                    pass
+            return legacy
         except keyring.errors.KeyringError:
             return None
 

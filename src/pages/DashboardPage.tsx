@@ -66,8 +66,8 @@ export function DashboardPage() {
   const handleExportAll = async () => {
     try {
       const text = await api.exportCsv(apiFilters);
-      downloadString(text, "terna-installed-capacity.csv", "text/csv;charset=utf-8");
-      toast.success("CSV exported", "terna-installed-capacity.csv is in your downloads");
+      downloadString(text, "italian-installed-capacity.csv", "text/csv;charset=utf-8");
+      toast.success("CSV exported", "italian-installed-capacity.csv is in your downloads");
     } catch (e) {
       toast.error("Export failed", (e as Error).message);
     }

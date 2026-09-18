@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Terna Capacity Explorer",
+  "productName": "Italian Capacity Explorer",
   "version": "1.2.0",
-  "identifier": "com.terna.capacityexplorer",
+  "identifier": "com.italiancapacityexplorer.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Terna Capacity Explorer",
+        "title": "Italian Capacity Explorer",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -31,9 +31,9 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "Terna Capacity Explorer",
+    "publisher": "Italian Capacity Explorer",
     "shortDescription": "Explore Italy's installed generation capacity",
-    "longDescription": "Terna Capacity Explorer is a local desktop application to explore installed generation capacity data from the Terna Developer API. Credentials and data stay on your machine.",
+    "longDescription": "Italian Capacity Explorer is a local desktop application to explore installed generation capacity data published by the Terna Developer API. Credentials and data stay on your machine.",
     "resources": ["bin/app-backend/"],
     "icon": [
       "icons/32x32.png",

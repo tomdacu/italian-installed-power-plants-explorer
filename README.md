@@ -1,4 +1,4 @@
-# Terna Capacity Explorer
+# Italian Capacity Explorer
 
 A local-first Windows desktop application to explore **Italy's installed generation
 capacity** published through the [Terna Developer API](https://developer.terna.it).
@@ -61,7 +61,7 @@ flowchart LR
     Shell["Tauri v2 shell (Rust)<br/>src-tauri/"]
     Sidecar["FastAPI sidecar<br/>backend/ → app-backend.exe"]
   end
-  Cache[("SQLite cache<br/>%APPDATA%/TernaInstalledCapacity")]
+  Cache[("SQLite cache<br/>%APPDATA%/ItalianCapacityExplorer")]
   KC[("Windows Credential Manager<br/>client secret")]
   Terna["Terna Developer API<br/>api.terna.it"]
 
@@ -115,7 +115,7 @@ side by side and no fixed port is ever exposed. The frontend resolves it at runt
 
 ```powershell
 git clone <your-fork-url>
-cd terna-capacity-explorer
+cd italian-capacity-explorer
 
 # 1. frontend dependencies
 npm install
@@ -187,18 +187,22 @@ Backend (environment):
 | --- | --- | --- |
 | `TERNA_CLIENT_ID` / `TERNA_CLIENT_SECRET` | – | credentials for headless/dev runs (the GUI stores them itself) |
 | `TERNA_MIN_REQUEST_INTERVAL` | `1.0` | minimum seconds between Terna API calls (raise it if you get `429`) |
-| `TERNA_APP_DATA_DIR` | `%APPDATA%\TernaInstalledCapacity` | database, settings and `backend.log` |
+| `TERNA_APP_DATA_DIR` | `%APPDATA%\ItalianCapacityExplorer` | database, settings and `backend.log` |
 | `TERNA_PORT` | `8765` | override the port passed by the shell |
 
 Data written at runtime:
 
 | Path | Content |
 | --- | --- |
-| `%APPDATA%\TernaInstalledCapacity\terna_cache.sqlite` | local cache (delete it to force a full re-sync) |
-| `%APPDATA%\TernaInstalledCapacity\settings.json` | non-secret settings (client id, database path) |
-| `%APPDATA%\TernaInstalledCapacity\backend.log` | sidecar stdout/stderr |
-| `%LOCALAPPDATA%\com.terna.capacityexplorer\logs\terna-app.log` | shell logs |
-| Windows Credential Manager → `terna-installed-capacity` | the client **secret** |
+| `%APPDATA%\ItalianCapacityExplorer\terna_cache.sqlite` | local cache (delete it to force a full re-sync) |
+| `%APPDATA%\ItalianCapacityExplorer\settings.json` | non-secret settings (client id, database path) |
+| `%APPDATA%\ItalianCapacityExplorer\backend.log` | sidecar stdout/stderr |
+| `%LOCALAPPDATA%\com.italiancapacityexplorer.app\logs\terna-app.log` | shell logs |
+| Windows Credential Manager → `italian-capacity-explorer` | the client **secret** |
+
+Builds released before the rename used `TernaInstalledCapacity` and the
+`terna-installed-capacity` credential entry; the backend migrates both on first
+launch (the data folder is moved, the secret is copied to the new entry).
 
 ## Backend HTTP API
 
@@ -313,7 +317,7 @@ Tauri then signs the app executable, the uninstaller and the NSIS installer
 
 | Symptom | Cause / fix |
 | --- | --- |
-| “The local data service is not responding” | the sidecar is still starting (up to a few seconds) or crashed — check `%APPDATA%\TernaInstalledCapacity\backend.log` and `%LOCALAPPDATA%\com.terna.capacityexplorer\logs\terna-app.log` |
+| “The local data service is not responding” | the sidecar is still starting (up to a few seconds) or crashed — check `%APPDATA%\ItalianCapacityExplorer\backend.log` and `%LOCALAPPDATA%\com.italiancapacityexplorer.app\logs\terna-app.log` |
 | Sync reports many skipped steps | Terna rate limiting (`429`/`403 Developer Over Qps`); they are retried, then reported as `failed_steps` — re-run the sync, already stored steps are upserted |
 | Sync reports many empty steps | years or combinations the API does not publish (for example `/installed-capacity` currently returns data only for a subset of years) |
 | Charts show nothing for a dataset | that dataset was never downloaded: run a sync covering its years |
@@ -351,7 +355,8 @@ Issues and pull requests are welcome.
 
 ## License
 
-No license has been chosen yet, which means **all rights reserved** by default.
-Until a license is added, the code may be read and forked privately but not
-redistributed or reused. Opening an issue to discuss MIT vs Apache-2.0 (or a
-proprietary model) is the next step before the first public release.
+[MIT](LICENSE) © 2026 Tommaso D'Acunzio.
+
+The Terna Developer API, the data it publishes and the "Terna" trademark belong to
+Terna S.p.A.; this project only consumes the public API with the user's own
+credentials and is not affiliated with or endorsed by Terna S.p.A.

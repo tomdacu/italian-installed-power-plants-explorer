@@ -1,4 +1,4 @@
-# Release pipeline for Terna Capacity Explorer.
+# Release pipeline for Italian Capacity Explorer.
 #
 # Usage (from the repo root):
 #   powershell -ExecutionPolicy Bypass -File scripts/release.ps1

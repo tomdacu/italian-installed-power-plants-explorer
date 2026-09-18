@@ -93,7 +93,7 @@ export function SettingsPage() {
             <p className="flex items-start gap-2.5">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
               <span>
-                Terna Capacity Explorer lets you explore <em>installed generation capacity</em> across Italy&apos;s
+                Italian Capacity Explorer lets you explore <em>installed generation capacity</em> across Italy&apos;s
                 regions and provinces — aggregated by the Terna Developer API and stored locally on your machine.
               </span>
             </p>

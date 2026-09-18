@@ -22,10 +22,11 @@ def _redirect_streams() -> None:
     if not getattr(sys, "frozen", False):
         return
     try:
-        base = os.environ.get("APPDATA") or os.path.expanduser("~")
-        log_dir = os.path.join(base, "TernaInstalledCapacity")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "backend.log")
+        from terna_backend.settings import app_data_dir
+
+        log_dir = app_data_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "backend.log"
         stream = open(log_path, "a", encoding="utf-8")
         sys.stdout = stream
         sys.stderr = stream

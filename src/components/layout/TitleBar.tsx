@@ -77,7 +77,7 @@ export function TitleBar() {
           data-tauri-drag-region
           className="truncate font-display text-xs font-semibold tracking-wide text-ink-200"
         >
-          Terna Capacity Explorer
+          Italian Capacity Explorer
         </span>
         <span
           data-tauri-drag-region

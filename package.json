@@ -1,9 +1,9 @@
 {
-  "name": "terna-plant-application",
+  "name": "italian-capacity-explorer",
   "private": true,
   "version": "1.2.0",
   "type": "module",
-  "description": "Desktop frontend for exploring Terna Developer API installed generation capacity data.",
+  "description": "Desktop frontend for exploring Italy's installed generation capacity published by the Terna Developer API.",
   "scripts": {
     "dev": "vite --port 1420 --strictPort",
     "build": "vite build",

@@ -1,9 +1,9 @@
 [package]
 name = "app"
 version = "1.2.0"
-description = "Terna Capacity Explorer — explore Italy's installed generation capacity"
-authors = ["Terna Capacity Explorer"]
-license = ""
+description = "Italian Capacity Explorer — explore Italy's installed generation capacity"
+authors = ["Tommaso D'Acunzio"]
+license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
