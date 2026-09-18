@@ -27,7 +27,11 @@ $root = Split-Path -Parent $PSScriptRoot
 
 Push-Location $root
 try {
-  Write-Host "== [0/3] Checking the backend sidecar ==" -ForegroundColor Cyan
+  $appConfig = Get-Content (Join-Path $root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
+  $productName = $appConfig.productName
+  $version = $appConfig.version
+
+  Write-Host "== [0/4] Checking the backend sidecar ==" -ForegroundColor Cyan
   $sidecar = Join-Path $root "src-tauri\bin\app-backend\app-backend.exe"
   if (-not (Test-Path $sidecar)) {
     throw @"
@@ -39,7 +43,7 @@ Build it first (see README → "Running the full desktop app"):
 "@
   }
 
-  Write-Host "== [1/3] Type-check & build frontend ==" -ForegroundColor Cyan
+  Write-Host "== [1/4] Type-check & build frontend ==" -ForegroundColor Cyan
   if (-not $SkipTypecheck) {
     npm run typecheck
     if ($LASTEXITCODE -ne 0) { throw "typecheck failed" }
@@ -49,7 +53,7 @@ Build it first (see README → "Running the full desktop app"):
   npm run build
   if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 
-  Write-Host "== [2/3] Building & bundling (tauri build) ==" -ForegroundColor Cyan
+  Write-Host "== [2/4] Building & bundling (tauri build) ==" -ForegroundColor Cyan
   if ($Thumbprint) {
     Write-Host "   code signing enabled (thumbprint $Thumbprint)"
     $env:TAURI_BUNDLE_WINDOWS_CERTIFICATE_THUMBPRINT = $Thumbprint
@@ -62,9 +66,20 @@ Build it first (see README → "Running the full desktop app"):
   npx tauri build
   if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
 
-  Write-Host "== [3/3] Artifacts ==" -ForegroundColor Cyan
+  Write-Host "== [3/4] Packaging the portable build ==" -ForegroundColor Cyan
+  $releaseDir = Join-Path $root "src-tauri\target\release"
+  $portableDir = Join-Path $releaseDir "portable"
+  Remove-Item $portableDir -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+  Copy-Item (Join-Path $releaseDir "app.exe") $portableDir
+  Copy-Item (Join-Path $releaseDir "bin") $portableDir -Recurse
+  $zip = Join-Path $releaseDir ("{0}_{1}_x64-portable.zip" -f $productName, $version)
+  Remove-Item $zip -Force -ErrorAction SilentlyContinue
+  Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $zip -CompressionLevel Optimal
+  Write-Host "   $zip"
+
+  Write-Host "== [4/4] Artifacts ==" -ForegroundColor Cyan
   $bundleDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
-  $productName = (Get-Content (Join-Path $root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).productName
   # The bundle folder can still hold installers from earlier product names or
   # versions: list only what this build produced, and flag the leftovers so
   # nobody uploads the wrong file to a release.

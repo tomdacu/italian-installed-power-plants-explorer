@@ -342,6 +342,25 @@ Tauri then signs the app executable, the uninstaller and the NSIS installer
 (SHA-256 + RFC-3161 timestamping). Distribute the produced file from the
 `src-tauri/target/release/bundle/nsis/` folder — do not commit it.
 
+### Portable build (no installer)
+
+The release pipeline also writes
+`<product name>_<version>_x64-portable.zip` (~29 MB): unzip it anywhere and run
+`app.exe` — the backend sidecar sits in `bin\app-backend\` next to it, so nothing
+has to be installed.
+
+- The unpacked folder is ~61 MB (837 files) and the app picks a free local port
+  at every launch, exactly like the installed build.
+- The **first launch from a freshly unzipped folder can take ~1 minute**: the
+  shell waits while Windows Defender scans the sidecar's files. Later launches
+  are ready in a few seconds, and the sidebar shows the backend state meanwhile.
+- WebView2 must already be on the machine — Windows 10/11 ships it, but the
+  installer can bootstrap it and the portable archive cannot.
+- User data still lives in `%APPDATA%\ItalianCapacityExplorer`: this is
+  “no install”, not “no traces”. There is no Start Menu entry and no uninstaller,
+  so deleting the folder removes the application.
+- If the build was signed, the `app.exe` inside the archive is signed too.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
