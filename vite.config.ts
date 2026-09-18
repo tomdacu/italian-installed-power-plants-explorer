@@ -1,0 +1,38 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "node:path";
+import pkg from "./package.json" with { type: "json" };
+
+// __APP_VERSION__ is inlined from package.json. VITE_* variables are handled
+// natively by Vite (.env files). Inside the packaged Tauri app the Rust shell
+// picks a free backend port at startup and the frontend resolves it at runtime
+// (see src-tauri/src/lib.rs), so no URL needs to be baked in here.
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+  server: {
+    port: 1420,
+    strictPort: true,
+  },
+  build: {
+    target: "es2022",
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-charts": ["recharts"],
+          "vendor-query": ["@tanstack/react-query"],
+        },
+      },
+    },
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
+  clearScreen: false,
+});

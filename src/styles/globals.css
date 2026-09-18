@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.dark body {
+  @apply bg-ink-950 text-ink-100;
+}
+
+/* Subtle background grid for the app shell */
+.app-bg {
+  background-color: theme("colors.ink.50");
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(20, 24, 34, 0.06) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+.dark .app-bg {
+  background-color: theme("colors.ink.950");
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink-200/70 bg-white shadow-card dark:border-ink-800 dark:bg-ink-900;
+  }
+  .surface {
+    @apply rounded-xl border border-ink-200/70 bg-white/70 dark:border-ink-800 dark:bg-ink-900/70;
+  }
+  .label {
+    @apply text-xs font-medium uppercase tracking-wider text-ink-500 dark:text-ink-400;
+  }
+  .input {
+    @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900
+           shadow-sm outline-none transition
+           placeholder:text-ink-400
+           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30
+           disabled:cursor-not-allowed disabled:opacity-60
+           dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+  }
+  /* Sticky page header: translucent so content scrolling underneath stays
+     legible instead of colliding with the title. */
+  .header-glass {
+    @apply border-b border-ink-200/60 bg-white/85 backdrop-blur-xl dark:border-white/[0.06] dark:bg-ink-950/85;
+  }
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-soft;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-md bg-ink-200/70 dark:bg-white/[0.08];
+  }
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme("colors.ink.300") transparent;
+}
+.dark * {
+  scrollbar-color: theme("colors.ink.700") transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: theme("colors.ink.300");
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.dark *::-webkit-scrollbar-thumb {
+  background-color: theme("colors.ink.700");
+  background-clip: content-box;
+}
+
+/* Recharts tooltip polish */
+.recharts-default-tooltip {
+  @apply rounded-xl border border-ink-200 bg-white/95 shadow-soft dark:border-ink-700 dark:bg-ink-900/95 !important;
+}

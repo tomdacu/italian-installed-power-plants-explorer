@@ -1,0 +1,52 @@
+# --- Node / frontend ---
+node_modules
+dist
+dist-ssr
+.vite
+*.local
+
+# --- Rust / Tauri ---
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Packaged backend sidecar: a build artifact produced by PyInstaller
+# (see README → "Running the full desktop app"). Rebuild it locally; never
+# commit 50 MB of binaries to the repository.
+src-tauri/bin/
+
+# --- Python backend ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+backend/build/
+backend/dist/
+*.egg-info/
+
+# --- Release artifacts ---
+# Installers are published as GitHub Releases, not committed.
+release/
+*.exe
+*.msi
+
+# --- Documents / source material that must not be published ---
+*.pptx
+*.docx
+*.xlsx
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# --- Local configuration and secrets ---
+.env
+.env.*
+!.env.example
+*.log
