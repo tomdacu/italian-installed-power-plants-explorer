@@ -88,19 +88,43 @@ def rounded_panel(
     ImageDraw.Draw(base).rounded_rectangle(box, radius=radius, outline=outline, width=2)
 
 
+def panel_box(
+    canvas: tuple[int, int],
+    *,
+    height: int,
+    top: int,
+    right: int,
+) -> tuple[int, int, int, int]:
+    """Box whose aspect ratio equals the screenshot's, so `rounded_panel` (which
+    covers the box) never crops the window: a mismatched ratio silently cut the
+    sidebar off the left and the right-hand cards off the right edge."""
+    with Image.open(SCREENSHOT) as shot:
+        ratio = shot.width / shot.height
+    width = round(height * ratio)
+    x2 = canvas[0] - right
+    return (x2 - width, top, x2, top + height)
+
+
 def make_hero() -> None:
-    base = fit_cover(Image.open(BACKGROUND), (1600, 900))
+    size = (1600, 900)
+    base = fit_cover(Image.open(BACKGROUND), size)
     overlay = Image.new("RGBA", base.size, (4, 19, 14, 76))
     base.alpha_composite(overlay)
     glow = Image.new("RGBA", base.size, (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow)
     glow_draw.ellipse((180, 65, 1420, 875), fill=(20, 176, 127, 45))
     base.alpha_composite(glow.filter(ImageFilter.GaussianBlur(60)))
-    rounded_panel(base, Image.open(SCREENSHOT), (180, 100, 1420, 875), 30, (113, 226, 181, 95))
+    rounded_panel(
+        base,
+        Image.open(SCREENSHOT),
+        panel_box(size, height=775, top=100, right=180),
+        30,
+        (113, 226, 181, 95),
+    )
     base.convert("RGB").save(ASSETS / "hero-site.png", "PNG", optimize=True)
 
 
-def draw_share_card(path: Path, size: tuple[int, int], screenshot_box: tuple[int, int, int, int]) -> None:
+def draw_share_card(path: Path, size: tuple[int, int], *, height: int, top: int, right: int) -> None:
     base = fit_cover(Image.open(BACKGROUND), size)
     base.alpha_composite(Image.new("RGBA", size, (4, 19, 14, 100)))
     draw = ImageDraw.Draw(base)
@@ -119,13 +143,20 @@ def draw_share_card(path: Path, size: tuple[int, int], screenshot_box: tuple[int
         fill=WHITE,
         spacing=4,
     )
-    draw.text(
+    draw.multiline_text(
         (left, accent_y + round(h * 0.38)),
-        "Local-first analytics powered by Terna data.",
+        "Local-first analytics\npowered by Terna data.",
         font=body,
         fill=(218, 235, 229, 235),
+        spacing=5,
     )
-    rounded_panel(base, Image.open(SCREENSHOT), screenshot_box, max(20, round(w * 0.02)), (113, 226, 181, 105))
+    rounded_panel(
+        base,
+        Image.open(SCREENSHOT),
+        panel_box(size, height=height, top=top, right=right),
+        max(20, round(w * 0.02)),
+        (113, 226, 181, 105),
+    )
     base.convert("RGB").save(path, "PNG", optimize=True)
 
 
@@ -171,8 +202,8 @@ def main() -> None:
 
     brand_icon(256).save(ROOT / "public" / "brandmark.png", "PNG", optimize=True)
     make_hero()
-    draw_share_card(ASSETS / "github-social-preview.png", (1280, 630), (510, 82, 1218, 548))
-    draw_share_card(ROOT / "public" / "og-image.png", (1200, 630), (482, 84, 1144, 545))
+    draw_share_card(ASSETS / "github-social-preview.png", (1280, 630), height=460, top=80, right=62)
+    draw_share_card(ROOT / "public" / "og-image.png", (1200, 630), height=430, top=100, right=50)
     make_installer_header()
     make_installer_sidebar()
 

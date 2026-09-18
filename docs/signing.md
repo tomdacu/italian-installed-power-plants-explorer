@@ -17,69 +17,81 @@ fix**. This document covers the options that actually work, cheapest first.
 A **self-signed certificate does not help** — it is only useful to test the
 signing pipeline locally, because Windows cannot chain it to a trusted root.
 
-## Option A — SignPath Foundation (free for open-source projects)
+## Option A — free: SignPath Foundation (open-source projects)
 
-Fits this project: MIT licensed, public repository, actively developed.
+This is the only genuinely free route to a *trusted* Windows signature. The
+certificate is issued to the SignPath Foundation and used to sign the artifacts
+built by your GitHub Actions workflow, so the binary is provably linked to this
+repository.
 
-1. Apply at <https://signpath.org/apply.html> (open-source program).
-2. SignPath provides the certificate (issued to the SignPath Foundation) and
-   signs the binaries built by your GitHub Actions workflow; the resulting
-   signature links the binary to this repository.
-3. Wire the `SignPath/github-action-submit-signing-request` action into
-   `.github/workflows/release.yml`, replacing the “Import the code-signing
-   certificate” step.
-4. Approvals are manual per release, which is fine for a desktop app that ships
-   a handful of builds per year.
+Eligibility: an OSI-approved license (MIT here), a public repository, active
+development, and — for OSS projects — every job of the workflow must run on
+GitHub-hosted runners.
 
-Trade-off: the publisher name in the UAC prompt is *SignPath Foundation*, not
-your own name.
+1. **Apply** at <https://signpath.io/solutions/open-source-community>; approval is
+   manual and takes a few days.
+2. **In SignPath**: create an organization, add the predefined *Trusted Build
+   System* “GitHub.com” to it, and install the
+   [SignPath GitHub App](https://github.com/apps/signpath) on the repository.
+3. **Create a project** for this app with:
+   - an *Artifact Configuration* describing which files inside the uploaded
+     artifact to sign (`*.exe`, `*.dll`, `*.msi`);
+   - a *Signing Policy* (e.g. `release-signing`) — keep the manual approval if
+     you want a human check before every signature.
+4. **API token**: create one for a user with submitter rights and store it as the
+   repository secret `SIGNPATH_API_TOKEN`.
+5. **Wire it into `.github/workflows/release.yml`**, after the installer is built:
 
-## Option B — commercial certificate (OV), signed locally or in CI
+   ```yaml
+   - name: Upload the unsigned installer
+     id: upload-unsigned
+     uses: actions/upload-artifact@v4
+     with:
+       name: unsigned-installer
+       path: src-tauri/target/release/bundle/nsis/*.exe
 
-Any public CA (Certum, Sectigo, GlobalSign, DigiCert, Actalis…) issues OV code
-signing certificates to individuals and companies. Since the CA/Browser Forum
-rules of 2023 the private key must live on a FIPS 140-2 Level 2 device, so the
-certificate arrives either on a **USB token** or as a **cloud HSM** service
-(Certum *SimplySign*, DigiCert *KeyLocker*, …).
+   - name: Sign with SignPath
+     uses: signpath/github-action-submit-signing-request@v3
+     with:
+       api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+       organization-id: "<SignPath organization id>"
+       project-slug: "italian-capacity-explorer"
+       signing-policy-slug: "release-signing"
+       github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+       wait-for-completion: true
+       output-artifact-directory: "signed/"
+   ```
 
-With a cloud certificate you can keep using the repository script:
+   Then attach `signed/` to the release instead of the unsigned file. The action
+   only works on artifacts uploaded with `actions/upload-artifact` v4+.
 
-```powershell
-$env:TAURI_SIGNING_THUMBPRINT = "<certificate thumbprint>"
-npm run release
-# or
-powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Thumbprint <thumbprint>
-```
+Trade-offs: the publisher name Windows shows is **SignPath Foundation**, not your
+own name, and each signing request goes through their policy (manual approval by
+default). SmartScreen reputation is pooled at foundation level, so it builds up
+across releases.
 
-Tauri then signs the application executable, the uninstaller and the NSIS
-installer (SHA-256 + RFC-3161 timestamping).
+## Option B — cheapest paid: Certum Open Source Code Signing (~$58/year)
 
-To sign **inside GitHub Actions** instead of on your machine, export the
-certificate as a password-protected `.pfx` (only possible with cloud-HSM
-certificates — a physical token cannot be exported) and:
+Certum sells an *Open Source Code Signing* certificate in the cloud for around
+**$58/year** (list price on certum.store). It is the cheapest option that puts
+**your own name** in the certificate: the subject is
+`Open Source Developer <your name>`, RSA 3072, private key in a cloud HSM
+(FIPS 140-2 level 3, no USB token), limit of 5 000 signatures per month.
 
-```powershell
-# base64 of the .pfx, then store the two values as repository secrets
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx")) | Set-Clipboard
-```
+What it requires:
 
-Repository → Settings → Secrets and variables → Actions:
+- identity verification (ID documents) and a review of the open-source project,
+- the **SimplySign Desktop** app on the signing machine plus the SimplySign
+  mobile app for access codes,
+- signing happens where SimplySign Desktop runs: use
+  `powershell -File scripts/release.ps1 -Thumbprint <thumbprint>` on your
+  machine. Automating this inside CI is possible only if the CA supports
+  headless signing for your product; a cloud certificate tied to a desktop
+  app is generally not usable from a GitHub runner.
 
-| Kind | Name | Value |
-| --- | --- | --- |
-| Variable | `SIGNING_ENABLED` | `true` |
-| Variable | `SIGNING_THUMBPRINT` | certificate thumbprint (SHA-1 hex) |
-| Secret | `SIGNING_PFX_BASE64` | base64 of the `.pfx` |
-| Secret | `SIGNING_PFX_PASSWORD` | `.pfx` password |
-
-The `Release` workflow then imports the certificate, builds, verifies the
-signature with `signtool verify` and attaches the signed installer to the
-release. With `SIGNING_ENABLED` unset the same workflow produces an unsigned
-installer, so you can wire everything up before buying anything.
-
-Trade-off: OV certificates run roughly €100–400/year depending on the CA and
-whether you pick a cloud HSM; the SmartScreen warning disappears gradually as
-the certificate accumulates downloads.
+Trade-off: ~€55/year, and the SmartScreen warning fades as the certificate
+accumulates downloads (OV certificates are not exempt from the reputation ramp
+the way EV ones are).
 
 ## Option C — Azure Artifact Signing (formerly Trusted Signing)
 
