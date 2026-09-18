@@ -28,6 +28,26 @@ Eligibility: an OSI-approved license (MIT here), a public repository, active
 development, and — for OSS projects — every job of the workflow must run on
 GitHub-hosted runners.
 
+**This is not a rubber stamp.** The certificate is issued in the foundation's
+name, so they gate on verifiable project reputation: “we cannot sign binaries
+based on source code that nobody knows”. A brand-new repository with no release
+and no users will normally be turned down. Before applying, make sure the
+project satisfies:
+
+- [ ] it is **already released** in the form to be signed (publish the installer
+      as a GitHub Release first) and its functionality is documented on the
+      download page;
+- [ ] all components are OSI-licensed with **no proprietary parts** (that is why
+      `backend/` lives in this repository);
+- [ ] the **code signing policy** is on the project home page — the
+      `## Code signing policy` section of this README is written to their
+      required wording, keep it there and fill in the maintainer handle;
+- [ ] the maintainer uses **multi-factor authentication** on GitHub and SignPath;
+- [ ] signed binaries carry **product name and version** metadata (Tauri sets
+      them for `app.exe`; the PyInstaller sidecar has none yet, so sign the
+      installer and the app executable, or add a version resource to the spec);
+- [ ] you accept that **every release is approved manually**.
+
 1. **Apply** at <https://signpath.io/solutions/open-source-community>; approval is
    manual and takes a few days.
 2. **In SignPath**: create an organization, add the predefined *Trusted Build

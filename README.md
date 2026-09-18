@@ -299,6 +299,22 @@ changes are verified by running the app.
 - The sidecar is attached to a Windows **Job Object** with `KILL_ON_JOB_CLOSE`,
   so it cannot outlive the app even after a crash.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers**: the repository owner (single-maintainer project).
+- **Approvers**: the repository owner — every release is approved manually before
+  it is signed.
+
+This program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it.
+Outbound connections go to `api.terna.it` (the Terna Developer API, with the
+credentials the user enters) and to the local backend on `127.0.0.1`; there is
+no telemetry, no update check and no third-party service. The app installs per
+user and ships an uninstaller, and it does not modify system settings.
+
 ## Distributing the installer (and the SmartScreen warning)
 
 Windows shows *“Windows protected your PC — unknown publisher”* for **unsigned**
