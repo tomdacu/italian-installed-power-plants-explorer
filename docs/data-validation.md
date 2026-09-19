@@ -168,6 +168,23 @@ the yearbook does:
 | Hydro incl. pumping — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
 | Hydro excl. pumping — *Renewable source capacity* | −2.762 | −5.103 | −2.465 | ✅ |
 
+### Why newspapers quote different numbers
+
+Different publications quote different figures for the same quantity, and the
+difference is always a perimeter, not an error. Reading them side by side:
+
+| Figure (end of 2024) | Values in circulation | What changes |
+| --- | --- | --- |
+| Renewable capacity | **76,6 GW** (Terna press release, 16 Jan 2025) · **74,5 GW** (yearbook, via SISTAN) · **73,52 GW** (ANIE) · **74,3 GW** (Legambiente) | the press release counts provisional data and a wider basket; ANIE counts only plants in its registry; the yearbook is the consolidated figure (74.433 MW by our datasets, 74,5 GW rounded) |
+| Hydro | **18,99 GW** (ANIE) · **19,64 GW** (no pumped storage) · **22,9 GW** (TEHA/Enel) · **23,62 GW** efficient gross incl. pumping · **24,98 GW** nominal (Terna) | pumping in or out, and *nominal* vs *efficient* power — the same plant can legitimately appear as two different numbers |
+| New capacity in 2024 | **7.480 MW** (Terna, net of repowering and decommissioning) · **6.664 MW** (ANIE, new installations only) · our deltas +7.700 MW (renewables) / +6.683 MW (photovoltaic) | gross additions vs net variation |
+| Photovoltaic | **37,08 GW** (Terna, provisional Gaudì data) · **37.002 MW** (yearbook) · **36,68 GW** (ANIE) | provisional vs consolidated, registry coverage |
+
+Terna itself states it in the monthly report: the 2024 figures are *provisional*
+until the yearbook is published. When you compare this app with a newspaper,
+check the perimeter first — and prefer the yearbook for anything you need to
+cite.
+
 Practical consequences:
 
 - **For 2024 everything lines up** with the official publications, whichever
@@ -178,3 +195,20 @@ Practical consequences:
 - Wind, bioenergy and geothermal are consistent across datasets and years.
 - Treat the API as a **current** source: re-sync before quoting a year, and fall
   back to the yearbook for historical series.
+
+### Next validation to run (2025)
+
+The 2025 edition of the yearbook is already published, so the next sync can be
+checked against it. Expected values (gross efficient power, national):
+
+| Source | 2025 (yearbook) |
+| --- | --- |
+| Total installed | 145.895,2 MW |
+| Photovoltaic | 43.687,4 MW |
+| Wind | 13.525,0 MW |
+| Hydro (incl. pumping) | 23.638,6 MW |
+
+Press coverage of the same period: photovoltaic additions of 6.437 MW and wind
+additions of 608 MW in 2025 (ANIE), 39.885 MW cumulative photovoltaic at the end
+of June 2025 and more than 40 GW in July (Italia Solare), 57 GW of solar and wind
+combined at the end of 2025 (Terna, adequacy report).
