@@ -228,12 +228,26 @@ Units caveat: the Terna `/installed-capacity` payload labels the field
 `installed_capacity_GWh` but returns GW values (`"59.7902"` = 59.7902 GW); the
 parser handles dot-decimal strings accordingly.
 
-[`docs/data-validation.md`](docs/data-validation.md) documents the validation of
-these numbers against the raw API and against Terna's official yearbook: wind,
-geothermal and thermoelectric totals match to the decimal, while the API's hydro
-and older photovoltaic series use a narrower perimeter than the published
-statistics. Quote the yearbook (or GSE) for official national figures; use this
-app for trends, regional breakdowns and exports.
+### How the datasets line up with Terna's publications
+
+The API and the yearbook do not always say the same thing, and it matters when
+you quote a number. Status of each dataset (details and measurements in
+[`docs/data-validation.md`](docs/data-validation.md)):
+
+| Dataset | Aligned with the yearbook? |
+| --- | --- |
+| `generation_plants` — wind, photovoltaic, geothermal, hydro | ✅ every year 2021-2024, to the decimal |
+| `thermoelectric_capacity` — national, per region, per category | ✅ to the decimal |
+| `renewable_source_capacity` — wind, bioenergy | ✅ every year |
+| `renewable_source_capacity` — photovoltaic | ⚠️ only from 2024; 2021-2023 are the pre-revision figures (−1,8…−3,3 GW) |
+| `renewable_source_capacity` — hydro | ⚠️ by design excludes pure pumped storage (−3,99 GW in 2024) and its older years are stale |
+| `generation_plants` — thermoelectric series | ❌ −3,5 GW: use `thermoelectric_capacity` instead |
+| `installed_capacity` — national GW by type | ❌ its own perimeter, rounded to 0,1 GW; not comparable with the yearbook |
+
+Practical rule: for the latest year any dataset is fine; for earlier years prefer
+*Generation plants* for photovoltaic and hydro, and the dedicated thermoelectric
+dataset for thermal figures. Quote the yearbook (or GSE) for official national
+statistics; use this app for trends, regional breakdowns and exports.
 
 ## Testing
 

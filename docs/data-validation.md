@@ -17,6 +17,36 @@ province/year cells Terna returns `0` (or omits the value) for one capacity
 index — mostly hydro *Lorda* — so `Lorda ≥ Netta` does not hold there. The app
 stores what the API returns; totals are unaffected.
 
+## Dataset alignment at a glance
+
+Not every series is aligned with the official publications in the same way. This
+is the status of each dataset of the app, measured against Terna's yearbook, the
+registry series it publishes monthly and independent re-analyses:
+
+| Dataset | Series | Status | Detail |
+| --- | --- | --- | --- |
+| `renewable_source_capacity` | wind, bioenergy | ✅ aligned | every year 2021–2024, to the decimal |
+| `renewable_source_capacity` | geothermal | ✅ aligned | 2022–2024 exact; 2021 is 817,09 vs 821 MW published (−4 MW) |
+| `renewable_source_capacity` | photovoltaic | ⚠️ aligned only for 2024 | 2021–2023 are the figures *as first published*, never revised: −2.464 / −1.773 / −3.340 MW against the yearbook |
+| `renewable_source_capacity` | hydro | ⚠️ different perimeter **and** stale history | by design it excludes pure pumped storage (−3.986,3 MW in 2024, the seven provinces listed below); 2021–2023 are also below the registry series (−2.762 / −5.103 / −2.465 MW), 2024 matches it exactly |
+| `generation_plants` | wind, photovoltaic, geothermal, hydro | ✅ aligned | every year 2021–2024, to the decimal (hydro **includes** pumping, as the yearbook does) |
+| `generation_plants` | thermoelectric | ❌ divergent | 2024 is 3.468,0 MW (−5,6 %) below both the yearbook and the platform's own thermoelectric endpoint, concentrated in six regions |
+| `thermoelectric_capacity` | national, per region, per category | ✅ aligned | Tab. 8 (62.109,905 MW), Tab. 18 (all 20 regions) and Tab. 20 (35.419,912 / 26.689,993 MW) match to the decimal |
+| `thermoelectric_capacity` | per subcategory | ➖ not verified | no published table found for the subcategory breakdown (ciclo combinato, turbine a gas…) |
+| `installed_capacity` | national GW by type | ❌ different perimeter | 2022, in GW: thermal 58,8 vs 63,2 published, hydro 22,8 vs 23,2, photovoltaic 24,2 vs 25,1, wind 11,7 vs 11,9, geothermal 0,9 vs 0,8 — the endpoint publishes its own aggregate, rounded to 0,1 GW |
+
+What to do with it:
+
+- **Quoting 2024?** Any dataset works.
+- **Quoting earlier years?** Use `generation_plants` for photovoltaic and hydro:
+  it reproduces the yearbook for every year.
+- **Quoting thermoelectric?** Use `thermoelectric_capacity`, never the
+  `Termoelettrico` series of `generation_plants`.
+- **Comparing with a newspaper?** Check the perimeter first — see
+  [Why newspapers quote different numbers](#why-newspapers-quote-different-numbers).
+- **Using `installed_capacity`?** Only for its own trend; do not compare it with
+  the yearbook's per-type values.
+
 ## Comparison with the official Terna yearbook
 
 Values in MW, potenza efficiente **lorda** at 31 December, aggregated with a
