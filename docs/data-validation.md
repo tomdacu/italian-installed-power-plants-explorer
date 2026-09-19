@@ -129,3 +129,52 @@ request quota: a four-year "download everything" run (~108 requests) can trip
 window resets. The sync never aborts — it retries with backoff, reports the
 affected steps as `failed_steps`, and already stored steps are upserted, so
 re-running it later fills the gaps without duplicating rows.
+
+## Cross-check with the press and independent analyses
+
+The figures this app shows were also compared with what newspapers, industry
+associations and independent re-analyses publish for 2024 — not to demand exact
+equality, but to see whether the magnitudes and the trends are the same story.
+
+| Figure (end of 2024) | This app (Terna API) | Publicly reported | Source |
+| --- | --- | --- | --- |
+| Photovoltaic | 37,00 GW | **37,08 GW** | Italia Solare, *Comunicato stampa*, 20 Feb 2025 |
+| Photovoltaic | 37,00 GW | **≈ 37 GW** | SISTAN, *Il solare fotovoltaico in Italia* |
+| Renewable capacity | 74,43 GW (4 sources) | **74,5 GW** | DataCivicLab, *Terna capacità rinnovabile 2015-2024* |
+| Wind | 12,99 GW | **12,99 GW** | DataCivicLab (same series) |
+| Hydro (excl. pumping) | 19,64 GW | **19,64 GW** | DataCivicLab (same series) |
+| Total installed, gross efficient | 137,60 GW (+5,7 %) | **137,6 GW, +5,7 % vs 2023** | Terna, *Pubblicazioni statistiche* |
+| New renewable capacity in 2024 | +7.700 MW (our deltas) | **+7.480 MW** | Terna, *Rapporto mensile dicembre 2024* |
+| New photovoltaic in 2024 | +6.683 MW (our deltas) | **+6.795 MW** | Terna, *Rapporto mensile dicembre 2024* |
+| Trend into 2025 | not in the API yet | **145,9 GW, +6 % vs 2024** | Terna, *Pubblicazioni statistiche* |
+
+Magnitudes, shares and growth rates agree; the residual differences (0,2 % on
+photovoltaic, 1,6–3 % on annual additions) are the usual distance between a
+consolidated annual publication and a monthly/registry snapshot.
+
+### Which series to trust, year by year
+
+The two datasets were also compared with the revised published series for every
+year they cover, because the Terna API does **not** revise older years the way
+the yearbook does:
+
+| Source | 2021 | 2022 | 2023 | 2024 |
+| --- | --- | --- | --- | --- |
+| Photovoltaic — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
+| Photovoltaic — *Renewable source capacity* | −2.464 | −1.773 | −3.340 | ✅ |
+| Wind — both datasets | ✅ | ✅ | ✅ | ✅ |
+| Bioenergy — both datasets | ✅ | ✅ | ✅ | ✅ |
+| Geothermal — both datasets | ✅ (≈) | ✅ | ✅ | ✅ |
+| Hydro incl. pumping — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
+| Hydro excl. pumping — *Renewable source capacity* | −2.762 | −5.103 | −2.465 | ✅ |
+
+Practical consequences:
+
+- **For 2024 everything lines up** with the official publications, whichever
+  dataset you pick.
+- **For 2021–2023 prefer *Generation plants***: its photovoltaic and hydro series
+  match the yearbook, while *Renewable source capacity* still carries the figures
+  as they were published at the time (before later revisions).
+- Wind, bioenergy and geothermal are consistent across datasets and years.
+- Treat the API as a **current** source: re-sync before quoting a year, and fall
+  back to the yearbook for historical series.

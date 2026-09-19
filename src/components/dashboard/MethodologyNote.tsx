@@ -20,7 +20,9 @@ export function MethodologyNote() {
           excludes pure pumped storage, <strong className="font-semibold">Generation plants</strong> includes it
           (+3,99 GW in 2024). For thermoelectric totals prefer the dedicated{" "}
           <strong className="font-semibold">Thermoelectric capacity</strong> dataset: the generation-plants endpoint
-          reports about 3,5 GW less thermal capacity than the platform total.
+          reports about 3,5 GW less thermal capacity than the platform total. For years before the latest one,
+          prefer <strong className="font-semibold">Generation plants</strong>: the renewable dataset still
+          carries photovoltaic and hydro as they were first published, before Terna's later revisions.
         </p>
         <p>
           Source: Terna Developer API (efficient power). Values can differ from Terna Gaudì / statistical
