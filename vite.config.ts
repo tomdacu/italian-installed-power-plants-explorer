@@ -4,9 +4,8 @@ import path from "node:path";
 import pkg from "./package.json" with { type: "json" };
 
 // __APP_VERSION__ is inlined from package.json. VITE_* variables are handled
-// natively by Vite (.env files). Inside the packaged Tauri app the Rust shell
-// picks a free backend port at startup and the frontend resolves it at runtime
-// (see src-tauri/src/lib.rs), so no URL needs to be baked in here.
+// natively by Vite (.env files). The interface is served by the local server
+// itself, so no API URL needs to be baked in (see src/api/client.ts).
 export default defineConfig({
   plugins: [react()],
   resolve: {

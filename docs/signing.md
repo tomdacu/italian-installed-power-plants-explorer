@@ -43,9 +43,9 @@ project satisfies:
       `## Code signing policy` section of this README is written to their
       required wording, keep it there and fill in the maintainer handle;
 - [ ] the maintainer uses **multi-factor authentication** on GitHub and SignPath;
-- [ ] signed binaries carry **product name and version** metadata (Tauri sets
-      them for `app.exe`; the PyInstaller sidecar has none yet, so sign the
-      installer and the app executable, or add a version resource to the spec);
+- [ ] signed binaries carry **product name and version** metadata (`bun build
+      --compile` embeds them from `--windows-title`, `--windows-version`,
+      `--windows-publisher`…, so `ice.exe` already does);
 - [ ] you accept that **every release is approved manually**.
 
 1. **Apply** at <https://signpath.io/solutions/open-source-community>; approval is
@@ -63,12 +63,12 @@ project satisfies:
 5. **Wire it into `.github/workflows/release.yml`**, after the installer is built:
 
    ```yaml
-   - name: Upload the unsigned installer
+   - name: Upload the unsigned build
      id: upload-unsigned
      uses: actions/upload-artifact@v4
      with:
-       name: unsigned-installer
-       path: src-tauri/target/release/bundle/nsis/*.exe
+       name: unsigned-portable
+       path: release-assets/*
 
    - name: Sign with SignPath
      uses: signpath/github-action-submit-signing-request@v3
@@ -125,8 +125,8 @@ cannot subscribe, so this option only applies with a registered company.
 ## Verifying a build
 
 ```powershell
-signtool verify /pa /v "src-tauri\target\release\bundle\nsis\Italian Capacity Explorer_1.2.0_x64-setup.exe"
-Get-AuthenticodeSignature "…\Italian Capacity Explorer_1.2.0_x64-setup.exe" | Format-List
+signtool verify /pa /v dist-exe\ice.exe
+Get-AuthenticodeSignature dist-exe\ice.exe | Format-List
 ```
 
 `Status : Valid` plus a timestamp chain means the installer will keep validating
@@ -134,11 +134,11 @@ after the certificate expires.
 
 ## What to publish on the website
 
-- Unsigned or signed, publish the installer **plus** a SHA-256 checksum so users
-  can verify the download:
+- Unsigned or signed, publish the archive **plus** a SHA-256 checksum so users
+  can verify the download (the release workflow writes `SHA256SUMS.txt`):
 
   ```powershell
-  Get-FileHash "Italian Capacity Explorer_1.2.0_x64-setup.exe" -Algorithm SHA256
+  Get-FileHash "ItalianCapacityExplorer_1.2.0_x64-portable.zip" -Algorithm SHA256
   ```
 
 - Link to the GitHub *Releases* page rather than mirroring the binary, unless

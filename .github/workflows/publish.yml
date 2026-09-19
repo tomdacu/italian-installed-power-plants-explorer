@@ -1,0 +1,40 @@
+name: Publish to npm
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  npm:
+    name: Publish the package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # richiesto da `npm publish --provenance`
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Node serve solo a `npm publish`: il pacchetto contiene già `static/`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Tests, typecheck and interface build
+        run: |
+          bun test
+          bun run typecheck
+          bun run build
+
+      - name: Publish (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

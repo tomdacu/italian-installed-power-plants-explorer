@@ -68,16 +68,16 @@ national statistics, where Terna's yearbook (or GSE) is the reference.
 
 ## Reproducing the validation
 
-```powershell
-# sidecar on the fixed dev port
-python -B -m uvicorn backend.src.terna_backend.api:app --port 8765
+```bash
+# local server on the fixed dev port
+bun run serve --no-window --port 8731
 
 # full sync of four years (needs credentials; ~108 API requests, a few minutes)
-curl.exe -X POST http://127.0.0.1:8765/sync/jobs -H "Content-Type: application/json" `
+curl -X POST http://127.0.0.1:8731/sync/jobs -H "Content-Type: application/json" `
   -d '{\"years\":[2021,2022,2023,2024],\"datasets\":[\"renewable_source_capacity\",\"generation_plants\",\"installed_capacity\",\"thermoelectric_capacity\"],\"sources\":[\"Bioenergie\",\"Eolico\",\"Fotovoltaico\",\"Geotermoelettrico\",\"Idrico\",\"Termoelettrico\"],\"capacity_types\":[\"Lorda\",\"Netta\"]}'
 
 # per-source totals for one year
-curl.exe "http://127.0.0.1:8765/analytics/timeseries?dataset=renewable_source_capacity&capacity_type=Lorda&year_from=2024&year_to=2024&group_by=source"
+curl "http://127.0.0.1:8731/analytics/timeseries?dataset=renewable_source_capacity&capacity_type=Lorda&year_from=2024&year_to=2024&group_by=source"
 ```
 
 ## API quota

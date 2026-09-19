@@ -5,26 +5,12 @@ dist-ssr
 .vite
 *.local
 
-# --- Rust / Tauri ---
-src-tauri/target/
-src-tauri/gen/schemas/
+# --- Build outputs ---
+# static/ is the built interface copied from dist/ (scripts/copy-static.ts);
+# dist-exe/ holds the compiled single-file executable. Both are reproducible.
+static/
+dist-exe/
 
-# Packaged backend sidecar: a build artifact produced by PyInstaller
-# (see README → "Running the full desktop app"). Rebuild it locally; never
-# commit 50 MB of binaries to the repository.
-src-tauri/bin/
-
-# --- Python backend ---
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-venv/
-backend/build/
-backend/dist/
-*.egg-info/
 
 # --- Release artifacts ---
 # Installers are published as GitHub Releases, not committed.

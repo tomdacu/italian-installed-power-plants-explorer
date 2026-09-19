@@ -1,11 +1,14 @@
 # Italian Capacity Explorer
 
-A local-first Windows desktop application to explore **Italy's installed generation
-capacity** published through the [Terna Developer API](https://developer.terna.it).
+A local-first application to explore **Italy's installed generation capacity**
+published through the [Terna Developer API](https://developer.terna.it): a
+dashboard with charts and exports, a local SQLite cache, and credentials that
+never leave your machine.
 
-React + TypeScript UI, Tauri v2 shell (Rust) and a FastAPI backend packaged as a
-sidecar: the webview, the data cache and the credentials all stay on the user's
-machine — nothing is proxied through a third-party server.
+It runs as a small local server (Bun + TypeScript) that serves the interface and
+the data API from the same origin, and opens a browser window — or installs as a
+PWA with its own window and Start-menu entry. No cloud, no account, no
+compilation required to *use* it.
 
 > **Disclaimer** — this is an independent, community project. It is **not**
 > affiliated with, endorsed by or supported by Terna S.p.A. Data is © Terna S.p.A.
@@ -15,25 +18,46 @@ machine — nothing is proxied through a third-party server.
 
 ## Table of contents
 
+- [Run it](#run-it)
 - [Features](#features)
-- [Architecture](#architecture)
+- [How it works](#how-it-works)
 - [Repository layout](#repository-layout)
-- [Requirements](#requirements)
-- [Getting started](#getting-started)
-- [Running the full desktop app](#running-the-full-desktop-app)
-- [Building the Windows installer](#building-the-windows-installer)
+- [Development](#development)
+- [Building a distributable](#building-a-distributable)
 - [Configuration](#configuration)
 - [Backend HTTP API](#backend-http-api)
 - [Data model and analytics semantics](#data-model-and-analytics-semantics)
 - [Testing](#testing)
 - [Privacy and security](#privacy-and-security)
-- [Distributing the installer (and the SmartScreen warning)](#distributing-the-installer-and-the-smartscreen-warning)
+- [Code signing policy](#code-signing-policy)
+- [Distribution](#distribution)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
 - [License](#license)
 
----
+## Run it
+
+**With Bun installed** (nothing to download, always the current release):
+
+```bash
+bunx italian-capacity-explorer
+```
+
+**Without any runtime**: download `ItalianCapacityExplorer_<version>_x64-portable.zip`
+from the releases page, extract it and run `ice.exe`. The archive contains the
+executable *and* the `static/` folder with the interface — keep them together.
+
+Either way the app serves itself on `http://127.0.0.1:8731` and opens a browser
+window. In Chromium-based browsers you can then install it as an app: its own
+window without tabs, an icon in the taskbar and an entry in the Start menu.
+Everything else — data, credentials, cache — stays on your machine.
+
+### Screenshots
+
+| Dashboard (dark) | Dashboard (light) | Data sync |
+| --- | --- | --- |
+| ![Dashboard dark](docs/screenshot-dashboard.png) | ![Dashboard light](docs/screenshot-dashboard-light.png) | ![Dashboard sync](docs/screenshot-sync.png) |
 
 ## Features
 
@@ -41,156 +65,104 @@ machine — nothing is proxied through a third-party server.
 - **One-click sync**: any year range, every dataset/source/capacity type.
   Rate-limit aware (1 request/second by default), resumable, per-step progress,
   and it never aborts the whole job because one step failed.
-- **Dashboard**: KPI cards (latest-year stock, year-on-year additions, year range),
-  five interactive charts, and a searchable, sortable, paginated records table.
+- **Dashboard**: KPI cards (latest-year stock, year-on-year additions, year
+  range), five interactive charts, and a searchable, sortable, paginated records
+  table with the unit of measure on every axis.
 - **Exports**: any chart as PNG / SVG / CSV, the filtered table as CSV.
 - **Offline after sync**: SQLite cache, self-hosted fonts, light & dark themes.
+- **Installable**: runs in the browser or as an installed app (PWA), with a
+  stable local origin so the installation keeps working across restarts.
 
-### Screenshots
-
-| Dashboard (dark) | Dashboard (light) | Data sync |
-| --- | --- | --- |
-| ![Dashboard dark](docs/screenshot-dashboard.png) | ![Dashboard light](docs/screenshot-dashboard-light.png) | ![Data sync](docs/screenshot-sync.png) |
-
-## Architecture
+## How it works
 
 ```mermaid
 flowchart LR
-  subgraph Desktop app
-    UI["React 18 + Vite SPA<br/>(src/)"]
-    Shell["Tauri v2 shell (Rust)<br/>src-tauri/"]
-    Sidecar["FastAPI sidecar<br/>backend/ → app-backend.exe"]
-  end
-  Cache[("SQLite cache<br/>%APPDATA%/ItalianCapacityExplorer")]
-  KC[("Windows Credential Manager<br/>client secret")]
-  Terna["Terna Developer API<br/>api.terna.it"]
-
-  UI -- "HTTP 127.0.0.1:&lt;random port&gt;" --> Sidecar
-  Shell -- "spawns, pins to a Job Object, kills on exit" --> Sidecar
-  Shell -- "exposes the chosen port to the webview" --> UI
-  Sidecar --> Cache
-  Sidecar --> KC
-  Sidecar -- "OAuth2 token + paged GETs" --> Terna
+  CLI["ice / bunx italian-capacity-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
+  SRV --> SPA["React interface<br/>served from the same origin"]
+  SRV --> DB[("SQLite cache<br/>%APPDATA%/ItalianCapacityExplorer")]
+  SRV --> SEC[("secret.bin<br/>DPAPI / Keychain / secret-tool")]
+  SRV --> TERNA["api.terna.it<br/>OAuth2 + paged GETs"]
+  CLI -.-> WINDOW["browser window (app mode)"]
 ```
 
-| Piece | Technology | Responsibility |
-| --- | --- | --- |
-| Frontend | React 18, TypeScript, Vite, Tailwind, TanStack Query, Recharts | Dashboard, filters, charts, exports, onboarding |
-| Shell | Rust, Tauri v2 | Frameless window, picks a free port, spawns/supervises/kills the sidecar, exposes the port via the `backend_port` command |
-| Backend | Python 3.11+, FastAPI, httpx, SQLite (stdlib), keyring | Terna OAuth2 client, rate-limited sync jobs, normalisation, analytics, CSV export |
-| Storage | SQLite (`terna_cache.sqlite`) | One row per dataset/year/geo/source/capacity-type combination, upserted by a stable `record_key` |
+One process, one origin. Serving the interface from the same server that exposes
+the API removes port discovery, CORS and CSP exceptions: the browser only ever
+talks to `127.0.0.1`. Types in `shared/types.ts` are the contract for both sides.
 
-The shell picks a **free localhost port** on every launch, so two instances can run
-side by side and no fixed port is ever exposed. The frontend resolves it at runtime
-(`window.__TERNA_API_BASE__`), falling back to `VITE_API_BASE_URL` in the browser.
+The earlier versions used a Rust/Tauri shell with a Python/FastAPI sidecar; the
+current runtime is TypeScript on Bun, which removed two toolchains, the 50 MB
+sidecar and the installer pipeline. See `notes/proposta-architettura.md` for the
+migration record.
 
 ## Repository layout
 
 ```
-├── src/                      React SPA (pages, components, hooks, api client)
-├── src-tauri/                Tauri v2 shell
-│   ├── src/lib.rs            port selection, sidecar supervision, Job Object
-│   ├── tauri.conf.json       window, CSP, bundle (NSIS) configuration
-│   └── bin/app-backend/      PyInstaller sidecar build output (git-ignored)
-├── backend/                  FastAPI service (the sidecar source)
-│   ├── src/terna_backend/    api, sync, storage, normalize, terna_client, settings
-│   ├── tests/                pytest suite (mocked Terna client, no credentials)
-│   ├── run_backend.py        sidecar entry point (port from argv[1]/TERNA_PORT)
-│   └── app-backend.spec      PyInstaller recipe
-├── scripts/release.ps1       typecheck → build → bundle (+ optional code signing)
-├── docs/                     screenshots, code-signing guide, data validation
-├── .github/workflows/        CI (typecheck, build, backend tests) and Release
-└── .env.example              frontend dev overrides
+├── server/                Bun + Hono backend (data layer, sync, CLI)
+│   ├── cli.ts             entry point: port, server, window, logs
+│   ├── api.ts             the HTTP routes
+│   ├── http.ts            SPA hosting, CSP, SPA fallback
+│   ├── db.ts              SQLite cache: schema, upserts, analytics queries
+│   ├── terna.ts           OAuth2 client with pacing and retries
+│   ├── sync.ts            sync planner and job manager
+│   ├── normalize.ts       payload → rows (numeric parsing included)
+│   ├── secrets.ts         DPAPI / Keychain / secret-tool secret storage
+│   └── settings.ts        app data folder and settings
+├── shared/types.ts        data contract shared by server and interface
+├── src/                   React interface (pages, components, hooks)
+├── public/                manifest, service worker, icons, favicon
+├── tests/                 bun test suites (39 tests)
+├── scripts/               copy-static.ts, generate-brand-assets.py
+├── assets/                icon sources for the compiled executable
+└── docs/                  screenshots, code-signing guide, data validation
 ```
 
-## Requirements
+## Development
 
-| Tool | Version | Notes |
-| --- | --- | --- |
-| Node.js | ≥ 20 | frontend build |
-| Rust | ≥ 1.77.2 | MSVC toolchain (`rustup default stable-msvc`) |
-| Python | ≥ 3.11 | backend only (3.13 is what the shipped sidecar is built with) |
-| WebView2 | any | preinstalled on Windows 10/11; the installer bootstraps it otherwise |
-| OS | Windows 10/11 x64 | the shipped sidecar is Windows-only |
+Requires [Bun](https://bun.sh) ≥ 1.2 (a single binary, no other toolchain).
 
-## Getting started
-
-```powershell
-git clone <your-fork-url>
-cd italian-capacity-explorer
-
-# 1. frontend dependencies
-npm install
-
-# 2. backend dependencies (virtualenv recommended)
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e "backend[dev]"
+```bash
+bun install
+bun run serve           # http://127.0.0.1:8731, opens a browser window
+bun run dev             # Vite dev server on :1420 with hot reload, proxies the API
+bun test                # 39 tests
+bun run typecheck       # interface + server
 ```
 
-Start the backend on the fixed dev port and the SPA in the browser:
+In development the Vite server proxies `/health`, `/records`, `/analytics`,
+`/metadata`, `/settings`, `/sync` and `/export` to the local server, so the
+interface uses relative URLs in every mode and no environment variable is needed.
 
-```powershell
-# terminal 1 — API on http://127.0.0.1:8765
-python -B -m uvicorn backend.src.terna_backend.api:app --reload --port 8765
+## Building a distributable
 
-# terminal 2 — SPA on http://localhost:1420
-npm run dev
+```bash
+bun run compile
 ```
 
-The browser workflow is the fastest loop for UI work: the SPA falls back to
-`VITE_API_BASE_URL` (default `http://127.0.0.1:8765`) when it is not running
-inside Tauri. Credentials are still handled by the backend, so you can exercise
-the whole sync flow there.
+This builds the interface, copies it to `static/` and compiles a single-file
+executable into `dist-exe/ice.exe` (~82 MB, Bun runtime included) with the icon
+and version metadata embedded. Ship it together with `static/`:
 
-## Running the full desktop app
-
-`tauri dev` spawns the **packaged sidecar**, so build it once first:
-
-```powershell
-cd backend
-python -B -m PyInstaller app-backend.spec --noconfirm --distpath dist --workpath build
-# copy the build output into the shell's resource folder
-robocopy dist\app-backend ..\src-tauri\bin\app-backend /MIR
-cd ..
-npm run tauri:dev
+```
+ItalianCapacityExplorer_1.2.0_x64-portable.zip
+├── ice.exe
+└── static/…
 ```
 
-Rebuild the sidecar (re-run the two commands above) after every backend change —
-`tauri dev` does not rebuild Python.
-
-## Building the Windows installer
-
-```powershell
-npm run release                       # typecheck + build + NSIS bundle
-npm run release -- -Thumbprint <hex>  # same, and code-sign everything
-```
-
-Artifacts land in `src-tauri/target/release/bundle/nsis/`. The bundle ships:
-
-- the Tauri executable and the NSIS installer (`…_x64-setup.exe`, per-user install),
-- the sidecar (`bin/app-backend/`) as a resource,
-- the WebView2 bootstrapper as a fallback.
-
-Installers are **build outputs**: publish them as GitHub *Releases* artifacts,
-never commit them to the repository.
+`bun run compile` takes about 30 seconds, of which 1.7 s is the actual compile
+(the earlier PyInstaller sidecar took over two minutes).
 
 ## Configuration
 
-Frontend (Vite, `.env`):
-
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `http://127.0.0.1:8765` | backend URL when running outside Tauri |
+| `ICE_PORT` | `8731` | stable port (the installed PWA's origin includes it) |
+| `ICE_STATIC_DIR` | alongside the executable / `static/` | where the interface lives |
+| `TERNA_MIN_REQUEST_INTERVAL` | `1.0` | minimum seconds between Terna API calls |
+| `TERNA_APP_DATA_DIR` | `%APPDATA%\ItalianCapacityExplorer` | database, settings, log |
+| `TERNA_CLIENT_ID` / `TERNA_CLIENT_SECRET` | – | credentials for headless runs |
 
-Backend (environment):
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TERNA_CLIENT_ID` / `TERNA_CLIENT_SECRET` | – | credentials for headless/dev runs (the GUI stores them itself) |
-| `TERNA_MIN_REQUEST_INTERVAL` | `1.0` | minimum seconds between Terna API calls (raise it if you get `429`) |
-| `TERNA_APP_DATA_DIR` | `%APPDATA%\ItalianCapacityExplorer` | database, settings and `backend.log` |
-| `TERNA_PORT` | `8765` | override the port passed by the shell |
+CLI flags: `--browser` (system browser instead of the app window), `--no-window`
+(server only), `--port N`, `--data-dir DIR`, `--help`.
 
 Data written at runtime:
 
@@ -198,25 +170,19 @@ Data written at runtime:
 | --- | --- |
 | `%APPDATA%\ItalianCapacityExplorer\terna_cache.sqlite` | local cache (delete it to force a full re-sync) |
 | `%APPDATA%\ItalianCapacityExplorer\settings.json` | non-secret settings (client id, database path) |
-| `%APPDATA%\ItalianCapacityExplorer\backend.log` | sidecar stdout/stderr |
-| `%LOCALAPPDATA%\com.italiancapacityexplorer.app\logs\terna-app.log` | shell logs |
-| Windows Credential Manager → `italian-capacity-explorer` | the client **secret** |
-
-Builds released before the rename used `TernaInstalledCapacity` and the
-`terna-installed-capacity` credential entry; the backend migrates both on first
-launch (the data folder is moved, the secret is copied to the new entry).
+| `%APPDATA%\ItalianCapacityExplorer\secret.bin` | client secret, encrypted with DPAPI |
+| `%APPDATA%\ItalianCapacityExplorer\backend.log` | startup log |
 
 ## Backend HTTP API
 
-The sidecar serves a small JSON API on `127.0.0.1` (no authentication — see
-[Privacy and security](#privacy-and-security)); `GET /docs` exposes the generated
-OpenAPI UI while the backend runs.
+The local server exposes a small JSON API on `127.0.0.1` (no authentication —
+see [Privacy and security](#privacy-and-security)).
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /health` | readiness probe used by the shell |
+| `GET /health` | readiness probe |
 | `GET /settings/credentials/status` | `{configured, client_id_suffix}` |
-| `POST /settings/credentials` | store id + secret (secret → Credential Manager) |
+| `POST /settings/credentials` | store id + secret (secret → DPAPI file) |
 | `DELETE /settings/credentials` | remove both |
 | `POST /settings/credentials/test` | OAuth2 round-trip against Terna |
 | `POST /sync/jobs` | start a sync job → `{job_id, status}` |
@@ -245,7 +211,7 @@ combination:
 | `installed_capacity_gw` | GW | national `installed_capacity` dataset only |
 | `fetched_at` | ISO-8601 UTC | last successful fetch |
 
-Analytics rules the UI relies on:
+Analytics rules the interface relies on:
 
 - **Stock, not sum.** Totals and `latest_only` aggregations refer to the latest
   year in the selection. Summing several years would count the same plant
@@ -259,29 +225,28 @@ Analytics rules the UI relies on:
   body, so the sync counts them as `empty_steps`.
 
 Units caveat: the Terna `/installed-capacity` payload labels the field
-`installed_capacity_GWh` but returns GW values (`"59.7902"` = 59.7902 GW). The
-backend stores them as `installed_capacity_gw` and parses dot-decimal strings
-correctly; do not trust the upstream field name.
+`installed_capacity_GWh` but returns GW values (`"59.7902"` = 59.7902 GW); the
+parser handles dot-decimal strings accordingly.
 
 [`docs/data-validation.md`](docs/data-validation.md) documents the validation of
 these numbers against the raw API and against Terna's official yearbook: wind,
-geothermal and thermoelectric totals match to the decimal, while the API's
-hydro and older photovoltaic series use a narrower perimeter than the published
+geothermal and thermoelectric totals match to the decimal, while the API's hydro
+and older photovoltaic series use a narrower perimeter than the published
 statistics. Quote the yearbook (or GSE) for official national figures; use this
 app for trends, regional breakdowns and exports.
 
 ## Testing
 
-```powershell
-npm run typecheck     # strict TypeScript, no emit
-npm run build         # production bundle (also validates the Vite build)
-
-python -B -m pytest backend/tests -p no:cacheprovider   # 22 tests, mocked Terna API
+```bash
+bun test          # 39 tests: parsing, storage, analytics, sync planning, client, API
+bun run typecheck # strict TypeScript for interface and server
+bun run build     # production interface bundle
 ```
 
-The backend suite runs without credentials and without network access. There is
-no frontend test runner yet (see [Known limitations](#known-limitations)); UI
-changes are verified by running the app.
+The suite runs without credentials, without network access and in a few seconds:
+the Terna client takes an injected `fetch`, so retry and rate-limit behaviour is
+tested against a stub. CI additionally compiles the executable and smoke-tests it
+(`/health` plus the interface) on Windows.
 
 ## Privacy and security
 
@@ -295,18 +260,17 @@ changes are verified by running the app.
   Linux to the `secret-tool` store. The client id stays in `settings.json`
   because it is not a secret.
 - **The app never reads credentials belonging to other applications.** No
-  script interpreter is spawned (no PowerShell, no shell), no OS credential
-  vault is queried, nothing is written outside the app data folder and the log
-  file. Automated scanners flag such patterns — correctly — as infostealer
-  behaviour, so the code avoids them by design.
+  script interpreter is spawned, no OS credential vault is queried, nothing is
+  written outside the app data folder and the log file. Automated scanners flag
+  such patterns — correctly — as infostealer behaviour, so the code avoids them
+  by design.
 - The API has **no authentication**: any local process can read the cache and
   overwrite the stored credentials (it can never read the secret back — the API
   only ever returns `configured` plus a masked id). Treat the machine's other
   users/processes as trusted.
 - The single-file executable produced by `bun build --compile` is unsigned, so
   antivirus heuristics and SmartScreen will scrutinise it; signing is the fix
-  (see below). The npm channel (`bunx italian-capacity-explorer`) never builds or
-  ships a binary.
+  (see below). The npm channel never builds or ships a binary.
 
 ## Code signing policy
 
@@ -319,112 +283,73 @@ certificate by [SignPath Foundation](https://signpath.org).
 
 This program will not transfer any information to other networked systems unless
 specifically requested by the user or the person installing or operating it.
-Outbound connections go to `api.terna.it` (the Terna Developer API, with the
-credentials the user enters) and to the local backend on `127.0.0.1`; there is
-no telemetry, no update check and no third-party service. The app installs per
-user and ships an uninstaller, and it does not modify system settings.
+Outbound connections go to `api.terna.it` (with the credentials the user enters)
+and to the local interface on `127.0.0.1`; there is no telemetry, no update check
+and no third-party service. The app does not modify system settings, and
+uninstalling means deleting the folder plus `%APPDATA%\ItalianCapacityExplorer`.
 
-## Distributing the installer (and the SmartScreen warning)
+## Distribution
+
+Two channels, both without a build step for the user:
+
+1. **npm** — `bunx italian-capacity-explorer` (or `bun install -g`). The tarball
+   contains `server/`, `shared/` and the prebuilt `static/`, so nothing is
+   compiled on the user's machine. Publishing runs from CI on a tag
+   (`.github/workflows/publish.yml`, `npm publish --provenance`).
+2. **Portable zip** — the compiled executable plus `static/`, attached to the
+   GitHub Release by `.github/workflows/release.yml`, with `SHA256SUMS.txt`.
+
+The earlier Tauri/NSIS installer pipeline was removed with the Rust shell. If you
+want a traditional installer for Windows, wrap the portable folder with Inno
+Setup or NSIS — the signing steps in [`docs/signing.md`](docs/signing.md) apply
+to `ice.exe` unchanged.
 
 Windows shows *“Windows protected your PC — unknown publisher”* for **unsigned**
-executables. SmartScreen cannot be disabled by configuration; it is a trust
-decision made by Windows. [`docs/signing.md`](docs/signing.md) compares the
-options that actually work — free signing for open-source projects (SignPath
-Foundation), a commercial OV/EV certificate, or Azure Artifact Signing — and
-explains how to plug each one into `scripts/release.ps1` or into the `Release`
-GitHub Actions workflow. The options are:
-
-| Build | First-run experience |
-| --- | --- |
-| Unsigned | SmartScreen warning → *More info* → *Run anyway* |
-| Signed with an OV certificate | Publisher name is shown; reputation grows with downloads |
-| Signed with an EV certificate | Trusted immediately |
-
-To sign, import a code-signing certificate and run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Thumbprint <cert-thumbprint>
-# or: $env:TAURI_SIGNING_THUMBPRINT = "<hex>"; npm run release
-```
-
-Tauri then signs the app executable, the uninstaller and the NSIS installer
-(SHA-256 + RFC-3161 timestamping). Both `npm run release` and the release
-workflow stage the publishable files — with space-free names and a checksum
-manifest — in `src-tauri/target/release/assets/`:
-
-| File | Audience |
-| --- | --- |
-| `ItalianCapacityExplorer_<version>_x64-setup.exe` | everyone: double-click, per-user install, Start menu entry, uninstaller, WebView2 bootstrapped |
-| `ItalianCapacityExplorer_<version>_x64-portable.zip` | no-install: extract to a folder and run `app.exe` |
-| `SHA256SUMS.txt` | download verification (`Get-FileHash <file> -Algorithm SHA256`) |
-
-Never commit these: attach them to a GitHub Release, whose notes follow
-[`.github/release-notes.md`](.github/release-notes.md).
-
-### Portable build (no installer)
-
-Unzip the archive anywhere and run `app.exe` — the backend sidecar sits in
-`bin\app-backend\` next to it, so nothing has to be installed.
-
-- Running `app.exe` **from inside the zipped folder** (Windows' compressed-folder
-  view) starts the app without its backend, because the sibling folder is not
-  there: extract everything first.
-- The unpacked folder is ~61 MB (837 files) and the app picks a free local port
-  at every launch, exactly like the installed build.
-- The **first launch from a freshly unzipped folder can take ~1 minute**: the
-  shell waits while Windows Defender scans the sidecar's files. Later launches
-  are ready in a few seconds, and the sidebar shows the backend state meanwhile.
-- WebView2 must already be on the machine — Windows 10/11 ships it, but the
-  installer can bootstrap it and the portable archive cannot.
-- User data still lives in `%APPDATA%\ItalianCapacityExplorer`: this is
-  “no install”, not “no traces”. There is no Start Menu entry and no uninstaller,
-  so deleting the folder removes the application.
-- If the build was signed, the `app.exe` inside the archive is signed too.
+executables; SmartScreen cannot be disabled by configuration. Options, costs and
+step-by-step instructions: [`docs/signing.md`](docs/signing.md).
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 | --- | --- |
-| “The local data service is not responding” | the sidecar is still starting (up to a few seconds) or crashed — check `%APPDATA%\ItalianCapacityExplorer\backend.log` and `%LOCALAPPDATA%\com.italiancapacityexplorer.app\logs\terna-app.log` |
-| Sync reports many skipped steps | Terna rate limiting (`429`/`403 Developer Over Qps`); they are retried, then reported as `failed_steps` — re-run the sync, already stored steps are upserted |
-| Sync reports many empty steps | years or combinations the API does not publish (for example `/installed-capacity` currently returns data only for a subset of years) |
+| “Interfaccia non trovata: manca la cartella static/” | the executable was copied without `static/`: keep them in the same folder, or set `ICE_STATIC_DIR` |
+| The app opens but the window is a plain browser tab | the browser was not detected for app mode: use your browser's *Install app*, or pass `--browser` |
+| “Porta preferita occupata: uso <port>” | another instance holds 8731; the app keeps working, but an installed PWA points at the stable port — close the other instance and restart |
+| Sync reports many skipped steps | Terna rate limiting (`429`/`403 Developer Over Qps`); they are retried, then reported as `failed_steps` — re-run the sync, stored steps are upserted |
+| Sync reports many empty steps | years or combinations the API does not publish |
+| Antivirus flags the compiled executable | it is an unsigned, self-extracting binary: add an exclusion, use the npm channel, or sign your builds (`docs/signing.md`) |
 | Charts show nothing for a dataset | that dataset was never downloaded: run a sync covering its years |
-| `tauri dev` fails to start the backend | the sidecar was not built — see [Running the full desktop app](#running-the-full-desktop-app) |
-| Installer complains about a running instance | close the app before re-installing; silent (`/S`) installs skip locked files |
 
 ## Known limitations
 
-- **Windows only**: the Tauri shell is cross-platform, but only a Windows sidecar
-  is built here (add a `pyinstaller` target per OS to support more).
-- **No auto-updater** (Tauri updater is not wired up); users re-run the installer.
-- **No frontend test runner** yet — `npm run typecheck` plus a manual smoke test
-  is the current gate.
-- **Upstream data quirks** are surfaced as-is:
-  `/installed-capacity` publishes GW values in a field named `installed_capacity_GWh`
-  and currently returns rows for a subset of years only;
-  region names differ in casing between endpoints (`Valle D'Aosta` vs `Valle d'Aosta`),
-  which shows up as two entries in the region filter.
 - **Rate limiting** is the practical ceiling of a full multi-year sync: requests
   are paced at ~1/second, so a full refresh takes a few minutes. Terna also
   enforces a broader request quota beyond QPS (HTTP 403, `Developer Over Rate`):
   a four-year "download everything" run issues ~108 requests and can trip it.
   The sync never aborts — it retries with backoff, records the affected steps as
   `failed_steps` and can be re-run later to fill the gaps.
-- **Zero values are stored as returned**: for a few province/year cells the API
-  reports `0` (or omits the value) for one capacity index, typically hydro
-  *Lorda* — harmless for totals, visible if you filter that province.
+- **Upstream data quirks** are surfaced as-is: `/installed-capacity` publishes GW
+  values in a field named `installed_capacity_GWh` and currently returns rows for
+  a subset of years only; region names differ in casing between endpoints
+  (`Valle D'Aosta` vs `Valle d'Aosta`), which shows up as two entries in the
+  region filter; a few province/year cells report `0` instead of being omitted.
+- **The compiled executable is ~82 MB** (39 MB zipped) because it embeds the Bun
+  runtime. The npm channel has no such cost — it requires Bun on the machine.
+- **No auto-updater**: the app is a local server; update Bun or download the new
+  release. The version is shown in the title bar and in Settings.
+- **No frontend test runner** yet: `bun run typecheck` plus the smoke test in CI
+  is the current gate for the interface.
 
 ## Contributing
 
 Issues and pull requests are welcome.
 
-1. Create a branch from `main`.
-2. Keep the TypeScript strict (`npm run typecheck`) and the backend suite green
-   (`python -B -m pytest backend/tests`).
-3. Match the existing style: small components, hooks for data access, no remote
-   assets, no hardcoded domain values in the frontend (use `/metadata/options`).
-4. Do not commit build outputs (`dist/`, `src-tauri/target/`, `src-tauri/bin/`,
-   `backend/build/`, `backend/dist/`, installers) — they are git-ignored on purpose.
+1. Install [Bun](https://bun.sh) and run `bun install`.
+2. Create a branch from `main`; keep `bun test` and `bun run typecheck` green.
+3. Match the existing style: small modules, no new dependency when the standard
+   library suffices, comments that explain *why*.
+4. Do not commit build outputs (`dist/`, `static/`, `dist-exe/`, `release/`) —
+   they are git-ignored on purpose.
 5. Never commit credentials or a shared Terna client secret: every user brings
    their own keys.
 
