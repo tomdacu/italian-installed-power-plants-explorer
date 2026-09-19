@@ -27,6 +27,14 @@ const queryClient = new QueryClient({
   },
 });
 
+// Service worker: rende l'app installabile come PWA e accelera l'avvio.
+// Solo in produzione (in sviluppo romperebbe l'hot reload).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js");
+  });
+}
+
 // La SPA è servita dal server locale che espone anche l'API: nessun bootstrap
 // necessario, le richieste sono relative alla stessa origine (vedi apiBase()).
 ReactDOM.createRoot(document.getElementById("root")!).render(

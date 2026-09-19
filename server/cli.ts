@@ -20,6 +20,11 @@ const BROWSER_CANDIDATES = [
   join(process.env["ProgramFiles(x86)"] ?? "", "Google/Chrome/Application/chrome.exe"),
 ];
 
+/** Porta stabile: l'origine della PWA installata include la porta, quindi una
+ * porta casuale a ogni avvio invaliderebbe l'installazione. Se è occupata si
+ * ripiega su una porta libera (in quel caso la PWA va reinstallata). */
+const DEFAULT_PORT = Number(process.env.ICE_PORT ?? 8731);
+
 interface CliOptions {
   port: number;
   window: "app" | "browser" | "none";
@@ -27,7 +32,7 @@ interface CliOptions {
 }
 
 function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { port: 0, window: "app" };
+  const options: CliOptions = { port: DEFAULT_PORT, window: "app" };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--browser") options.window = "browser";
@@ -79,6 +84,9 @@ function main(): void {
 
   console.log(`Italian Capacity Explorer in ascolto su ${app.url}`);
   console.log(`Dati in ${app.settings.load().dataDir}`);
+  if (app.portFallback) {
+    console.warn(`Porta preferita occupata: uso ${app.port}. La PWA installata punta alla porta stabile.`);
+  }
   openInterface(app.url, options.window);
 
   const shutdown = () => {

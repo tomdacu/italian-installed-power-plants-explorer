@@ -287,17 +287,26 @@ changes are verified by running the app.
 
 - Outbound traffic is limited to `api.terna.it` (OAuth2 token + data endpoints).
   No analytics, telemetry, update checks or third-party CDNs.
-- The client **secret** is stored in the Windows Credential Manager, never in the
-  database, the repo or the frontend. The client id lives in `settings.json`
+- The server binds `127.0.0.1` and serves both the API and the interface from the
+  same origin; a strict `Content-Security-Policy` is sent on every response. No
+  CORS headers are emitted, so a hostile page cannot read local responses.
+- The client **secret** is encrypted with **Windows DPAPI** (user scope) into
+  `secret.bin` inside the app data folder; on macOS it goes to the Keychain, on
+  Linux to the `secret-tool` store. The client id stays in `settings.json`
   because it is not a secret.
-- The sidecar binds `127.0.0.1` on a port chosen at runtime; the CSP in
-  `src-tauri/tauri.conf.json` restricts the webview to `self` + `127.0.0.1`.
+- **The app never reads credentials belonging to other applications.** No
+  script interpreter is spawned (no PowerShell, no shell), no OS credential
+  vault is queried, nothing is written outside the app data folder and the log
+  file. Automated scanners flag such patterns — correctly — as infostealer
+  behaviour, so the code avoids them by design.
 - The API has **no authentication**: any local process can read the cache and
   overwrite the stored credentials (it can never read the secret back — the API
   only ever returns `configured` plus a masked id). Treat the machine's other
   users/processes as trusted.
-- The sidecar is attached to a Windows **Job Object** with `KILL_ON_JOB_CLOSE`,
-  so it cannot outlive the app even after a crash.
+- The single-file executable produced by `bun build --compile` is unsigned, so
+  antivirus heuristics and SmartScreen will scrutinise it; signing is the fix
+  (see below). The npm channel (`bunx italian-capacity-explorer`) never builds or
+  ships a binary.
 
 ## Code signing policy
 

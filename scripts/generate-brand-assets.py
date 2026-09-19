@@ -160,6 +160,20 @@ def draw_share_card(path: Path, size: tuple[int, int], *, height: int, top: int,
     base.convert("RGB").save(path, "PNG", optimize=True)
 
 
+def make_pwa_icons() -> None:
+    """Icone per la PWA: `any` (angoli arrotondati) e `maskable` (fondo pieno)."""
+    for size in (192, 512):
+        brand_icon(size).save(ROOT / "public" / f"icon-{size}.png", "PNG", optimize=True)
+
+    # Maskable: il soggetto deve stare nel 60% centrale e il fondo arrivare ai bordi.
+    size = 512
+    canvas = Image.new("RGBA", (size, size), (4, 19, 14, 255))
+    canvas.alpha_composite(gradient((size, size), (47, 217, 143), (7, 96, 72)))
+    inner = brand_icon(int(size * 0.56))
+    canvas.alpha_composite(inner, ((size - inner.width) // 2, (size - inner.height) // 2))
+    canvas.save(ROOT / "public" / "icon-maskable-512.png", "PNG", optimize=True)
+
+
 def make_installer_header() -> None:
     size = (150, 57)
     base = gradient(size, (4, 19, 14), (7, 74, 56)).convert("RGB")
@@ -204,6 +218,7 @@ def main() -> None:
     make_hero()
     draw_share_card(ASSETS / "github-social-preview.png", (1280, 630), height=460, top=80, right=62)
     draw_share_card(ROOT / "public" / "og-image.png", (1200, 630), height=430, top=100, right=50)
+    make_pwa_icons()
     make_installer_header()
     make_installer_sidebar()
 

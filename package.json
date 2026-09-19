@@ -2,7 +2,7 @@
   "name": "italian-capacity-explorer",
   "version": "1.2.0",
   "type": "module",
-  "description": "Explore Italy's installed generation capacity from the Terna Developer API — local-first, with a dashboard, charts and CSV/PNG export.",
+  "description": "Explore Italy's installed generation capacity from the Terna Developer API \u2014 local-first, with a dashboard, charts and CSV/PNG export.",
   "license": "MIT",
   "bin": {
     "ice": "server/cli.ts"
@@ -22,12 +22,13 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "preview": "vite preview --port 1420",
-    "prepack": "bun run build && node -e \"require('node:fs').cpSync('dist','static',{recursive:true})\"",
-    "compile": "bun build server/cli.ts --compile --outfile dist-exe/ice.exe --windows-hide-console --windows-icon=src-tauri/icons/icon.ico --windows-title=\"Italian Capacity Explorer\"",
+    "prepack": "bun run build && bun run scripts/copy-static.ts",
+    "compile": "bun run prepack && bun build server/cli.ts --compile --outfile dist-exe/ice.exe --windows-hide-console --windows-icon=assets/icon.ico --windows-title=\"Italian Capacity Explorer\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "release": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1"
+    "release": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "start:exe": "dist-exe/ice.exe --no-window"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

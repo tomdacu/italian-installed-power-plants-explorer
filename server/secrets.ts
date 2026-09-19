@@ -7,11 +7,9 @@
  *
  * macOS: `security`; Linux: `secret-tool` (entrambi one-shot, fuori dall'avvio).
  */
-import { dlopen, FFIType, ptr, toArrayBuffer } from "bun:ffi";
+import { dlopen, FFIType, ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 
 const SERVICE = "italian-capacity-explorer";
-/** Nome usato prima della rinomina: serve solo per la migrazione una tantum. */
-const LEGACY_SERVICE = "terna-installed-capacity";
 
 const crypt32 =
   process.platform === "win32"
@@ -27,10 +25,12 @@ const crypt32 =
       })
     : null;
 
-/** `LocalFree` è esportata da kernel32, non da crypt32. */
+/** `LocalFree` è esportata da kernel32, non da crypt32.
+ *  L'indirizzo va passato come intero (`u64`), non come `ptr`: con un bigint
+ *  bun:ffi lo interpreta male e la free corrompe lo heap (crash 0xC0000409). */
 const kernel32 =
   process.platform === "win32"
-    ? dlopen("kernel32.dll", { LocalFree: { args: [FFIType.ptr], returns: FFIType.ptr } })
+    ? dlopen("kernel32.dll", { LocalFree: { args: [FFIType.u64], returns: FFIType.u64 } })
     : null;
 
 /** DATA_BLOB = { DWORD cbData; BYTE *pbData; } → 16 byte su x64 (padding incluso). */
@@ -44,12 +44,12 @@ function dataBlob(bytes: Uint8Array): Uint8Array {
 
 function takeOutput(output: Uint8Array): Uint8Array {
   const view = new DataView(output.buffer);
-  const outPtr = Number(view.getBigUint64(8, true));
-  const outLen = view.getUint32(0, true);
-  // `bigint` è l'unica forma di indirizzo accettata sia da toArrayBuffer sia da
-  // LocalFree: evita i cast e resta corretto a runtime.
-  const address = BigInt(outPtr);
-  const bytes = new Uint8Array(toArrayBuffer(address, 0, outLen)).slice();
+  const address = Number(view.getBigUint64(8, true));
+  const length = view.getUint32(0, true);
+  // bun:ffi dichiara toArrayBuffer come `Pointer | TypedArray | bigint`, ma a
+  // runtime accetta l'indirizzo numerico scritto da CryptProtectData in DATA_BLOB
+  // (è la forma verificata nello spike): il cast è solo di tipo.
+  const bytes = new Uint8Array(toArrayBuffer(address as unknown as Pointer, 0, length)).slice();
   kernel32?.symbols.LocalFree(address);
   return bytes;
 }
@@ -85,19 +85,6 @@ async function run(command: string[]): Promise<{ code: number; stdout: string }>
   const stdout = await new Response(process_.stdout).text();
   return { code: await process_.exited, stdout: stdout.trim() };
 }
-
-/** Legge il segreto dal Credential Manager usato dalla versione Python (una volta). */
-export async function readLegacyKeyringSecret(clientId: string): Promise<string | null> {
-  if (process.platform !== "win32") return null;
-  const script =
-    "[Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]|Out-Null;" +
-    `$v=New-Object Windows.Security.Credentials.PasswordVault;$c=$v.Retrieve('${LEGACY_SERVICE}','${clientId}');$c.RetrievePassword();$c.Password`;
-  const { code, stdout } = await run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script]);
-  return code === 0 && stdout ? stdout : null;
-}
-
-export const secretBackendName =
-  process.platform === "win32" ? "DPAPI" : process.platform === "darwin" ? "Keychain" : "secret-service";
 
 export interface SecretStore {
   save(clientId: string, secret: string): Promise<void>;

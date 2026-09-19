@@ -1,0 +1,17 @@
+{
+  "name": "Italian Capacity Explorer",
+  "short_name": "Capacity Explorer",
+  "description": "Explore Italy's installed generation capacity from the Terna Developer API, locally on your machine.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "background_color": "#0d1118",
+  "theme_color": "#04130e",
+  "categories": ["utilities", "productivity", "education"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

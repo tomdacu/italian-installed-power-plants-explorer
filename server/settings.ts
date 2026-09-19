@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-import { createSecretStore, readLegacyKeyringSecret, type SecretStore } from "./secrets.ts";
+import { createSecretStore, type SecretStore } from "./secrets.ts";
 
 const APP_DIR_NAME = "ItalianCapacityExplorer";
 const LEGACY_APP_DIR_NAME = "TernaInstalledCapacity";
@@ -101,14 +101,11 @@ export class SettingsStore {
     const resolved = clientId ?? this.load().clientId;
     if (!resolved) return null;
 
-    const stored = await this.secrets.load(resolved);
-    if (stored) return stored;
-
-    // Primo avvio dopo la migrazione: il segreto era nel Credential Manager
-    // della versione Python. Lo si copia nel backend nativo e si prosegue.
-    const legacy = await readLegacyKeyringSecret(resolved);
-    if (legacy) await this.secrets.save(resolved, legacy);
-    return legacy;
+    // Nessun accesso alle credenziali di altre applicazioni: se il segreto non
+    // è nel nostro archivio (DPAPI), l'utente lo reinserisce nella pagina
+    // Credentials. Un'app che legge il portachiavi di sistema con PowerShell è
+    // indistinguibile da un infostealer — e gli antivirus la trattano come tale.
+    return this.secrets.load(resolved);
   }
 
   async hasCredentials(): Promise<boolean> {

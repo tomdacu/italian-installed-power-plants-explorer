@@ -4,6 +4,7 @@
  * Servire la SPA qui è ciò che elimina porta esposta al frontend, CORS ed
  * eccezioni CSP: il browser parla solo con `127.0.0.1:<porta>`.
  */
+import type { Server } from "bun";
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
 
@@ -43,7 +44,10 @@ function withSecurityHeaders(response: Response): Response {
   return response;
 }
 
-export function startServer(options: ServerOptions) {
+/** Server HTTP locale (nessun websocket: il parametro generico resta undefined). */
+export type LocalServer = Server<undefined>;
+
+export function startServer(options: ServerOptions): LocalServer {
   const api = createApi({ store: options.store, settings: options.settings, sync: options.sync });
   const staticRoot = normalize(options.staticDir);
   const indexPath = join(staticRoot, "index.html");

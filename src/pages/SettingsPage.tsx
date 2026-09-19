@@ -1,7 +1,8 @@
-import { Moon, Sun, BookOpen, KeyRound, RefreshCw, LayoutDashboard, Info, Database, ShieldCheck } from "lucide-react";
+import { Moon, Sun, BookOpen, KeyRound, RefreshCw, LayoutDashboard, Info, Database, ShieldCheck, MonitorSmartphone, CheckCircle2 } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/context/ThemeContext";
+import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const STEPS = [
 
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const install = usePwaInstall();
 
   return (
     <div>
@@ -84,6 +86,38 @@ export function SettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="card p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">
+                Install as an app
+              </h3>
+              <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
+                Use it in its own window, without browser tabs, with an entry in the Start menu.
+              </p>
+            </div>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-500/10 text-brand-600 dark:text-brand-300">
+              <MonitorSmartphone className="h-4 w-4" />
+            </span>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {install.installed ? (
+              <p className="flex items-center gap-2 text-sm text-brand-700 dark:text-brand-300">
+                <CheckCircle2 className="h-4 w-4" /> Running as an installed app
+              </p>
+            ) : install.canInstall ? (
+              <Button onClick={() => void install.install()}>Install as app</Button>
+            ) : (
+              <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
+                Open this page from the address shown by <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/[0.07]">ice</code>{" "}
+                (for example <span className="font-mono text-xs">http://127.0.0.1:8731</span>), then use your
+                browser&apos;s menu → <em>Install app</em>. Chromium-based browsers only.
+              </p>
+            )}
           </div>
         </section>
 
