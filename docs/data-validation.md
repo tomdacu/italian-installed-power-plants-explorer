@@ -9,7 +9,8 @@ official statistics. Reproduce it with your own credentials at any time.
 | --- | --- | --- |
 | Raw payload → cache | Full sync of 2021–2024 × 4 datasets (108 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
 | Cache → API | 46 automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | 45/46 |
-| Cache → official statistics | Per-source totals compared with Terna's yearbook *Dati statistici sull'energia elettrica in Italia* (section "Impianti di generazione", Tab. 8) | see below |
+| Cache → official statistics | National per-source totals (Tab. 8), thermoelectric per region (Tab. 18) and per category (Tab. 20) from Terna's yearbook *Dati statistici sull'energia elettrica in Italia* | see below |
+| Province level | The two independent endpoints that publish the same sources (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
 
 The single failing check is an upstream quirk, not a defect: for a handful of
 province/year cells Terna returns `0` (or omits the value) for one capacity
@@ -61,6 +62,46 @@ efficient power (+5.7%) and 74.5 GW of renewable capacity.
   22.8, PV 24.2, wind 11.7, geothermal 0.9) that do **not** coincide with the
   yearbook's (thermal 63.2, hydro 23.2, PV 25.1, wind 11.9, geothermal 0.8).
   Do not compare that dataset 1:1 with published statistics.
+
+### Thermoelectric dataset, checked at three levels
+
+The 2024 edition of the yearbook publishes the thermoelectric breakdown twice, so
+the dataset can be checked beyond the national total:
+
+| Level | Source | App | Δ |
+| --- | --- | --- | --- |
+| National, gross | Tab. 8 `termoelettrici` 62.109,9 MW | 62.109,905 MW | **exact** |
+| By region (all 20) | Tab. 18 `ITALIA` column, e.g. Lombardia 12.706,9 · Veneto 2.683,0 · Friuli 1.530,9 · Puglia 6.490,5 · Marche 503,2 · Emilia 6.742,9 · Valle d'Aosta 14,1 | identical for every region | **exact** |
+| By category | Tab. 20 group A (electricity only) 35.419,9 MW · group B (combined heat and power) 26.690,0 MW | *Non cogenerative* 35.419,912 · *Cogenerative* 26.689,993 | **exact** |
+
+### Province level, and the two hydro perimeters
+
+`renewable_source_capacity` and `generation_plants` are separate endpoints that
+publish the same four renewable sources. Comparing them province by province for
+2024: **297 of 304 comparable pairs are identical to the decimal**; all seven
+differences are hydro, and they sum to **3.986,301 MW** — exactly the pure
+pumped-storage capacity the yearbook lists under `di cui pompaggio puro`
+(3.986,3 MW), in Cuneo, Varese, Caserta, Siracusa, Bologna, Palermo and Bolzano.
+
+So the two datasets differ by design, not by error:
+
+| Dataset | Hydro perimeter | 2024 |
+| --- | --- | --- |
+| `renewable_source_capacity` | excludes pure pumped storage | 19.637,16 MW |
+| `generation_plants` | includes it | 23.623,46 MW (yearbook: 23.623,5) |
+
+### One upstream inconsistency worth knowing
+
+Inside the `generation_plants` endpoint, the `Termoelettrico` series reports
+**3.468,0 MW less** than both the yearbook and the dedicated thermoelectric
+endpoint (58.641,91 vs 62.109,905 MW, −5,6 %), concentrated in Friuli-Venezia
+Giulia (−1.042,3), Puglia (−1.217,7), Marche (−468,7), Lombardia (−321,4),
+Emilia-Romagna (−213,5) and Veneto (−204,3). Every other source in that endpoint
+matches the yearbook exactly, and the same total fetched through
+`/thermoelectric-capacity` is correct — so the discrepancy lives in the platform
+endpoint, not in the app or its parsing. Use the *Thermoelectric capacity*
+dataset for thermal figures; the region totals of *Generation plants* inherit the
+gap in those six regions.
 
 Practical rule: this app reports the **Terna Developer API**, so it is the right
 tool for trends, regional comparisons and export — not for quoting official

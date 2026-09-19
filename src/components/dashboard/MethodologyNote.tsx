@@ -16,6 +16,13 @@ export function MethodologyNote() {
           (net of decommissioning).
         </p>
         <p>
+          The two hydro series differ by design: <strong className="font-semibold">Renewable source capacity</strong>{" "}
+          excludes pure pumped storage, <strong className="font-semibold">Generation plants</strong> includes it
+          (+3,99 GW in 2024). For thermoelectric totals prefer the dedicated{" "}
+          <strong className="font-semibold">Thermoelectric capacity</strong> dataset: the generation-plants endpoint
+          reports about 3,5 GW less thermal capacity than the platform total.
+        </p>
+        <p>
           Source: Terna Developer API (efficient power). Values can differ from Terna Gaudì / statistical
           publications, which report nominal power with a different methodology and perimeter: wind, geothermal
           and thermoelectric totals match the official yearbook to the decimal, while the API's hydro series
