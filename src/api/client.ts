@@ -23,17 +23,18 @@ declare global {
 }
 
 /**
- * Resolved lazily on every request: inside the packaged Tauri app the Rust
- * shell picks a free port at startup and stores it in
- * `window.__TERNA_API_BASE__` (see src/main.tsx). In the browser we fall back
- * to the build-time value.
+ * Base URL dell'API.
+ *
+ * Nella modalità normale la SPA è servita *dallo stesso server* che espone
+ * l'API, quindi basta un percorso relativo: niente porta da scoprire, niente
+ * CORS, niente eccezioni CSP. `window.__TERNA_API_BASE__` resta supportato per
+ * uno shell esterno, e `VITE_API_BASE_URL` per puntare altrove in sviluppo.
  */
 export function apiBase(): string {
-  return (
-    (typeof window !== "undefined" && window.__TERNA_API_BASE__) ||
-    (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-    "http://127.0.0.1:8765"
-  );
+  if (typeof window !== "undefined" && window.__TERNA_API_BASE__) {
+    return window.__TERNA_API_BASE__;
+  }
+  return (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 }
 
 export class ApiError extends Error {

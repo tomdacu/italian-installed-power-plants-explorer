@@ -1,0 +1,156 @@
+import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { CapacityStore, parseGroupBy } from "../server/db.ts";
+import type { CapacityRow } from "../server/normalize.ts";
+import type { RecordFilters } from "../shared/types.ts";
+
+const FETCHED = "2026-01-01T00:00:00+00:00";
+
+function row(overrides: Partial<CapacityRow> & { year: number; source: string; efficient_power_mw: number }): CapacityRow {
+  return {
+    dataset: "renewable_source_capacity",
+    capacity_type: "Lorda",
+    region: "Lombardia",
+    province: "Milano",
+    category: null,
+    subcategory: null,
+    type: null,
+    installed_capacity_gw: null,
+    fetched_at: FETCHED,
+    ...overrides,
+  };
+}
+
+/** Due anni, due fonti, entrambi gli indici: Lorda 2023 = 30 MW (10+20), 2024 = 40 MW (15+25). */
+function seed(store: CapacityStore): void {
+  const rows: CapacityRow[] = [];
+  for (const [year, fotovoltaico, eolico] of [
+    [2023, 10, 20],
+    [2024, 15, 25],
+  ] as const) {
+    for (const [source, mw] of [
+      ["Fotovoltaico", fotovoltaico],
+      ["Eolico", eolico],
+    ] as const) {
+      for (const capacityType of ["Lorda", "Netta"] as const) {
+        rows.push(row({ year, source, efficient_power_mw: mw, capacity_type: capacityType }));
+      }
+    }
+  }
+  store.upsertRecords(rows);
+}
+
+function freshStore(): CapacityStore {
+  return new CapacityStore(join(mkdtempSync(join(tmpdir(), "ice-test-")), "cache.sqlite"));
+}
+
+describe("parseGroupBy", () => {
+  test("accetta compound e il vecchio separatore +", () => {
+    expect(parseGroupBy("year,source")).toEqual(["year", "source"]);
+    expect(parseGroupBy("year+source")).toEqual(["year", "source"]);
+    expect(parseGroupBy("source")).toEqual(["source"]);
+  });
+
+  test("rifiuta input arbitrari (niente SQL injection)", () => {
+    expect(() => parseGroupBy("year; DROP TABLE x")).toThrow();
+    expect(() => parseGroupBy("")).toThrow();
+  });
+});
+
+describe("CapacityStore", () => {
+  let store: CapacityStore;
+
+  beforeEach(() => {
+    store = freshStore();
+  });
+
+  test("upsert idempotente e aggregazione per regione", () => {
+    store.upsertRecords([
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 10, province: "Milano" }),
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 5, province: "Bergamo" }),
+    ]);
+    store.upsertRecords([row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 5, province: "Milano" })]);
+
+    const summary = store.summary({ region: "Lombardia", source: "Fotovoltaico" } satisfies RecordFilters);
+    const byRegion = store.aggregate({ source: "Fotovoltaico" } satisfies RecordFilters, "region");
+
+    // Il secondo upsert aggiorna Milano (10 → 5): la somma è 5 + 5 di Bergamo.
+    expect(summary.row_count).toBe(2);
+    expect(summary.total_efficient_power_mw).toBe(10);
+    // Il contratto espone tutte le dimensioni: le non raggruppate sono null.
+    expect(byRegion).toEqual([
+      {
+        year: null,
+        region: "Lombardia",
+        province: null,
+        source: null,
+        capacity_type: null,
+        category: null,
+        subcategory: null,
+        type: null,
+        efficient_power_mw: 10,
+        installed_capacity_gw: null,
+      },
+    ]);
+  });
+
+  test("l'aggregato compound riporta le fonti per nome", () => {
+    seed(store);
+    const rows = store.aggregate({ capacity_type: "Lorda" } satisfies RecordFilters, "year,source");
+    const byKey = new Map(rows.map((entry) => [`${entry.year}|${entry.source}`, entry.efficient_power_mw]));
+
+    expect(byKey.get("2023|Eolico")).toBe(20);
+    expect(byKey.get("2024|Fotovoltaico")).toBe(15);
+    expect(rows.every((entry) => Boolean(entry.source) && entry.source !== "Unknown")).toBe(true);
+  });
+
+  test("latest_only non somma mai gli anni", () => {
+    seed(store);
+    const rows = store.aggregate({ capacity_type: "Lorda" } satisfies RecordFilters, "source", true);
+    const bySource = new Map(rows.map((entry) => [entry.source, entry.efficient_power_mw]));
+
+    expect(bySource.get("Fotovoltaico")).toBe(15);
+    expect(bySource.get("Eolico")).toBe(25);
+  });
+
+  test("il riepilogo usa un indice solo e calcola il delta annuo", () => {
+    seed(store);
+    const summary = store.summary({} satisfies RecordFilters);
+
+    expect(summary.latest_year).toBe(2024);
+    expect(summary.latest_total_efficient_power_mw).toBe(40);
+    expect(summary.previous_year).toBe(2023);
+    expect(summary.previous_total_efficient_power_mw).toBe(30);
+    expect(summary.yoy_new_mw).toBe(10);
+    expect(summary.yoy_pct).toBeCloseTo((10 / 30) * 100, 6);
+    expect(summary.capacity_type_applied).toBe("Lorda");
+
+    const netta = store.summary({ capacity_type: "Netta" } satisfies RecordFilters);
+    expect(netta.capacity_type_applied).toBe("Netta");
+    expect(netta.latest_total_efficient_power_mw).toBe(40);
+  });
+
+  test("availability riporta righe per anno", () => {
+    seed(store);
+    const availability = store.availability();
+    const dataset = availability.datasets.renewable_source_capacity;
+
+    expect(dataset?.year_min).toBe(2023);
+    expect(dataset?.year_max).toBe(2024);
+    expect(dataset?.total_rows).toBe(8);
+    expect(Object.fromEntries((dataset?.years ?? []).map((year) => [year.year, year.rows]))).toEqual({ 2023: 4, 2024: 4 });
+  });
+
+  test("l'export CSV ha intestazione, escaping e tutte le righe filtrate", () => {
+    store.upsertRecords([row({ year: 2024, source: 'Idrico "special"', efficient_power_mw: 1.5 })]);
+    const csv = store.toCsv({} satisfies RecordFilters);
+    const lines = csv.trim().split("\r\n");
+
+    expect(lines[0]).toContain("dataset,year,capacity_type");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"Idrico ""special"""');
+  });
+});

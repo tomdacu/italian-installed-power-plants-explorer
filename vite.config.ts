@@ -17,6 +17,15 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // In sviluppo il server locale (`bun run serve`) espone API e dati: il dev
+    // server gli gira davanti, così il frontend usa percorsi relativi in ogni
+    // modalità e non serve nessuna variabile d'ambiente per la base URL.
+    proxy: Object.fromEntries(
+      ["/health", "/records", "/analytics", "/metadata", "/settings", "/sync", "/export"].map((path) => [
+        path,
+        { target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:8799", changeOrigin: false },
+      ]),
+    ),
   },
   build: {
     target: "es2022",

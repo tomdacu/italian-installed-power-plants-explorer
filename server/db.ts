@@ -1,0 +1,424 @@
+/**
+ * Cache SQLite locale: schema, upsert idempotente, query di analisi ed export.
+ * Porting fedele di `backend/src/terna_backend/storage.py` — stesso schema,
+ * stesse chiavi, stessa semantica di "stock" (mai somme fra anni o fra indici).
+ *
+ * Le query passano da `prepare()` e le righe vengono lette tramite interfacce
+ * dichiarate: bun:sqlite restituisce valori non tipizzati, quindi il cast
+ * avviene una volta per query dentro una costante nominata.
+ */
+import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
+import { DEFAULT_CAPACITY_TYPE } from "./constants.ts";
+import type { CapacityRow } from "./normalize.ts";
+import { GROUP_BY_FIELDS } from "../shared/types.ts";
+import type {
+  AggregatePoint,
+  Availability,
+  AvailabilityDataset,
+  CapacityRecord,
+  DatasetName,
+  RecordFilters,
+  Summary,
+} from "../shared/types.ts";
+
+const EXACT_FIELDS = [
+  "dataset",
+  "region",
+  "province",
+  "source",
+  "capacity_type",
+  "category",
+  "subcategory",
+  "type",
+] as const;
+
+const MW_DATASET_NAMES: readonly DatasetName[] = [
+  "renewable_source_capacity",
+  "generation_plants",
+  "thermoelectric_capacity",
+];
+
+type Bindings = Record<string, string | number | null>;
+
+interface CountRow {
+  n: number;
+}
+interface OptionRow {
+  value: string | number;
+}
+interface AvailabilityRow {
+  dataset: DatasetName;
+  year: number;
+  rows: number;
+  sources: string | null;
+  capacity_types: string | null;
+  last_fetched: string | null;
+}
+interface TotalsRow {
+  mw: number | null;
+  gw: number | null;
+}
+interface YearRow {
+  y: number | null;
+}
+interface SummaryBaseRow {
+  row_count: number;
+  total_efficient_power_mw: number | null;
+  total_installed_capacity_gw: number | null;
+  year_min: number | null;
+  year_max: number | null;
+}
+
+export function parseGroupBy(raw: string): string[] {
+  const parts = (raw || "")
+    .split(/[,+;\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const seen: string[] = [];
+  for (const part of parts) {
+    if (!(GROUP_BY_FIELDS as readonly string[]).includes(part)) {
+      throw new Error(`Unsupported group_by: ${raw}`);
+    }
+    if (!seen.includes(part)) seen.push(part);
+  }
+  if (seen.length === 0) throw new Error(`Unsupported group_by: ${raw}`);
+  return seen;
+}
+
+export function recordKey(row: CapacityRow | Record<string, unknown>): string {
+  const parts = [
+    row.dataset,
+    row.year,
+    row.capacity_type,
+    row.region,
+    row.province,
+    row.source,
+    row.category,
+    row.subcategory,
+    row.type,
+  ];
+  return createHash("sha256")
+    .update(parts.map((part) => (part === null || part === undefined ? "" : String(part))).join("|"))
+    .digest("hex");
+}
+
+function csvField(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export class CapacityStore {
+  readonly databasePath: string;
+  private readonly db: Database;
+
+  constructor(databasePath: string) {
+    this.databasePath = databasePath;
+    mkdirSync(dirname(databasePath), { recursive: true });
+    this.db = new Database(databasePath);
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.createSchema();
+  }
+
+  private createSchema(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS capacity_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_key TEXT NOT NULL UNIQUE,
+        dataset TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        capacity_type TEXT,
+        region TEXT,
+        province TEXT,
+        source TEXT,
+        category TEXT,
+        subcategory TEXT,
+        type TEXT,
+        efficient_power_mw REAL,
+        installed_capacity_gw REAL,
+        fetched_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_capacity_filters
+        ON capacity_records (dataset, year, region, province, source, capacity_type);
+      CREATE INDEX IF NOT EXISTS idx_capacity_year ON capacity_records (year);
+    `);
+  }
+
+  /** Inserisce o aggiorna per `record_key`: risincronizzare non duplica righe. */
+  upsertRecords(rows: CapacityRow[]): number {
+    if (rows.length === 0) return 0;
+    const statement = this.db.prepare(`
+      INSERT INTO capacity_records (
+        record_key, dataset, year, capacity_type, region, province, source,
+        category, subcategory, type, efficient_power_mw, installed_capacity_gw, fetched_at
+      ) VALUES (
+        $record_key, $dataset, $year, $capacity_type, $region, $province, $source,
+        $category, $subcategory, $type, $efficient_power_mw, $installed_capacity_gw, $fetched_at
+      )
+      ON CONFLICT(record_key) DO UPDATE SET
+        efficient_power_mw = excluded.efficient_power_mw,
+        installed_capacity_gw = excluded.installed_capacity_gw,
+        fetched_at = excluded.fetched_at
+    `);
+    const write = this.db.transaction((batch: CapacityRow[]) => {
+      for (const row of batch) {
+        // bun:sqlite vuole le chiavi dei parametri nominati con il prefisso `$`.
+        statement.run({
+          $record_key: recordKey(row),
+          $dataset: row.dataset,
+          $year: row.year,
+          $capacity_type: row.capacity_type,
+          $region: row.region,
+          $province: row.province,
+          $source: row.source,
+          $category: row.category,
+          $subcategory: row.subcategory,
+          $type: row.type,
+          $efficient_power_mw: row.efficient_power_mw,
+          $installed_capacity_gw: row.installed_capacity_gw,
+          $fetched_at: row.fetched_at,
+        } as Bindings);
+      }
+    });
+    write(rows);
+    return rows.length;
+  }
+
+  private where(filters: RecordFilters): { clause: string; params: Bindings } {
+    const clauses: string[] = [];
+    const params: Bindings = {};
+    for (const field of EXACT_FIELDS) {
+      const value = filters[field];
+      if (value) {
+        clauses.push(`${field} = $${field}`);
+        params[`$${field}`] = value;
+      }
+    }
+    if (filters.year_from !== null && filters.year_from !== undefined) {
+      clauses.push("year >= $year_from");
+      params.$year_from = filters.year_from;
+    }
+    if (filters.year_to !== null && filters.year_to !== undefined) {
+      clauses.push("year <= $year_to");
+      params.$year_to = filters.year_to;
+    }
+    return { clause: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  }
+
+  records(filters: RecordFilters, limit = 5000, offset = 0): CapacityRecord[] {
+    const { clause, params } = this.where(filters);
+    const rows = this.db
+      .prepare(
+        `SELECT dataset, year, capacity_type, region, province, source, category,
+                subcategory, type, efficient_power_mw, installed_capacity_gw, fetched_at
+         FROM capacity_records ${clause}
+         ORDER BY year, region, province, source, capacity_type, category, subcategory, type
+         LIMIT $limit OFFSET $offset`,
+      )
+      .all({ ...params, $limit: limit, $offset: offset });
+    return rows as CapacityRecord[];
+  }
+
+  options(): Record<string, unknown[]> {
+    const fields = ["dataset", "year", "region", "province", "source", "capacity_type", "category", "subcategory", "type"];
+    const result: Record<string, unknown[]> = {};
+    for (const field of fields) {
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT ${field} AS value FROM capacity_records
+           WHERE ${field} IS NOT NULL ORDER BY ${field}`,
+        )
+        .all() as OptionRow[];
+      result[`${field}s`] = rows.map((row) => row.value);
+    }
+    return result;
+  }
+
+  availability(): Availability {
+    const rows = this.db
+      .prepare(
+        `SELECT dataset, year, COUNT(*) AS rows,
+                GROUP_CONCAT(DISTINCT source) AS sources,
+                GROUP_CONCAT(DISTINCT capacity_type) AS capacity_types,
+                MAX(fetched_at) AS last_fetched
+         FROM capacity_records GROUP BY dataset, year ORDER BY dataset, year`,
+      )
+      .all() as AvailabilityRow[];
+    const counted = this.db.prepare("SELECT COUNT(*) AS n FROM capacity_records").get() as CountRow | null;
+
+    const datasets: Partial<Record<DatasetName, AvailabilityDataset>> = {};
+    for (const row of rows) {
+      const entry = (datasets[row.dataset] ??= {
+        years: [],
+        total_rows: 0,
+        year_min: null,
+        year_max: null,
+        last_fetched: null,
+      });
+      entry.years.push({
+        year: row.year,
+        rows: row.rows,
+        sources: (row.sources ?? "").split(",").filter(Boolean).sort(),
+        capacity_types: (row.capacity_types ?? "").split(",").filter(Boolean).sort(),
+      });
+      entry.total_rows += row.rows;
+      entry.year_min = entry.year_min === null ? row.year : Math.min(entry.year_min, row.year);
+      entry.year_max = entry.year_max === null ? row.year : Math.max(entry.year_max, row.year);
+      if (row.last_fetched && (entry.last_fetched === null || row.last_fetched > entry.last_fetched)) {
+        entry.last_fetched = row.last_fetched;
+      }
+    }
+    return { datasets, total_rows: counted?.n ?? 0 };
+  }
+
+  /** Indice di capacità usato per i totali "stock" (uno solo, mai entrambi). */
+  private capacityApplied(filters: RecordFilters): string | null {
+    if (filters.dataset === "installed_capacity") return null;
+    if (filters.dataset && !MW_DATASET_NAMES.includes(filters.dataset)) return null;
+    return filters.capacity_type ?? DEFAULT_CAPACITY_TYPE;
+  }
+
+  private stockTotals(
+    filters: RecordFilters,
+    applied: string | null,
+    year: number,
+  ): { mw: number | null; gw: number | null } {
+    const scoped: RecordFilters = { ...filters, year_from: year, year_to: year };
+    if (applied) scoped.capacity_type = applied as RecordFilters["capacity_type"];
+    const { clause, params } = this.where(scoped);
+    const row = this.db
+      .prepare(
+        `SELECT SUM(efficient_power_mw) AS mw, SUM(installed_capacity_gw) AS gw
+         FROM capacity_records ${clause}`,
+      )
+      .get(params) as TotalsRow | null;
+    return { mw: row?.mw ?? null, gw: row?.gw ?? null };
+  }
+
+  private previousYear(filters: RecordFilters, latest: number): number | null {
+    const scoped: RecordFilters = { ...filters, year_to: latest - 1 };
+    const { clause, params } = this.where(scoped);
+    const row = this.db
+      .prepare(`SELECT MAX(year) AS y FROM capacity_records ${clause}`)
+      .get(params) as YearRow | null;
+    return row?.y ?? null;
+  }
+
+  summary(filters: RecordFilters): Summary {
+    const { clause, params } = this.where(filters);
+    const base = this.db
+      .prepare(
+        `SELECT COUNT(*) AS row_count,
+                SUM(efficient_power_mw) AS total_efficient_power_mw,
+                SUM(installed_capacity_gw) AS total_installed_capacity_gw,
+                MIN(year) AS year_min, MAX(year) AS year_max
+         FROM capacity_records ${clause}`,
+      )
+      .get(params) as SummaryBaseRow | null;
+
+    const totals: SummaryBaseRow = base ?? {
+      row_count: 0,
+      total_efficient_power_mw: null,
+      total_installed_capacity_gw: null,
+      year_min: null,
+      year_max: null,
+    };
+
+    const applied = this.capacityApplied(filters);
+    const latestYear = totals.year_max;
+    let latestMw: number | null = null;
+    let latestGw: number | null = null;
+    let previousYear: number | null = null;
+    let previousMw: number | null = null;
+    let previousGw: number | null = null;
+
+    if (latestYear !== null) {
+      const latest = this.stockTotals(filters, applied, latestYear);
+      latestMw = latest.mw;
+      latestGw = latest.gw;
+      previousYear = this.previousYear(filters, latestYear);
+      if (previousYear !== null) {
+        const previous = this.stockTotals(filters, applied, previousYear);
+        previousMw = previous.mw;
+        previousGw = previous.gw;
+      }
+    }
+
+    const isGwDataset = filters.dataset === "installed_capacity";
+    const primaryLatest = isGwDataset ? latestGw : latestMw;
+    const primaryPrevious = isGwDataset ? previousGw : previousMw;
+    const yoyNew =
+      primaryLatest !== null && primaryPrevious !== null ? primaryLatest - primaryPrevious : null;
+    const yoyPct = yoyNew !== null && primaryPrevious ? (yoyNew / primaryPrevious) * 100 : null;
+
+    return {
+      ...totals,
+      latest_year: latestYear,
+      latest_total_efficient_power_mw: latestMw,
+      latest_total_installed_capacity_gw: latestGw,
+      previous_year: previousYear,
+      previous_total_efficient_power_mw: previousMw,
+      yoy_new_mw: isGwDataset ? null : yoyNew,
+      yoy_new_gw: isGwDataset ? yoyNew : null,
+      yoy_pct: yoyPct,
+      capacity_type_applied: applied,
+    };
+  }
+
+  aggregate(filters: RecordFilters, groupBy: string, latestOnly = false): AggregatePoint[] {
+    const keys = parseGroupBy(groupBy);
+    const { clause, params } = this.where(filters);
+    const scopedClause = latestOnly
+      ? clause
+        ? `${clause} AND year = (SELECT MAX(year) FROM capacity_records ${clause})`
+        : "WHERE year = (SELECT MAX(year) FROM capacity_records)"
+      : clause;
+    const columns = keys.join(", ");
+    // Ogni riga espone tutte le dimensioni: quelle non raggruppate valgono NULL,
+    // come nella risposta FastAPI (il frontend legge sempre `row[splitKey]`).
+    const projection = GROUP_BY_FIELDS.map((field) =>
+      keys.includes(field) ? field : `NULL AS ${field}`,
+    ).join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT ${projection},
+                SUM(efficient_power_mw) AS efficient_power_mw,
+                SUM(installed_capacity_gw) AS installed_capacity_gw
+         FROM capacity_records ${scopedClause}
+         GROUP BY ${columns}
+         ORDER BY ${columns}`,
+      )
+      .all(params);
+    return rows as AggregatePoint[];
+  }
+
+  toCsv(filters: RecordFilters): string {
+    const fields: (keyof CapacityRecord)[] = [
+      "dataset",
+      "year",
+      "capacity_type",
+      "region",
+      "province",
+      "source",
+      "category",
+      "subcategory",
+      "type",
+      "efficient_power_mw",
+      "installed_capacity_gw",
+      "fetched_at",
+    ];
+    const lines = [fields.join(",")];
+    for (const row of this.records(filters, 1_000_000)) {
+      lines.push(fields.map((field) => csvField(row[field])).join(","));
+    }
+    return `${lines.join("\r\n")}\r\n`;
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
