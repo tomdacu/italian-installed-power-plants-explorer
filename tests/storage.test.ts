@@ -145,12 +145,13 @@ describe("CapacityStore", () => {
   });
 
   test("dataQuality segnala i buchi di pubblicazione e ignora le celle vuote strutturali", () => {
-    // Milano/Fotovoltaico ha un valore solo nel 2024 → il NULL del 2023 è un
-    // buco di pubblicazione. Bergamo/Geotermoelettrico è vuoto in tutti gli
-    // anni → la fonte non esiste lì e non è un dato mancante.
+    // Bergamo/Fotovoltaico ha un valore nel 2024 ma non nel 2023: il NULL del
+    // 2023 è un buco di pubblicazione. Bergamo/Geotermoelettrico è vuoto in
+    // tutti gli anni → la fonte non esiste lì e non è un dato mancante.
     seed(store);
     store.upsertRecords([
-      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: null as unknown as number }),
+      row({ year: 2023, province: "Bergamo", source: "Fotovoltaico", efficient_power_mw: null as unknown as number }),
+      row({ year: 2024, province: "Bergamo", source: "Fotovoltaico", efficient_power_mw: 30 }),
       row({ year: 2024, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
       row({ year: 2023, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
     ]);
@@ -160,6 +161,18 @@ describe("CapacityStore", () => {
 
     expect(byYear[2023]).toBe(1);
     expect(byYear[2024]).toBeUndefined();
+  });
+
+  test("risincronizzare senza valore non cancella un valore già acquisito", () => {
+    // Terna manda per la stessa chiave una riga piena e una vuota: la riga
+    // vuota non deve azzerare quella piena (era la causa dei buchi nel
+    // fotovoltaico 2021-2023).
+    seed(store);
+    store.upsertRecords([row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: null as unknown as number })]);
+
+    const [record] = store.records({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023, source: "Fotovoltaico", capacity_type: "Lorda" });
+
+    expect(record?.efficient_power_mw).toBe(10);
   });
 
   test("l'export CSV ha intestazione, escaping e tutte le righe filtrate", () => {

@@ -407,10 +407,10 @@ export function SyncPage() {
 
             <section className="card p-5">
               <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
-                <span className="font-semibold text-ink-800 dark:text-ink-100">Tip.</span> A full
-                multi-year sync takes a few minutes (Terna throttles requests to ~1 per second).
-                Keep the app open while it runs — you can explore previously synced data on the
-                dashboard in the meantime.
+                <span className="font-semibold text-ink-800 dark:text-ink-100">Tip.</span> Each year
+                needs one request per dataset, paced at about one per second to stay inside Terna&apos;s
+                limits: four years of everything takes roughly half a minute. Keep the app open while
+                it runs — you can explore previously synced data on the dashboard in the meantime.
               </p>
             </section>
           </div>

@@ -4,8 +4,6 @@
  * prima dell'esecuzione (così il totale dei passi è sempre esatto) e un passo
  * fallito non interrompe il job.
  */
-import { DATASET_SOURCES, INSTALLED_CAPACITY_TYPES } from "./constants.ts";
-import { CAPACITY_TYPES } from "../shared/types.ts";
 import {
   generationPlantsRows,
   installedCapacityRows,
@@ -28,9 +26,6 @@ export interface SyncStep {
   label: string;
   dataset: DatasetName;
   year: number;
-  source?: string | null;
-  capacity_type?: string | null;
-  installed_type?: string | null;
 }
 
 interface JobState {
@@ -44,63 +39,32 @@ interface JobState {
   emptySteps: number;
 }
 
-/** Richieste fuori dalle liste valide producono corpi vuoti: si scartano. */
-function effectiveCombos(
-  requestedSources: string[],
-  requestedTypes: string[],
-  validSources: readonly string[],
-): { sources: string[]; capacityTypes: string[]; dropped: number } {
-  const sourceList = requestedSources.length > 0 ? requestedSources : [...validSources];
-  const typeList = requestedTypes.length > 0 ? requestedTypes : [...CAPACITY_TYPES];
-  const keptSources = sourceList.filter((source) => validSources.includes(source));
-  const keptTypes = typeList.filter((type) => (CAPACITY_TYPES as readonly string[]).includes(type));
-  return {
-    sources: keptSources,
-    capacityTypes: keptTypes,
-    dropped: sourceList.length * typeList.length - keptSources.length * keptTypes.length,
-  };
-}
-
+/**
+ * Un solo passo per dataset e anno: Terna restituisce in una risposta tutte le
+ * fonti e tutti gli indici (verificato sul payload reale — `renewable-source-capacity`
+ * 2023 senza filtri torna 1.160 righe, `thermoelectric-capacity` 1.192). Il
+ * vecchio piano chiedeva anno × fonte × indice, cioè 27 richieste per anno, ed
+ * è così che si finiva contro il limite di richieste dell'API.
+ */
 export function buildPlan(request: SyncRequestPayload): { steps: SyncStep[]; dropped: number } {
   const steps: SyncStep[] = [];
-  let dropped = 0;
   const datasets = (request.datasets ?? [...SYNCABLE_DATASETS]).filter((dataset) =>
     SYNCABLE_DATASETS.includes(dataset),
   );
-  const sources = request.sources ?? [];
-  const types = request.capacity_types ?? [];
+  const labels: Record<string, string> = {
+    renewable_source_capacity: "Renewable capacity",
+    generation_plants: "Generation plants",
+    installed_capacity: "Installed capacity (national)",
+    thermoelectric_capacity: "Thermoelectric capacity",
+  };
 
   for (const year of request.years) {
     for (const dataset of datasets) {
-      if (dataset === "renewable_source_capacity" || dataset === "generation_plants") {
-        const combos = effectiveCombos(sources, types, DATASET_SOURCES[dataset]);
-        dropped += combos.dropped;
-        const label = dataset === "renewable_source_capacity" ? "Renewable capacity" : "Generation plants";
-        for (const source of combos.sources) {
-          for (const capacityType of combos.capacityTypes) {
-            steps.push({ label: `${label} ${year} ${source} ${capacityType}`, dataset, year, source, capacity_type: capacityType });
-          }
-        }
-        continue;
-      }
-
-      if (dataset === "installed_capacity") {
-        for (const installedType of INSTALLED_CAPACITY_TYPES) {
-          steps.push({ label: `Installed capacity ${year} ${installedType}`, dataset, year, installed_type: installedType });
-        }
-        continue;
-      }
-
-      const typeList = types.length > 0 ? types : [...CAPACITY_TYPES];
-      const kept = typeList.filter((type) => (CAPACITY_TYPES as readonly string[]).includes(type));
-      dropped += typeList.length - kept.length;
-      for (const capacityType of kept) {
-        steps.push({ label: `Thermoelectric capacity ${year} ${capacityType}`, dataset, year, capacity_type: capacityType });
-      }
+      steps.push({ label: `${labels[dataset]} ${year}`, dataset, year });
     }
   }
 
-  return { steps, dropped };
+  return { steps, dropped: 0 };
 }
 
 export class SyncManager {
@@ -187,31 +151,18 @@ export class SyncManager {
     if (stored === 0) state.emptySteps += 1;
   }
 
+  /** Una richiesta per passo: l'endpoint torna già tutte le fonti e gli indici. */
   private async fetchStep(client: TernaClient, step: SyncStep): Promise<CapacityRow[]> {
     if (step.dataset === "renewable_source_capacity") {
-      const payload = await client.renewableSourceCapacity({
-        year: step.year,
-        source: step.source,
-        capacity_type: step.capacity_type,
-      });
-      return renewableSourceCapacityRows(payload);
+      return renewableSourceCapacityRows(await client.renewableSourceCapacity({ year: step.year }));
     }
     if (step.dataset === "generation_plants") {
-      const payload = await client.generationPlants({
-        year: step.year,
-        source: step.source,
-        capacity_type: step.capacity_type,
-      });
-      return generationPlantsRows(payload);
+      return generationPlantsRows(await client.generationPlants({ year: step.year }));
     }
     if (step.dataset === "installed_capacity") {
-      const payload = await client.installedCapacity({ year: step.year, type: step.installed_type });
-      return installedCapacityRows(payload);
+      return installedCapacityRows(await client.installedCapacity({ year: step.year }));
     }
-    const payload = await client.thermoelectricCapacity({
-      year: step.year,
-      capacity_type: step.capacity_type,
-    });
-    return thermoelectricCapacityRows(payload);
+    return thermoelectricCapacityRows(await client.thermoelectricCapacity({ year: step.year }));
   }
+
 }

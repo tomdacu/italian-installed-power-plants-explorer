@@ -3,14 +3,14 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { api } from "@/api/client";
-import { SINGLE_SERIES_COLOR, formatGw, formatMw } from "@/lib/utils";
+import { colorFor, formatGw, formatMw } from "@/lib/utils";
 import { csvNumber, type CsvTable } from "@/lib/csv";
 import type { AggregatePoint, GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
@@ -19,33 +19,79 @@ import { ChartCard } from "./ChartCard";
 import { measureCsvKey } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
 
-/**
- * CSV of the geography bars. The chart draws the top 15 to stay readable; the
- * file carries every area of the selection, which is what the numbers are for.
- */
-export function capacityByGeographyCsv(
+/** Una riga della tabella: un'area con una colonna per fonte. */
+export interface AreaRow {
+  area: string;
+  total: number;
+  [series: string]: number | string;
+}
+
+export interface AreaSeries {
+  rows: AreaRow[];
+  /** Fonti presenti, dalla più grande alla più piccola. */
+  names: string[];
+}
+
+/** Raggruppa le righe (area, fonte) in una riga per area, con i totali. */
+export function areaSeries(
   records: AggregatePoint[],
-  groupBy: string,
+  areaKey: string,
+  splitKey: string,
+  valueKey: "efficient_power_mw" | "installed_capacity_gw",
+): AreaSeries {
+  const byArea = new Map<string, AreaRow>();
+  const totals = new Map<string, number>();
+
+  for (const record of records) {
+    const area = (record[areaKey as keyof AggregatePoint] as string | null) ?? "Unknown";
+    const series = (record[splitKey as keyof AggregatePoint] as string | null) ?? "Unknown";
+    const value = record[valueKey] ?? 0;
+    const row = byArea.get(area) ?? { area, total: 0 };
+    row[series] = ((row[series] as number | undefined) ?? 0) + value;
+    row.total += value;
+    byArea.set(area, row);
+    totals.set(series, (totals.get(series) ?? 0) + value);
+  }
+
+  return {
+    rows: [...byArea.values()].sort((a, b) => b.total - a.total),
+    names: [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name),
+  };
+}
+
+/**
+ * CSV of the area bars: one row per area and source, with the source's MW and
+ * its share of that area — the same breakdown the bars are split into. Every
+ * area of the selection is written, not only the ones drawn.
+ */
+export function capacityByAreaSourceCsv(
+  series: AreaSeries,
+  areaKey: string,
+  splitKey: string,
   isGw: boolean,
 ): CsvTable {
-  const rawKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
   const valueKey = measureCsvKey(isGw);
-  const total = records.reduce((sum, record) => sum + (record[rawKey] ?? 0), 0);
+  const rows: Record<string, unknown>[] = [];
+  for (const row of series.rows) {
+    for (const name of series.names) {
+      const value = row[name];
+      if (typeof value !== "number") continue;
+      rows.push({
+        [areaKey]: row.area,
+        [splitKey]: name,
+        [valueKey]: csvNumber(value),
+        share_in_area_percent: row.total > 0 ? csvNumber((value / row.total) * 100) : null,
+      });
+    }
+  }
   return {
     columns: [
-      { key: groupBy, label: groupBy },
+      { key: areaKey, label: areaKey },
+      { key: splitKey, label: splitKey },
       { key: valueKey, label: valueKey },
-      { key: "share_percent", label: "share_percent" },
+      { key: "share_in_area_percent", label: "share_in_area_percent" },
     ],
-    rows: records.map((record) => {
-      const value = record[rawKey];
-      return {
-        [groupBy]: record[groupBy as keyof AggregatePoint] ?? "",
-        [valueKey]: csvNumber(value),
-        share_percent:
-          total > 0 && value !== null ? csvNumber((value / total) * 100) : null,
-      };
-    }),
+    rows,
   };
 }
 
@@ -60,35 +106,38 @@ export function CapacityByRegionChart({
   title?: string;
   filename?: string;
 }) {
+  // installed_capacity rows carry `type` instead of `source`.
+  const splitKey = filters.dataset === "installed_capacity" ? "type" : "source";
+  const splitGroupBy = `${groupBy},${splitKey}`;
   const isGw = filters.dataset === "installed_capacity";
   const valueKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
   const fmt = isGw ? formatGw : formatMw;
   const unit = isGw ? "GW" : "MW";
+
   const data = useQuery({
-    // latest_only: stock of the latest year — summing stocks of several
-    // years would count the same plants multiple times.
-    queryKey: ["timeseries", groupBy, "latest", valueKey, filters],
-    queryFn: () => api.timeseries(groupBy, filters, { latest_only: true }),
+    // latest_only: stock of the latest year — summing stocks of several years
+    // would count the same plants multiple times. One compound request returns
+    // the full breakdown, so the split costs no extra round trips.
+    queryKey: ["timeseries", splitGroupBy, "latest", valueKey, filters],
+    queryFn: () => api.timeseries(splitGroupBy as GroupBy, filters, { latest_only: true }),
   });
 
-  const records = (data.data ?? []).slice().sort(
-    (a, b) => ((b[valueKey] as number | null) ?? 0) - ((a[valueKey] as number | null) ?? 0),
-  );
-  const top = records.slice(0, 15);
+  const series = areaSeries(data.data ?? [], groupBy, splitKey, valueKey);
+  const top = series.rows.slice(0, 15);
 
   return (
     <ChartCard
       title={title}
-      description={`Latest-year stock (${unit}) aggregated by ${groupBy} — top 15`}
+      description={`Latest-year stock (${unit}) per ${groupBy}, split by ${splitKey} — top 15 areas`}
       filename={filename}
-      csv={() => capacityByGeographyCsv(records, groupBy, isGw)}
+      csv={() => capacityByAreaSourceCsv(series, groupBy, splitKey, isGw)}
     >
       {data.isLoading ? (
         <LoadingOverlay label="Loading geography" />
       ) : data.isError ? (
         <ErrorState message={(data.error as Error).message} />
       ) : top.length > 0 ? (
-        <ResponsiveContainer width="100%" height={Math.max(220, top.length * 28)}>
+        <ResponsiveContainer width="100%" height={Math.max(240, top.length * 30)}>
           <BarChart data={top} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="24%">
             <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" horizontal={false} />
             <XAxis
@@ -102,7 +151,7 @@ export function CapacityByRegionChart({
             />
             <YAxis
               type="category"
-              dataKey={groupBy}
+              dataKey="area"
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 10.5 }}
@@ -111,14 +160,23 @@ export function CapacityByRegionChart({
               tickLine={false}
             />
             <Tooltip
-              formatter={(value: number) => [`${fmt(value)} ${unit}`, isGw ? "Installed capacity" : "Efficient power"]}
+              formatter={(value: number, name: string) => [`${fmt(value)} ${unit}`, name]}
+              labelFormatter={(label, payload) => {
+                const total = (payload?.[0]?.payload as AreaRow | undefined)?.total;
+                return total ? `${label} — ${fmt(total)} ${unit} total` : String(label);
+              }}
               cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
             />
-            <Bar dataKey={valueKey} name={isGw ? "Installed capacity GW" : "Efficient power MW"} radius={[0, 8, 8, 0]} maxBarSize={18}>
-              {top.map((r, i) => (
-                <Cell key={r[groupBy] ?? i} fill={SINGLE_SERIES_COLOR} />
-              ))}
-            </Bar>
+            <Legend iconType="circle" iconSize={8} />
+            {series.names.map((name, index) => (
+              <Bar
+                key={name}
+                dataKey={name}
+                stackId="area"
+                fill={colorFor(name, index, filters.dataset)}
+                maxBarSize={26}
+              />
+            ))}
           </BarChart>
         </ResponsiveContainer>
       ) : <ChartEmptyState dataset={filters.dataset} />}

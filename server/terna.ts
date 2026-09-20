@@ -7,11 +7,25 @@ import { setTimeout as sleep } from "node:timers/promises";
 const TOKEN_URL = "https://api.terna.it/public-api/access-token";
 const BASE_URL = "https://api.terna.it/generation/v2.0";
 
-/** Terna impone una quota per secondo sulle chiavi developer. */
+/**
+ * Terna limita le chiamate a ~1 al secondo e risponde `403 Developer Over Qps`
+ * quando due richieste cadono nello stesso secondo (verificato con le chiavi
+ * reali, con `retry-after: 1`). Il margine tiene conto che la finestra è
+ * allineata ai secondi dell'orologio, non ai nostri intervalli.
+ */
 export const MIN_REQUEST_INTERVAL = Math.max(
   0,
-  Number(process.env.TERNA_MIN_REQUEST_INTERVAL ?? "1.0") || 1.0,
+  Number(process.env.TERNA_MIN_REQUEST_INTERVAL ?? "1.2") || 1.2,
 );
+
+/**
+ * Oltre al limite per secondo c'è una quota più ampia (`403 Developer Over
+ * Rate`): quando scatta, ritentare subito non serve. Il client mette in pausa
+ * *tutte* le richieste finché la finestra non si riapre, invece di bruciare i
+ * tentativi uno per uno.
+ */
+const RATE_COOLDOWN_SECONDS = 60;
+const MAX_RATE_COOLDOWN_SECONDS = 600;
 const MAX_RETRIES = 5;
 const BACKOFF_SECONDS = [2, 4, 8, 15, 30];
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -37,6 +51,17 @@ function isRateLimited(status: number, body: string): boolean {
   return marker.includes("qps") || marker.includes("over") || marker.includes("rate limit") || marker.includes("too many");
 }
 
+/**
+ * `Developer Over Qps` è il limite per secondo e si supera aspettando un
+ * secondo; `Developer Over Rate` è la quota ampia e chiede una pausa lunga.
+ * Un 429 generico resta nel percorso normale (backoff + `retry-after`).
+ */
+function isBroadQuota(status: number, body: string): boolean {
+  if (status !== 403) return false;
+  const marker = body.toLowerCase();
+  return marker.includes("over rate") || marker.includes("quota");
+}
+
 interface Token {
   accessToken: string;
   expiresAt: number;
@@ -51,6 +76,11 @@ interface RequestOptions {
 export class TernaClient {
   private token: Token | null = null;
   private lastRequestAt = 0;
+  /** Finestra di silenzio dopo una quota esaurita: vale per ogni richiesta. */
+  private cooldownUntil = 0;
+  private cooldownSeconds = 0;
+  private readonly rateCooldownSeconds: number;
+  private readonly maxRateCooldownSeconds: number;
   private readonly tokenUrl: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -59,12 +89,20 @@ export class TernaClient {
     private readonly clientId: string,
     private readonly clientSecret: string,
     private readonly minRequestInterval: number = MIN_REQUEST_INTERVAL,
-    // Seam di test: gli endpoint e il transport sono sostituibili senza rete.
-    options: { tokenUrl?: string; baseUrl?: string; fetchImpl?: typeof fetch } = {},
+    // Seam di test: gli endpoint, il transport e le pause sono sostituibili senza rete.
+    options: {
+      tokenUrl?: string;
+      baseUrl?: string;
+      fetchImpl?: typeof fetch;
+      rateCooldownSeconds?: number;
+      maxRateCooldownSeconds?: number;
+    } = {},
   ) {
     this.tokenUrl = options.tokenUrl ?? TOKEN_URL;
     this.baseUrl = options.baseUrl ?? BASE_URL;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.rateCooldownSeconds = options.rateCooldownSeconds ?? RATE_COOLDOWN_SECONDS;
+    this.maxRateCooldownSeconds = options.maxRateCooldownSeconds ?? MAX_RATE_COOLDOWN_SECONDS;
   }
 
   async testCredentials(): Promise<boolean> {
@@ -114,6 +152,23 @@ export class TernaClient {
     });
   }
 
+  /** Dorme finché la quota ampia non si riapre; la pausa cresce a ogni colpo. */
+  private async waitForCooldown(): Promise<void> {
+    const remaining = this.cooldownUntil - Date.now();
+    if (remaining > 0) await sleep(remaining);
+  }
+
+  private startCooldown(retryAfterSeconds: number | null): void {
+    this.cooldownSeconds = Math.min(
+      this.maxRateCooldownSeconds,
+      Math.max(this.rateCooldownSeconds, this.cooldownSeconds * 2),
+    );
+    const seconds = Number.isFinite(retryAfterSeconds as number)
+      ? Math.max(this.cooldownSeconds, retryAfterSeconds as number)
+      : this.cooldownSeconds;
+    this.cooldownUntil = Date.now() + Math.min(this.maxRateCooldownSeconds, seconds) * 1000;
+  }
+
   private async throttle(): Promise<void> {
     if (this.minRequestInterval <= 0) return;
     const elapsed = (performance.now() - this.lastRequestAt) / 1000;
@@ -126,6 +181,7 @@ export class TernaClient {
     let lastError = "unknown error";
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      await this.waitForCooldown();
       await this.throttle();
       let response: Response | null = null;
       let retryAfter: string | null = null;
@@ -150,6 +206,12 @@ export class TernaClient {
         const retryable = isRateLimited(response.status, body) || response.status >= 500;
         if (!retryable) throw new TernaApiError(`Terna API request failed: ${lastError}`);
         retryAfter = response.headers.get("retry-after");
+        if (isBroadQuota(response.status, body)) {
+          // Quota ampia esaurita: si aspetta la finestra, non i pochi secondi
+          // del backoff normale.
+          const parsed = Number(retryAfter);
+          this.startCooldown(Number.isFinite(parsed) ? parsed : null);
+        }
       }
 
       if (attempt >= MAX_RETRIES) break;

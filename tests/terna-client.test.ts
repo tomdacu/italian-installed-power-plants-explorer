@@ -26,11 +26,13 @@ function stub(handler: (url: string, call: number) => Response): Stub {
   return state;
 }
 
-function client(transport: Stub): TernaClient {
+function client(transport: Stub, options: { rateCooldownSeconds?: number } = {}): TernaClient {
   return new TernaClient("id", "secret", 0, {
     tokenUrl: TOKEN_URL,
     baseUrl: BASE_URL,
     fetchImpl: transport.fetch,
+    rateCooldownSeconds: options.rateCooldownSeconds,
+    maxRateCooldownSeconds: options.rateCooldownSeconds,
   });
 }
 
@@ -71,6 +73,21 @@ test("insiste fino al numero massimo di tentativi", async () => {
 
   expect(transport.calls).toBe(6); // tentativo iniziale + 5 retry
   expect(error?.message).toContain("attempts");
+}, 20_000);
+
+test("sulla quota ampia mette in pausa tutte le richieste invece di insistere", async () => {
+  const transport = stub(() => new Response("<h1>Developer Over Rate</h1>", { status: 403, headers: { "retry-after": "0" } }));
+
+  const started = Date.now();
+  await client(transport, { rateCooldownSeconds: 0.4 })
+    .installedCapacity({ year: 2024 })
+    .catch(() => null);
+  const elapsed = Date.now() - started;
+
+  // Sei tentativi, ognuno preceduto dalla pausa: senza cooldown sarebbero
+  // immediati (il test dello di 429 qui sopra dura ~1s).
+  expect(transport.calls).toBe(6);
+  expect(elapsed).toBeGreaterThanOrEqual(5 * 400);
 }, 20_000);
 
 test("un corpo vuoto vale come 'nessun dato', non come errore", async () => {

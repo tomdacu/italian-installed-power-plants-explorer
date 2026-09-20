@@ -1,63 +1,49 @@
 import { expect, test } from "bun:test";
 
-import { GENERATION_PLANT_SOURCES, INSTALLED_CAPACITY_TYPES, RENEWABLE_SOURCES } from "../server/constants.ts";
 import { buildPlan } from "../server/sync.ts";
 
-test("il numero di passi corrisponde all'esecuzione", () => {
+test("una richiesta per dataset e anno", () => {
   const { steps, dropped } = buildPlan({
     years: [2023, 2024],
-    datasets: ["renewable_source_capacity"],
-    sources: ["Fotovoltaico", "Eolico"],
-    capacity_types: ["Lorda", "Netta"],
+    datasets: ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"],
+    sources: [],
+    capacity_types: [],
   });
 
   expect(dropped).toBe(0);
-  expect(steps).toHaveLength(2 * 2 * 2);
+  expect(steps).toHaveLength(2 * 4);
+  expect(steps.map((step) => step.label)).toContain("Renewable capacity 2023");
 });
 
-test("generation plants scarta Bioenergie senza far fallire il job", () => {
-  const { steps, dropped } = buildPlan({
-    years: [2024],
-    datasets: ["generation_plants"],
-    sources: ["Fotovoltaico", "Bioenergie"],
+test("il piano copre gli anni richiesti e ignora i dataset non sincronizzabili", () => {
+  const years = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
+  const { steps } = buildPlan({
+    years,
+    datasets: ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"],
+    sources: [],
+    capacity_types: [],
+  });
+
+  // Sette anni per dataset, non sette anni × fonti × indici: è la riduzione che
+  // tiene il sync lontano dal limite di richieste di Terna.
+  expect(steps).toHaveLength(years.length * 4);
+  expect(steps.every((step) => years.includes(step.year))).toBe(true);
+  expect(steps.some((step) => step.dataset === "renewable_source_capacity")).toBe(true);
+});
+
+test("la richiesta non dipende più da fonti e indici scelti dall'utente", () => {
+  const withFilters = buildPlan({
+    years: [2023],
+    datasets: ["renewable_source_capacity"],
+    sources: ["Fotovoltaico"],
     capacity_types: ["Lorda"],
   });
-
-  const sources = steps.map((step) => step.source);
-  expect(sources.every((source) => source === undefined || GENERATION_PLANT_SOURCES.includes(source as never))).toBe(true);
-  expect(sources).not.toContain("Bioenergie");
-  expect(dropped).toBe(1);
-});
-
-test("il piano completo resta sotto le 300 richieste", () => {
-  const { steps } = buildPlan({
-    years: [2018, 2019, 2020, 2021, 2022, 2023, 2024],
-    datasets: [
-      "renewable_source_capacity",
-      "generation_plants",
-      "installed_capacity",
-      "thermoelectric_capacity",
-    ],
-    sources: [...new Set([...RENEWABLE_SOURCES, "Termoelettrico"])],
-    capacity_types: ["Lorda", "Netta"],
+  const withoutFilters = buildPlan({
+    years: [2023],
+    datasets: ["renewable_source_capacity"],
+    sources: [],
+    capacity_types: [],
   });
 
-  const expected =
-    7 * RENEWABLE_SOURCES.length * 2 +
-    7 * GENERATION_PLANT_SOURCES.length * 2 +
-    7 * INSTALLED_CAPACITY_TYPES.length +
-    7 * 2;
-  expect(steps).toHaveLength(expected);
-  expect(steps.length).toBeLessThan(300);
-});
-
-test("i tipi di capacità non validi vengono scartati, non spediti", () => {
-  const { steps, dropped } = buildPlan({
-    years: [2024],
-    datasets: ["thermoelectric_capacity"],
-    capacity_types: ["Lorda", "Inesistente"],
-  });
-
-  expect(steps).toHaveLength(1);
-  expect(dropped).toBe(1);
+  expect(withFilters.steps).toEqual(withoutFilters.steps);
 });

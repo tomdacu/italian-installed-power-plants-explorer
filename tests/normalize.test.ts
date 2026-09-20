@@ -104,3 +104,50 @@ test("payload vuoto o assente produce zero righe, non un errore", () => {
   expect(renewableSourceCapacityRows({})).toEqual([]);
   expect(installedCapacityRows({ installed_capacity: [] })).toEqual([]);
 });
+
+test("le righe duplicate dello stesso dato vengono fuse", () => {
+  // Payload reale 2023: Terna manda per Milano/Fotovoltaico/Lorda una riga con
+  // il valore e due vuote. Tenere l'ultima riga buttava via il valore.
+  const payload = {
+    renewable_sources: [
+      { year: "2023", capacity_type: "Lorda", region: "Lombardia", province: "Milano", source: "Fotovoltaico", efficient_power_MW: null },
+      { year: "2023", capacity_type: "Lorda", region: "Lombardia", province: "Milano", source: "Fotovoltaico", efficient_power_MW: 598.943 },
+      { year: "2023", capacity_type: "Lorda", region: "Lombardia", province: "Milano", source: "Fotovoltaico", efficient_power_MW: null },
+    ],
+  };
+
+  const rows = renewableSourceCapacityRows(payload);
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.efficient_power_mw).toBe(598.943);
+});
+
+test("i frammenti della stessa chiave si sommano", () => {
+  // generation-plants pubblica due righe con valori diversi per la stessa
+  // chiave (impianti diversi nella stessa provincia): vanno sommate.
+  const payload = {
+    generation_plants: [
+      { year: "2023", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", source: "Termoelettrico", efficient_power_MW: 225.824 },
+      { year: "2023", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", source: "Termoelettrico", efficient_power_MW: 1.0 },
+    ],
+  };
+
+  const rows = generationPlantsRows(payload);
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.efficient_power_mw).toBeCloseTo(226.824, 3);
+});
+
+test("una cella vuota in tutte le righe resta vuota", () => {
+  const payload = {
+    renewable_sources: [
+      { year: "2023", capacity_type: "Lorda", region: "Lombardia", province: "Milano", source: "Geotermoelettrico", efficient_power_MW: "" },
+      { year: "2023", capacity_type: "Lorda", region: "Lombardia", province: "Milano", source: "Geotermoelettrico", efficient_power_MW: null },
+    ],
+  };
+
+  const rows = renewableSourceCapacityRows(payload);
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.efficient_power_mw).toBeNull();
+});

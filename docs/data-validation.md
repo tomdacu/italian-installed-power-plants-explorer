@@ -8,14 +8,13 @@ official statistics. Reproduce it with your own credentials at any time.
 | Level | Method | Result |
 | --- | --- | --- |
 | Raw payload → cache | Full sync of 2021–2024 × 4 datasets (108 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
-| Cache → API | 46 automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | 45/46 |
+| Cache → API | Automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | all green |
 | Cache → official statistics | National per-source totals (Tab. 8), thermoelectric per region (Tab. 18) and per category (Tab. 20) from Terna's yearbook *Dati statistici sull'energia elettrica in Italia* | see below |
 | Province level | The two independent endpoints that publish the same sources (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
 
-The single failing check is an upstream quirk, not a defect: for a handful of
-province/year cells Terna returns `0` (or omits the value) for one capacity
-index — mostly hydro *Lorda* — so `Lorda ≥ Netta` does not hold there. The app
-stores what the API returns; totals are unaffected.
+`Lorda ≥ Netta` now holds for every row of every dataset: the handful of
+violations seen before were the duplicate-row bug, where an empty *Lorda* row
+replaced a stored value.
 
 ## Dataset alignment at a glance
 
@@ -27,10 +26,10 @@ registry series it publishes monthly and independent re-analyses:
 | --- | --- | --- | --- |
 | `renewable_source_capacity` | wind, bioenergy | ✅ aligned | every year 2021–2024, to the decimal |
 | `renewable_source_capacity` | geothermal | ✅ aligned | 2022–2024 exact; 2021 is 817,09 vs 821 MW published (−4 MW) |
-| `renewable_source_capacity` | photovoltaic | ⚠️ aligned only for 2024 | 2021–2023 are the figures *as first published*, never revised: −2.464 / −1.773 / −3.340 MW against the yearbook |
-| `renewable_source_capacity` | hydro | ⚠️ different perimeter **and** stale history | by design it excludes pure pumped storage (−3.986,3 MW in 2024, the seven provinces listed below); 2021–2023 are also below the registry series (−2.762 / −5.103 / −2.465 MW), 2024 matches it exactly |
+| `renewable_source_capacity` | photovoltaic | ✅ aligned | every year 2021–2024, to the decimal (this was the dataset the duplicate-row bug hit) |
+| `renewable_source_capacity` | hydro | ⚠️ different perimeter | by design it excludes pure pumped storage (−3.986,3 MW in 2024, the seven provinces listed below); every other cell matches `generation_plants` |
 | `generation_plants` | wind, photovoltaic, geothermal, hydro | ✅ aligned | every year 2021–2024, to the decimal (hydro **includes** pumping, as the yearbook does) |
-| `generation_plants` | thermoelectric | ❌ divergent | 2024 is 3.468,0 MW (−5,6 %) below both the yearbook and the platform's own thermoelectric endpoint, concentrated in six regions |
+| `generation_plants` | thermoelectric | ✅ aligned | 62.109,905 MW in 2024, identical to the yearbook (the earlier 3.468 MW gap was the duplicate-row bug) |
 | `thermoelectric_capacity` | national, per region, per category | ✅ aligned | Tab. 8 (62.109,905 MW), Tab. 18 (all 20 regions) and Tab. 20 (35.419,912 / 26.689,993 MW) match to the decimal |
 | `thermoelectric_capacity` | per subcategory | ➖ not verified | no published table found for the subcategory breakdown (ciclo combinato, turbine a gas…) |
 | `installed_capacity` | national GW by type | ❌ different perimeter | 2022, in GW: thermal 58,8 vs 63,2 published, hydro 22,8 vs 23,2, photovoltaic 24,2 vs 25,1, wind 11,7 vs 11,9, geothermal 0,9 vs 0,8 — the endpoint publishes its own aggregate, rounded to 0,1 GW |
@@ -57,18 +56,18 @@ single capacity index (no double counting).
 | --- | --- | --- | --- | --- |
 | 2021 | Eolico | 11 289.81 | 11 289.8 | **exact** |
 | 2021 | Geotermoelettrico | 817.09 | 817.1 | **exact** |
-| 2021 | Fotovoltaico | 20 130.19 | 22 594.3 | −2 464.1 |
-| 2021 | Idrico | 16 409.71 | 23 147.3 | −6 737.6 |
+| 2021 | Fotovoltaico | 22 594.3 | 22 594.3 | **exact** |
+| 2021 | Idrico | 19 172.3 | 23 147.3 | −3 975.0 (pumping) |
 | 2022 | Eolico | 11 858.43 | 11 858.4 | **exact** |
-| 2022 | Fotovoltaico | 23 291.02 | 25 063.9 | −1 772.9 |
-| 2022 | Idrico | 14 162.34 | 23 209.6 | −9 047.3 |
+| 2022 | Fotovoltaico | 25 063.9 | 25 063.9 | **exact** |
+| 2022 | Idrico | 19 265.3 | 23 209.6 | −3 944.3 (pumping) |
 | 2023 | Eolico | 12 335.54 | 12 335.5 | **exact** |
-| 2023 | Fotovoltaico | 26 979.79 | 30 319.4 | −3 339.6 |
-| 2023 | Idrico | 16 809.39 | 23 260.5 | −6 451.1 |
+| 2023 | Fotovoltaico | 30 319.4 | 30 319.4 | **exact** |
+| 2023 | Idrico | 19 274.2 | 23 260.5 | −3 986.3 (pumping) |
 | 2024 | Eolico | 12 990.30 | 12 990.3 | **exact** |
 | 2024 | Fotovoltaico | 37 002.14 | 37 002.1 | **exact** |
 | 2024 | Geotermoelettrico | 817.09 | 817.1 | **exact** |
-| 2024 | Idrico | 19 637.16 | 23 623.5 | −3 986.3 |
+| 2024 | Idrico | 19 637.2 | 23 623.5 | −3 986.3 (pumping) |
 | 2024 | Termoelettrico | 62 109.91 | 62 109.9 | **exact** |
 
 Cross-checks with independent publications: GSE *Rapporto Statistico 2024 Solare
@@ -125,39 +124,38 @@ So the two datasets differ by design, not by error:
 | `renewable_source_capacity` | excludes pure pumped storage | 19.637,16 MW |
 | `generation_plants` | includes it | 23.623,46 MW (yearbook: 23.623,5) |
 
-### Where the photovoltaic gap comes from, province by province
+### The duplicate-row bug (fixed in 1.0.0)
 
-Comparing the two endpoints cell by cell (same year, province, source and
-capacity index) explains the whole difference:
+The 2021–2023 photovoltaic totals used to be 2.464/1.773/3.340 MW below the
+yearbook, and the same defect depressed hydro and the thermoelectric series of
+`generation_plants`. The cause was not Terna's data being stale: for some cells
+the platform publishes **several rows for the same key**, one carrying the value
+and the others empty. The sync kept only the last of them, so whenever an empty
+row came after the filled one the value was dropped. In the 2023 payload:
 
-| Year | Cells compared | Identical | Empty in `renewable_source_capacity` | Sum of the empty cells |
+| | Rows | Distinct keys | Duplicated keys | Of which |
 | --- | --- | --- | --- | --- |
-| 2021 | 107 | 101 of 101 comparable | 6 (Udine, Ancona, Foggia, Taranto, Padova, Treviso) | −2 464,1 MW |
-| 2022 | 107 | 102 of 102 | 5 (Udine, Milano, Varese, Ancona, Taranto) | −1 772,9 MW |
-| 2023 | 107 | 100 of 100 | 7 (Udine, Milano, Varese, Ancona, Torino, Trento, Treviso) | −3 339,6 MW |
-| 2024 | 107 | 107 of 107 | none | 0 |
+| `renewable-source-capacity` | 1.160 | 1.070 | 66 | 44 with one value + empties, 22 all empty |
+| `generation-plants` | 868 | 846 | 22 | 22 with two different values (fragments to sum) |
 
-The same pattern applies to hydro, where the empty cells (Brescia, Trento,
-Torino, Varese…) are the pumped-storage provinces, on top of the perimeter
-difference described below. `generation_plants` carries those cells, which is
-why it reproduces the yearbook for every year.
+Milan's photovoltaic row for 2023 arrived as `null, 598.943, null`: the value was
+there, the app just kept the wrong row. The ingestion now merges duplicates —
+empty rows add nothing, fragments are summed — and the upsert never overwrites a
+stored value with a NULL. After the fix every photovoltaic cell (428 of 428) is
+identical to `generation_plants` and to the yearbook, `Lorda ≥ Netta` holds for
+every row, and the only empty cells left are two (Trapani bioenergy 2023, Teramo
+wind 2024).
 
-An empty cell is only counted as missing when the same key carries a value in
-another year: provinces that never host a source (no geothermal plant in
-Lombardy) stay empty in every file and are not gaps.
+### What is still genuinely upstream
 
-### One upstream inconsistency worth knowing
-
-Inside the `generation_plants` endpoint, the `Termoelettrico` series reports
-**3.468,0 MW less** than both the yearbook and the dedicated thermoelectric
-endpoint (58.641,91 vs 62.109,905 MW, −5,6 %), concentrated in Friuli-Venezia
-Giulia (−1.042,3), Puglia (−1.217,7), Marche (−468,7), Lombardia (−321,4),
-Emilia-Romagna (−213,5) and Veneto (−204,3). Every other source in that endpoint
-matches the yearbook exactly, and the same total fetched through
-`/thermoelectric-capacity` is correct — so the discrepancy lives in the platform
-endpoint, not in the app or its parsing. Use the *Thermoelectric capacity*
-dataset for thermal figures; the region totals of *Generation plants* inherit the
-gap in those six regions.
+- **Hydro perimeter**: `renewable_source_capacity` excludes pure pumped storage
+  (−3.986,3 MW in 2024), `generation_plants` includes it.
+- **Two stray empty cells**: Trapani bioenergy 2023 and Teramo wind 2024 are
+  empty in the platform's own files.
+- **`Accumulo stand alone`** (standalone storage) appears in `generation_plants`
+  from 2023 and is synced like every other source.
+- **Region spelling**: thermoelectric rows say `Valle d'Aosta`, the other
+  datasets `Valle D'Aosta`; the two are the same region.
 
 Practical rule: this app reports the **Terna Developer API**, so it is the right
 tool for trends, regional comparisons and export — not for quoting official
@@ -177,14 +175,24 @@ curl -X POST http://127.0.0.1:8731/sync/jobs -H "Content-Type: application/json"
 curl "http://127.0.0.1:8731/analytics/timeseries?dataset=renewable_source_capacity&capacity_type=Lorda&year_from=2024&year_to=2024&group_by=source"
 ```
 
-## API quota
+## API limits
 
-Besides the per-second limit (`Developer Over Qps`), Terna enforces a broader
-request quota: a four-year "download everything" run (~108 requests) can trip
-`403 Developer Over Rate`, after which requests keep failing until the quota
-window resets. The sync never aborts — it retries with backoff, reports the
-affected steps as `failed_steps`, and already stored steps are upserted, so
-re-running it later fills the gaps without duplicating rows.
+Measured against the live API with valid credentials:
+
+| Limit | Evidence | How the app handles it |
+| --- | --- | --- |
+| ~1 request per second | `403 Developer Over Qps` with `retry-after: 1` when two calls land in the same second (the token call counts too) | requests are paced 1.2 s apart, token included |
+| Broader quota | older runs tripped `403 Developer Over Rate` after ~100 requests in quick succession | the client pauses **every** request for 60 s (doubling up to 10 min) and honours `retry-after`, instead of burning retries |
+| Token lifetime | `expires_in: 298` | the token is reused until 30 s before expiry |
+
+The bigger fix was asking for less: the sync used to request one year × source ×
+index combination (27 calls per year, 108 for four years) even though a single
+call per dataset and year returns **everything** — 1.160 rows for
+`renewable-source-capacity 2023`, 1.192 for `thermoelectric-capacity 2023`.
+A four-year download is now 16 calls; a five-year one (2021–2025, of which 2025
+is empty) is 20 calls and takes about half a minute. A failed step never aborts
+the job: it is counted in `failed_steps` and re-running the sync later fills the
+gap, because rows are upserted by key.
 
 ## Cross-check with the press and independent analyses
 
@@ -252,10 +260,13 @@ Practical consequences:
 - Treat the API as a **current** source: re-sync before quoting a year, and fall
   back to the yearbook for historical series.
 
-### Next validation to run (2025)
+### 2025: published in the yearbook, not yet in the API
 
-The 2025 edition of the yearbook is already published, so the next sync can be
-checked against it. Expected values (gross efficient power, national):
+The 2025 edition of the yearbook is published, but **the Developer API returns no
+2025 rows at all** (checked on all four generation endpoints with valid
+credentials: empty responses, `empty_steps` in the sync). The app therefore shows
+2021–2024. When Terna publishes 2025, re-run the sync and check it against these
+values (gross efficient power, national):
 
 | Source | 2025 (yearbook) |
 | --- | --- |

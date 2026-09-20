@@ -42,8 +42,8 @@ Then, inside the app:
 
 1. create a free application on [developer.terna.it](https://developer.terna.it)
    and paste Client ID and secret in **Credentials**;
-2. open **Data sync**, pick the years, press *Download everything* (a multi-year
-   sync takes a few minutes — Terna paces requests at ~1/second);
+2. open **Data sync**, pick the years, press *Download everything* (one request
+   per dataset and year, paced at ~1/second to stay inside Terna's limits);
 3. explore the **Dashboard**, where every chart can be copied or exported.
 
 ### From source
@@ -113,7 +113,8 @@ Early, single-author project: the server and the interface are covered by tests
 (`bun test`, plus a build in CI), while the interface itself has no test runner
 yet. Known limits and upstream data quirks are listed in
 [docs/data-validation.md](docs/data-validation.md); the practical ones are the
-Terna quota (~108 requests for a four-year sync) and the two hydro perimeters.
+Terna request limits (one call per second, plus a broader quota the client waits
+out) and the two hydro perimeters.
 
 ## Contributing
 

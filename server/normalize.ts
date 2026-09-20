@@ -61,6 +61,56 @@ export function utcNowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00");
 }
 
+/**
+ * Chiave di una riga: due righe con la stessa chiave sono lo stesso dato.
+ * La stessa forma è usata dal database per `record_key`, così una sola
+ * definizione decide cosa è "la stessa cella".
+ */
+export function rowKeyParts(row: CapacityRow | Record<string, unknown>): string[] {
+  const parts = [
+    row.dataset,
+    row.year,
+    row.capacity_type,
+    row.region,
+    row.province,
+    row.source,
+    row.category,
+    row.subcategory,
+    row.type,
+  ];
+  return parts.map((part) => (part === null || part === undefined ? "" : String(part)));
+}
+
+export function rowKey(row: CapacityRow | Record<string, unknown>): string {
+  return rowKeyParts(row).join("|");
+}
+
+const addNullable = (a: number | null, b: number | null): number | null =>
+  a === null ? b : b === null ? a : a + b;
+
+/**
+ * Terna emette più righe per la stessa chiave: una con il valore e le altre
+ * vuote (o frammenti dello stesso totale). Tenere l'ultima riga — come faceva
+ * il salvataggio — buttava via il valore ogni volta che una riga vuota veniva
+ * dopo quella piena, ed è quella la ragione dei buchi nel fotovoltaico 2021-2023.
+ * Sommare i valori non nulli copre entrambi i casi: le righe vuote non
+ * aggiungono nulla, i frammenti si sommano.
+ */
+export function mergeDuplicates(rows: CapacityRow[]): CapacityRow[] {
+  const merged = new Map<string, CapacityRow>();
+  for (const row of rows) {
+    const key = rowKey(row);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...row });
+      continue;
+    }
+    existing.efficient_power_mw = addNullable(existing.efficient_power_mw, row.efficient_power_mw);
+    existing.installed_capacity_gw = addNullable(existing.installed_capacity_gw, row.installed_capacity_gw);
+  }
+  return [...merged.values()];
+}
+
 function itemRows(payload: Record<string, unknown>, key: string): Record<string, unknown>[] {
   const value = payload[key];
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
@@ -73,7 +123,7 @@ export function renewableSourceCapacityRows(
   payload: Record<string, unknown>,
   fetchedAt = utcNowIso(),
 ): CapacityRow[] {
-  return itemRows(payload, "renewable_sources").map((item) => ({
+  return mergeDuplicates(itemRows(payload, "renewable_sources").map((item) => ({
     dataset: "renewable_source_capacity",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
@@ -86,14 +136,14 @@ export function renewableSourceCapacityRows(
     efficient_power_mw: parseDecimal(item.efficient_power_MW),
     installed_capacity_gw: null,
     fetched_at: fetchedAt,
-  }));
+  })));
 }
 
 export function generationPlantsRows(
   payload: Record<string, unknown>,
   fetchedAt = utcNowIso(),
 ): CapacityRow[] {
-  return itemRows(payload, "generation_plants").map((item) => ({
+  return mergeDuplicates(itemRows(payload, "generation_plants").map((item) => ({
     dataset: "generation_plants",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
@@ -106,14 +156,14 @@ export function generationPlantsRows(
     efficient_power_mw: parseDecimal(item.efficient_power_MW),
     installed_capacity_gw: null,
     fetched_at: fetchedAt,
-  }));
+  })));
 }
 
 export function installedCapacityRows(
   payload: Record<string, unknown>,
   fetchedAt = utcNowIso(),
 ): CapacityRow[] {
-  return itemRows(payload, "installed_capacity").map((item) => ({
+  return mergeDuplicates(itemRows(payload, "installed_capacity").map((item) => ({
     dataset: "installed_capacity",
     year: Number(item.year),
     capacity_type: null,
@@ -128,14 +178,14 @@ export function installedCapacityRows(
     // del nome, i valori sono gigawatt (59.7902 = 59,7902 GW).
     installed_capacity_gw: parseDecimal(item.installed_capacity_GWh),
     fetched_at: fetchedAt,
-  }));
+  })));
 }
 
 export function thermoelectricCapacityRows(
   payload: Record<string, unknown>,
   fetchedAt = utcNowIso(),
 ): CapacityRow[] {
-  return itemRows(payload, "thermoelectric").map((item) => ({
+  return mergeDuplicates(itemRows(payload, "thermoelectric").map((item) => ({
     dataset: "thermoelectric_capacity",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
@@ -148,5 +198,5 @@ export function thermoelectricCapacityRows(
     efficient_power_mw: parseDecimal(item.efficient_power_MW),
     installed_capacity_gw: null,
     fetched_at: fetchedAt,
-  }));
+  })));
 }

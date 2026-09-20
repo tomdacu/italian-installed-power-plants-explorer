@@ -17,7 +17,11 @@ export type GroupBy =
   | "year,type"
   | "year,region"
   | "year,province"
-  | "year,capacity_type";
+  | "year,capacity_type"
+  | "region,source"
+  | "region,type"
+  | "province,source"
+  | "province,type";
 
 export type CapacityType = "Lorda" | "Netta";
 

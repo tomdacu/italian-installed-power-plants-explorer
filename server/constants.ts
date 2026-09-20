@@ -1,7 +1,8 @@
 /**
- * Costanti di dominio: gli stessi valori che l'API Terna accetta davvero.
- * Fuori dai dataset validi l'API risponde con un corpo vuoto (non un errore),
- * quindi il piano di sync interseca sempre le richieste con queste liste.
+ * Costanti di dominio: gli stessi valori che l'API Terna pubblica. Il sync non
+ * filtra più per fonte o indice (una richiesta per dataset e anno restituisce
+ * tutto), quindi queste liste servono alla UI: etichette, menu dei filtri e
+ * colori delle serie.
  */
 import type { DatasetName } from "../shared/types";
 
@@ -19,6 +20,8 @@ export const GENERATION_PLANT_SOURCES = [
   "Geotermoelettrico",
   "Idrico",
   "Termoelettrico",
+  // Accumuli stand-alone: compaiono solo in questo dataset e solo dal 2023.
+  "Accumulo stand alone",
 ] as const;
 
 export const INSTALLED_CAPACITY_TYPES = [

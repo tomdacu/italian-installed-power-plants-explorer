@@ -13,7 +13,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { DEFAULT_CAPACITY_TYPE } from "./constants.ts";
-import type { CapacityRow } from "./normalize.ts";
+import { rowKey, type CapacityRow } from "./normalize.ts";
 import { GROUP_BY_FIELDS } from "../shared/types.ts";
 import type {
   AggregatePoint,
@@ -91,20 +91,7 @@ export function parseGroupBy(raw: string): string[] {
 }
 
 export function recordKey(row: CapacityRow | Record<string, unknown>): string {
-  const parts = [
-    row.dataset,
-    row.year,
-    row.capacity_type,
-    row.region,
-    row.province,
-    row.source,
-    row.category,
-    row.subcategory,
-    row.type,
-  ];
-  return createHash("sha256")
-    .update(parts.map((part) => (part === null || part === undefined ? "" : String(part))).join("|"))
-    .digest("hex");
+  return createHash("sha256").update(rowKey(row)).digest("hex");
 }
 
 function csvField(value: unknown): string {
@@ -161,8 +148,10 @@ export class CapacityStore {
         $category, $subcategory, $type, $efficient_power_mw, $installed_capacity_gw, $fetched_at
       )
       ON CONFLICT(record_key) DO UPDATE SET
-        efficient_power_mw = excluded.efficient_power_mw,
-        installed_capacity_gw = excluded.installed_capacity_gw,
+        -- Un file successivo senza valore non deve cancellare un valore già
+        -- acquisito: il NULL è "cella vuota", non "zero".
+        efficient_power_mw = COALESCE(excluded.efficient_power_mw, capacity_records.efficient_power_mw),
+        installed_capacity_gw = COALESCE(excluded.installed_capacity_gw, capacity_records.installed_capacity_gw),
         fetched_at = excluded.fetched_at
     `);
     const write = this.db.transaction((batch: CapacityRow[]) => {

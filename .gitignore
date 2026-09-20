@@ -35,6 +35,8 @@ desktop.ini
 .env
 .env.*
 !.env.example
+# Terra Developer credentials pasted locally (never published)
+api.txt
 *.log
 
 # --- Internal working documents (not part of the public project) ---
