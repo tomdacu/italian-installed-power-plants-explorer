@@ -89,7 +89,9 @@ export function downloadBlob(content: BlobPart, filename: string, mime: string) 
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoking immediately can cancel the download before the browser has read
+  // the blob — keep the URL alive for a while, then release it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function downloadString(text: string, filename: string, mime = "text/plain") {

@@ -11,11 +11,43 @@ import {
 } from "recharts";
 import { api } from "@/api/client";
 import { SINGLE_SERIES_COLOR, formatGw, formatMw } from "@/lib/utils";
-import type { GroupBy, RecordFilters } from "@/types";
+import { csvNumber, type CsvTable } from "@/lib/csv";
+import type { AggregatePoint, GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
+import { measureCsvKey } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
+
+/**
+ * CSV of the geography bars. The chart draws the top 15 to stay readable; the
+ * file carries every area of the selection, which is what the numbers are for.
+ */
+export function capacityByGeographyCsv(
+  records: AggregatePoint[],
+  groupBy: string,
+  isGw: boolean,
+): CsvTable {
+  const rawKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
+  const valueKey = measureCsvKey(isGw);
+  const total = records.reduce((sum, record) => sum + (record[rawKey] ?? 0), 0);
+  return {
+    columns: [
+      { key: groupBy, label: groupBy },
+      { key: valueKey, label: valueKey },
+      { key: "share_percent", label: "share_percent" },
+    ],
+    rows: records.map((record) => {
+      const value = record[rawKey];
+      return {
+        [groupBy]: record[groupBy as keyof AggregatePoint] ?? "",
+        [valueKey]: csvNumber(value),
+        share_percent:
+          total > 0 && value !== null ? csvNumber((value / total) * 100) : null,
+      };
+    }),
+  };
+}
 
 export function CapacityByRegionChart({
   filters,
@@ -49,7 +81,7 @@ export function CapacityByRegionChart({
       title={title}
       description={`Latest-year stock (${unit}) aggregated by ${groupBy} — top 15`}
       filename={filename}
-      csvFilters={filters}
+      csv={() => capacityByGeographyCsv(records, groupBy, isGw)}
     >
       {data.isLoading ? (
         <LoadingOverlay label="Loading geography" />

@@ -9,12 +9,38 @@ import {
   YAxis,
 } from "recharts";
 import { colorFor, formatMw } from "@/lib/utils";
+import { csvNumber, type CsvTable } from "@/lib/csv";
 import type { RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
-import { useYearlySplit } from "./CapacityOverTimeChart";
+import { measureCsvKey, useYearlySplit, yearlySplitCells, type YearlySplit } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
+
+/** CSV of the mix chart: the same cells plus each series' share of that year. */
+export function sourceMixCsv(split: YearlySplit): CsvTable {
+  const cells = yearlySplitCells(split);
+  const totals = new Map<number, number>();
+  for (const cell of cells) totals.set(cell.year, (totals.get(cell.year) ?? 0) + cell.value);
+  const valueKey = measureCsvKey(split.measure.isGw);
+  return {
+    columns: [
+      { key: "year", label: "year" },
+      { key: split.splitKey, label: split.splitKey },
+      { key: valueKey, label: valueKey },
+      { key: "share_percent", label: "share_percent" },
+    ],
+    rows: cells.map((cell) => {
+      const total = totals.get(cell.year) ?? 0;
+      return {
+        year: cell.year,
+        [split.splitKey]: cell.name,
+        [valueKey]: csvNumber(cell.value),
+        share_percent: total > 0 ? csvNumber((cell.value / total) * 100) : null,
+      };
+    }),
+  };
+}
 
 /** Stacked bars of the same yearly breakdown — shares the query (and cache
  * entry) with the capacity-over-time chart, so no extra request is made. */
@@ -33,7 +59,7 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
           : `Stacked installed stock (${unit}) showing the contribution of each source`
       }
       filename="source-mix"
-      csvFilters={filters}
+      csv={() => (data ? sourceMixCsv(data) : null)}
     >
       {isLoading ? (
         <LoadingOverlay label="Loading mix" />

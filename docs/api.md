@@ -15,6 +15,7 @@ used the same routes, so anything written against it keeps working.
 | `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, message, error}` |
 | `GET /metadata/options` | canonical sources/types per dataset, stored options, year window |
 | `GET /metadata/availability` | row counts per dataset and year actually cached |
+| `GET /metadata/data-quality` | per year, cells Terna left empty even though the same key has a value another year (filters: `dataset`, `capacity_type`, `source`) |
 | `GET /records` | paged rows (`limit` ≤ 100000, `offset`) |
 | `GET /analytics/summary` | latest-year stock, previous year, YoY delta, row count |
 | `GET /analytics/timeseries` | grouped sums; `group_by=year,source`, `latest_only=true` |

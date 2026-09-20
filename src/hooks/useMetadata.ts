@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { Availability, MetadataOptions } from "@/types";
+import type { Availability, DataQuality, MetadataOptions, RecordFilters } from "@/types";
 
 export function useMetadata() {
   return useQuery<MetadataOptions>({
@@ -14,6 +14,18 @@ export function useAvailability() {
   return useQuery<Availability>({
     queryKey: ["availability"],
     queryFn: () => api.availability(),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Publication gaps for the rows the dashboard is showing: Terna leaves some
+ * cells empty in its year files, which understates those year totals.
+ */
+export function useDataQuality(filters: RecordFilters) {
+  return useQuery<DataQuality>({
+    queryKey: ["data-quality", filters],
+    queryFn: () => api.dataQuality(filters),
     staleTime: 30_000,
   });
 }

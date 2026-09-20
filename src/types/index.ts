@@ -136,6 +136,16 @@ export interface AvailabilityDataset {
   last_fetched: string | null;
 }
 
+export interface DataQualityYear {
+  year: number;
+  /** Cells the source left empty even though the same key has a value elsewhere. */
+  missing_values: number;
+}
+
+export interface DataQuality {
+  years: DataQualityYear[];
+}
+
 export interface Availability {
   datasets: Partial<Record<DatasetName, AvailabilityDataset>>;
   total_rows: number;

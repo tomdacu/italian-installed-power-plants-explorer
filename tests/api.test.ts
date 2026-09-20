@@ -102,7 +102,7 @@ test("GET /export/csv risponde con nome file e contenuto", async () => {
   const { app } = buildApp();
   const response = await app.request("/export/csv?dataset=renewable_source_capacity");
 
-  expect(response.headers.get("content-disposition")).toContain("italian-installed-capacity.csv");
+  expect(response.headers.get("content-disposition")).toContain("italian-renewable-capacity-records.csv");
   expect(await response.text()).toContain("Abruzzo");
 });
 

@@ -11,11 +11,33 @@ import {
 } from "recharts";
 import { api } from "@/api/client";
 import { colorFor, formatGw, formatMw } from "@/lib/utils";
-import type { GroupBy, RecordFilters } from "@/types";
+import { csvNumber, type CsvTable } from "@/lib/csv";
+import type { AggregatePoint, GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
+import { measureCsvKey } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
+
+/** CSV of the by-source bars: latest-year stock of every series, not just the drawn ones. */
+export function capacityBySplitCsv(
+  records: AggregatePoint[],
+  splitKey: string,
+  isGw: boolean,
+): CsvTable {
+  const rawKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
+  const valueKey = measureCsvKey(isGw);
+  return {
+    columns: [
+      { key: splitKey, label: splitKey },
+      { key: valueKey, label: valueKey },
+    ],
+    rows: records.map((record) => ({
+      [splitKey]: record[splitKey as keyof AggregatePoint] ?? "",
+      [valueKey]: csvNumber(record[rawKey]),
+    })),
+  };
+}
 
 export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
   // installed_capacity rows carry `type` instead of `source`.
@@ -41,7 +63,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
       title={isInstalled ? "Capacity by type" : "Capacity by source"}
       description={`Latest-year stock (${unit}) aggregated by ${splitKey}`}
       filename={isInstalled ? "capacity-by-type" : "capacity-by-source"}
-      csvFilters={filters}
+      csv={() => capacityBySplitCsv(records, splitKey, isGw)}
     >
       {data.isLoading ? (
         <LoadingOverlay label="Loading sources" />

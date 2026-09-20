@@ -144,6 +144,24 @@ describe("CapacityStore", () => {
     expect(Object.fromEntries((dataset?.years ?? []).map((year) => [year.year, year.rows]))).toEqual({ 2023: 4, 2024: 4 });
   });
 
+  test("dataQuality segnala i buchi di pubblicazione e ignora le celle vuote strutturali", () => {
+    // Milano/Fotovoltaico ha un valore solo nel 2024 → il NULL del 2023 è un
+    // buco di pubblicazione. Bergamo/Geotermoelettrico è vuoto in tutti gli
+    // anni → la fonte non esiste lì e non è un dato mancante.
+    seed(store);
+    store.upsertRecords([
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: null as unknown as number }),
+      row({ year: 2024, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
+      row({ year: 2023, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
+    ]);
+
+    const years = store.dataQuality({ dataset: "renewable_source_capacity" });
+    const byYear = Object.fromEntries(years.map((entry) => [entry.year, entry.missing_values]));
+
+    expect(byYear[2023]).toBe(1);
+    expect(byYear[2024]).toBeUndefined();
+  });
+
   test("l'export CSV ha intestazione, escaping e tutte le righe filtrate", () => {
     store.upsertRecords([row({ year: 2024, source: 'Idrico "special"', efficient_power_mw: 1.5 })]);
     const csv = store.toCsv({} satisfies RecordFilters);

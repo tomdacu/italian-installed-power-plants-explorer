@@ -20,6 +20,7 @@ import type {
   Availability,
   AvailabilityDataset,
   CapacityRecord,
+  DataQualityYear,
   DatasetName,
   RecordFilters,
   Summary,
@@ -275,6 +276,39 @@ export class CapacityStore {
     return { datasets, total_rows: counted?.n ?? 0 };
   }
 
+  /**
+   * Years whose file leaves cells empty although the same key (province,
+   * source, index) carries a value in another year. An empty cell that is empty
+   * every year is a source that does not exist there, and a zero elsewhere is a
+   * zero — neither is a gap. Counted on the rows the filters select, so the
+   * dashboard can warn about exactly what it is showing.
+   */
+  dataQuality(filters: RecordFilters): DataQualityYear[] {
+    const { clause, params } = this.where(filters);
+    const base = clause ? `${clause} AND ` : "WHERE ";
+    const rows = this.db
+      .prepare(
+        `SELECT year, COUNT(*) AS missing_values
+         FROM capacity_records
+         ${base}(CASE WHEN dataset = 'installed_capacity' THEN installed_capacity_gw ELSE efficient_power_mw END) IS NULL
+           AND EXISTS (
+             SELECT 1 FROM capacity_records o
+             WHERE o.dataset = capacity_records.dataset
+               AND o.year <> capacity_records.year
+               AND o.province IS capacity_records.province
+               AND o.source IS capacity_records.source
+               AND o.capacity_type IS capacity_records.capacity_type
+               AND o.category IS capacity_records.category
+               AND o.subcategory IS capacity_records.subcategory
+               AND o.type IS capacity_records.type
+               AND (CASE WHEN o.dataset = 'installed_capacity' THEN o.installed_capacity_gw ELSE o.efficient_power_mw END) > 0
+           )
+         GROUP BY year ORDER BY year`,
+      )
+      .all(params) as DataQualityYear[];
+    return rows;
+  }
+
   /** Indice di capacità usato per i totali "stock" (uno solo, mai entrambi). */
   private capacityApplied(filters: RecordFilters): string | null {
     if (filters.dataset === "installed_capacity") return null;
@@ -415,7 +449,9 @@ export class CapacityStore {
     for (const row of this.records(filters, 1_000_000)) {
       lines.push(fields.map((field) => csvField(row[field])).join(","));
     }
-    return `${lines.join("\r\n")}\r\n`;
+    // UTF-8 BOM: without it Excel on Windows reads the accented place names
+    // ("Forlì-Cesena", "Vallée d'Aoste") as mojibake.
+    return `\uFEFF${lines.join("\r\n")}\r\n`;
   }
 
   close(): void {

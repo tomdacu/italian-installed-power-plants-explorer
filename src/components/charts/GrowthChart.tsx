@@ -13,8 +13,40 @@ import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { colorFor } from "@/lib/utils";
+import { csvNumber, type CsvTable } from "@/lib/csv";
 import { useYearlySplit } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
+
+export interface GrowthData {
+  rows: Record<string, number>[];
+  names: string[];
+  measure: { isGw: boolean; valueKey: string; unit: string };
+}
+
+/** CSV of the additions chart: the year-on-year change of each series. */
+export function additionsCsv(growth: GrowthData, splitKey: string): CsvTable {
+  const valueKey = growth.measure.isGw ? "added_gw" : "added_mw";
+  const rows: Record<string, unknown>[] = [];
+  for (const entry of growth.rows) {
+    for (const name of growth.names) {
+      const value = entry[name];
+      if (typeof value !== "number") continue;
+      rows.push({
+        year: entry.year,
+        [splitKey]: name,
+        [valueKey]: csvNumber(value),
+      });
+    }
+  }
+  return {
+    columns: [
+      { key: "year", label: "year" },
+      { key: splitKey, label: splitKey },
+      { key: valueKey, label: valueKey },
+    ],
+    rows,
+  };
+}
 
 /**
  * Year-on-year additions per source: the annual change of installed stock.
@@ -49,7 +81,7 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
       title={filters.dataset === "installed_capacity" ? "Annual additions by type" : "Annual additions by source"}
       description="Year-on-year change of installed stock — new capacity net of decommissioning"
       filename="annual-additions"
-      csvFilters={filters}
+      csv={() => (growth && series.data ? additionsCsv(growth, series.data.splitKey) : null)}
     >
       {isLoading ? (
         <LoadingOverlay label="Loading growth" />

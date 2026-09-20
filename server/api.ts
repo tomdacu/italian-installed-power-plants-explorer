@@ -126,6 +126,12 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
 
   app.get("/metadata/availability", (c) => c.json(store.availability()));
 
+  app.get("/metadata/data-quality", (c) =>
+    c.json({
+      years: store.dataQuality(filtersFromQuery(new URL(c.req.url).searchParams)),
+    }),
+  );
+
   app.get("/records", (c) => {
     const query = new URL(c.req.url).searchParams;
     const limit = Math.min(100_000, Math.max(1, Number(query.get("limit") ?? 5000)));
@@ -155,7 +161,7 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     return new Response(store.toCsv(filtersFromQuery(query)), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "content-disposition": 'attachment; filename="italian-installed-capacity.csv"',
+        "content-disposition": 'attachment; filename="italian-renewable-capacity-records.csv"',
       },
     });
   });

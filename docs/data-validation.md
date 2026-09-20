@@ -39,7 +39,8 @@ What to do with it:
 
 - **Quoting 2024?** Any dataset works.
 - **Quoting earlier years?** Use `generation_plants` for photovoltaic and hydro:
-  it reproduces the yearbook for every year.
+  it reproduces the yearbook for every year. The dashboard shows an amber
+  *Partial data* note whenever the selected year range contains an empty cell.
 - **Quoting thermoelectric?** Use `thermoelectric_capacity`, never the
   `Termoelettrico` series of `generation_plants`.
 - **Comparing with a newspaper?** Check the perimeter first — see
@@ -85,8 +86,12 @@ efficient power (+5.7%) and 74.5 GW of renewable capacity.
   pumping alone, so the endpoint's perimeter (producers vs self-producers, plant
   size, date of the snapshot) is narrower than the yearbook's.
 - **Photovoltaic 2021–2023**: the API reports less than the yearbook, while 2024
-  matches to the decimal — consistent with the yearbook being revised
-  retroactively while the API's older years are not.
+  matches to the decimal. The difference is **not** a revision of older figures:
+  in those year files Terna leaves a handful of provinces empty (6 in 2021, 5 in
+  2022, 7 in 2023) and the app stores them as NULL. Every province that *does*
+  carry a value is identical to `generation_plants` and to the yearbook to the
+  decimal, and the sum of the empty cells is exactly the gap
+  (−2 464,1 / −1 772,9 / −3 339,6 MW). The dashboard flags those years as partial.
 - **National installed capacity dataset**: the `/installed-capacity` endpoint
   returns rounded GW values on its own perimeter (2022: thermal 58.8 GW, hydro
   22.8, PV 24.2, wind 11.7, geothermal 0.9) that do **not** coincide with the
@@ -119,6 +124,27 @@ So the two datasets differ by design, not by error:
 | --- | --- | --- |
 | `renewable_source_capacity` | excludes pure pumped storage | 19.637,16 MW |
 | `generation_plants` | includes it | 23.623,46 MW (yearbook: 23.623,5) |
+
+### Where the photovoltaic gap comes from, province by province
+
+Comparing the two endpoints cell by cell (same year, province, source and
+capacity index) explains the whole difference:
+
+| Year | Cells compared | Identical | Empty in `renewable_source_capacity` | Sum of the empty cells |
+| --- | --- | --- | --- | --- |
+| 2021 | 107 | 101 of 101 comparable | 6 (Udine, Ancona, Foggia, Taranto, Padova, Treviso) | −2 464,1 MW |
+| 2022 | 107 | 102 of 102 | 5 (Udine, Milano, Varese, Ancona, Taranto) | −1 772,9 MW |
+| 2023 | 107 | 100 of 100 | 7 (Udine, Milano, Varese, Ancona, Torino, Trento, Treviso) | −3 339,6 MW |
+| 2024 | 107 | 107 of 107 | none | 0 |
+
+The same pattern applies to hydro, where the empty cells (Brescia, Trento,
+Torino, Varese…) are the pumped-storage provinces, on top of the perimeter
+difference described below. `generation_plants` carries those cells, which is
+why it reproduces the yearbook for every year.
+
+An empty cell is only counted as missing when the same key carries a value in
+another year: provinces that never host a source (no geothermal plant in
+Lombardy) stay empty in every file and are not gaps.
 
 ### One upstream inconsistency worth knowing
 

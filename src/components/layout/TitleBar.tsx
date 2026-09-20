@@ -7,18 +7,18 @@ import { APP_VERSION } from "@/lib/version";
  */
 export function TitleBar() {
   return (
-    <header className="relative z-40 flex h-10 w-full shrink-0 items-center justify-between border-b border-white/[0.06] bg-forest-950 select-none">
-      {/* Ambient glow so the bar blends into the sidebar */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+    <header className="relative z-40 flex h-10 w-full shrink-0 select-none items-center justify-between border-b border-ink-200/70 bg-white dark:border-white/[0.06] dark:bg-forest-950">
+      {/* Ambient glow so the bar blends into the sidebar — dark theme only */}
+      <div className="pointer-events-none absolute inset-0 hidden overflow-hidden dark:block" aria-hidden>
         <div className="absolute -top-16 left-40 h-32 w-96 rounded-full bg-brand-500/10 blur-3xl" />
       </div>
 
       <div className="relative flex min-w-0 items-center gap-2.5 pl-3">
         <BrandMark className="h-5 w-5 rounded-md" />
-        <span className="truncate font-display text-xs font-semibold tracking-wide text-ink-200">
+        <span className="truncate font-display text-xs font-semibold tracking-wide text-ink-700 dark:text-ink-200">
           Italian Renewable Capacity Explorer
         </span>
-        <span className="hidden rounded-full border border-white/10 px-1.5 py-px font-mono text-[9px] text-ink-500 sm:inline">
+        <span className="hidden rounded-full border border-ink-200 px-1.5 py-px font-mono text-[9px] text-ink-500 sm:inline dark:border-white/10 dark:text-ink-500">
           v{APP_VERSION}
         </span>
       </div>

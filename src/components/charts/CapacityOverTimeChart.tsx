@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { api } from "@/api/client";
 import { colorFor, formatGw, formatMw } from "@/lib/utils";
+import { csvNumber, type CsvTable } from "@/lib/csv";
 import type { RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
@@ -68,6 +69,54 @@ export function useYearlySplit(filters: RecordFilters) {
   });
 }
 
+/** Shape returned by `useYearlySplit`, shared by every chart that exports it. */
+export interface YearlySplit {
+  splitKey: string;
+  measure: { isGw: boolean; valueKey: string; unit: string };
+  data: SeriesRow[];
+  names: string[];
+}
+
+export interface YearlySplitCell {
+  year: number;
+  name: string;
+  value: number;
+}
+
+/** One cell per year and series — the same numbers the stack is built from. */
+export function yearlySplitCells(split: YearlySplit): YearlySplitCell[] {
+  const cells: YearlySplitCell[] = [];
+  for (const entry of split.data) {
+    for (const name of split.names) {
+      const value = entry[name];
+      if (typeof value !== "number") continue;
+      cells.push({ year: Number(entry.year), name, value });
+    }
+  }
+  return cells;
+}
+
+export function measureCsvKey(isGw: boolean): string {
+  return isGw ? "installed_capacity_gw" : "installed_capacity_mw";
+}
+
+/** CSV of the capacity-over-time chart: year, series and installed stock. */
+export function yearlySplitCsv(split: YearlySplit): CsvTable {
+  const valueKey = measureCsvKey(split.measure.isGw);
+  return {
+    columns: [
+      { key: "year", label: "year" },
+      { key: split.splitKey, label: split.splitKey },
+      { key: valueKey, label: valueKey },
+    ],
+    rows: yearlySplitCells(split).map((cell) => ({
+      year: cell.year,
+      [split.splitKey]: cell.name,
+      [valueKey]: csvNumber(cell.value),
+    })),
+  };
+}
+
 export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
   const series = useYearlySplit(filters);
   const fmt = series.data?.measure.format ?? formatMw;
@@ -82,7 +131,7 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
           : `Installed stock (${unit}) by year, split by source`
       }
       filename="capacity-over-time"
-      csvFilters={filters}
+      csv={() => (series.data ? yearlySplitCsv(series.data) : null)}
     >
       {series.isLoading ? (
         <LoadingOverlay label="Loading capacity trend" />

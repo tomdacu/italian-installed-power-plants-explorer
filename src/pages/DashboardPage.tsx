@@ -5,6 +5,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { FiltersPanel, type DashboardFilters } from "@/components/dashboard/FiltersPanel";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { DataTable } from "@/components/dashboard/DataTable";
+import { DataQualityNote } from "@/components/dashboard/DataQualityNote";
 import { CapacityOverTimeChart } from "@/components/charts/CapacityOverTimeChart";
 import { CapacityBySourceChart } from "@/components/charts/CapacityBySourceChart";
 import { CapacityByRegionChart } from "@/components/charts/CapacityByRegionChart";
@@ -66,8 +67,8 @@ export function DashboardPage() {
   const handleExportAll = async () => {
     try {
       const text = await api.exportCsv(apiFilters);
-      downloadString(text, "italian-installed-capacity.csv", "text/csv;charset=utf-8");
-      toast.success("CSV exported", "italian-installed-capacity.csv is in your downloads");
+      downloadString(text, "italian-renewable-capacity-records.csv", "text/csv;charset=utf-8");
+      toast.success("CSV exported", "italian-renewable-capacity-records.csv is in your downloads");
     } catch (e) {
       toast.error("Export failed", (e as Error).message);
     }
@@ -94,6 +95,8 @@ export function DashboardPage() {
         />
 
         <KpiCards summary={summary.data} loading={summary.isLoading} isGw={apiFilters.dataset === "installed_capacity"} />
+
+        <DataQualityNote filters={apiFilters} />
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <CapacityOverTimeChart filters={apiFilters} />

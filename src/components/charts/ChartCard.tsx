@@ -1,12 +1,12 @@
 import { useRef } from "react";
 import { ChartExportBar } from "@/components/ui/ChartExportBar";
-import type { RecordFilters } from "@/types";
+import type { CsvSource } from "@/lib/csv";
 
 export function ChartCard({
   title,
   description,
   filename,
-  csvFilters,
+  csv,
   actions,
   className,
   children,
@@ -14,7 +14,8 @@ export function ChartCard({
   title: string;
   description?: string;
   filename: string;
-  csvFilters?: RecordFilters;
+  /** The chart's own series: each card exports what it draws, not the whole dataset. */
+  csv?: CsvSource;
   actions?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -41,7 +42,7 @@ export function ChartCard({
         </div>
       </div>
       <div className="flex justify-end border-t border-ink-100 px-4 py-2.5 dark:border-white/[0.06]">
-        <ChartExportBar containerRef={ref} filename={filename} csvFilters={csvFilters} />
+        <ChartExportBar containerRef={ref} filename={filename} csv={csv} />
       </div>
     </section>
   );

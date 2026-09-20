@@ -2,6 +2,7 @@ import type {
   AggregatePoint,
   Availability,
   CapacityRecord,
+  DataQuality,
   CredentialPayload,
   CredentialStatus,
   DatasetName,
@@ -142,6 +143,10 @@ export const api = {
 
   availability(): Promise<Availability> {
     return request<Availability>("/metadata/availability");
+  },
+
+  dataQuality(filters: Partial<RecordFilters> = {}): Promise<DataQuality> {
+    return request<DataQuality>(`/metadata/data-quality${buildQuery(filters)}`);
   },
 
   records(filters: Partial<RecordFilters> = {}): Promise<CapacityRecord[]> {
