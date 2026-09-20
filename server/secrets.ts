@@ -9,7 +9,7 @@
  */
 import { dlopen, FFIType, ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 
-const SERVICE = "italian-capacity-explorer";
+const SERVICE = "italian-installed-power-plants-explorer";
 
 const crypt32 =
   process.platform === "win32"

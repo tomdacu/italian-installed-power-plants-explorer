@@ -12,28 +12,30 @@ afterEach(() => {
   else process.env.TERNA_APP_DATA_DIR = previousDataDir;
 });
 
-test("la cartella dati migra dal nome precedente alla rinomina", () => {
+test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
   delete process.env.TERNA_APP_DATA_DIR;
-  const root = mkdtempSync(join(tmpdir(), "ice-root-"));
-  const legacy = join(root, "TernaInstalledCapacity");
-  mkdirSync(legacy, { recursive: true });
-  writeFileSync(join(legacy, "settings.json"), '{"client_id":"vecchio"}', "utf8");
+  for (const legacyName of ["ItalianCapacityExplorer", "TernaInstalledCapacity"]) {
+    const root = mkdtempSync(join(tmpdir(), "ice-root-"));
+    const legacy = join(root, legacyName);
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "settings.json"), '{"client_id":"vecchio"}', "utf8");
 
-  const resolved = appDataDir(root);
+    const resolved = appDataDir(root);
 
-  expect(resolved).toBe(join(root, "ItalianCapacityExplorer"));
-  expect(existsSync(join(resolved, "settings.json"))).toBe(true);
-  expect(existsSync(legacy)).toBe(false);
+    expect(resolved).toBe(join(root, "ItalianInstalledPowerPlantsExplorer"));
+    expect(existsSync(join(resolved, "settings.json"))).toBe(true);
+    expect(existsSync(legacy)).toBe(false);
+  }
 });
 
 test("se esistono entrambe vince la cartella nuova", () => {
   delete process.env.TERNA_APP_DATA_DIR;
   const root = mkdtempSync(join(tmpdir(), "ice-root-"));
-  mkdirSync(join(root, "TernaInstalledCapacity"), { recursive: true });
   mkdirSync(join(root, "ItalianCapacityExplorer"), { recursive: true });
+  mkdirSync(join(root, "ItalianInstalledPowerPlantsExplorer"), { recursive: true });
 
-  expect(appDataDir(root)).toBe(join(root, "ItalianCapacityExplorer"));
-  expect(existsSync(join(root, "TernaInstalledCapacity"))).toBe(true);
+  expect(appDataDir(root)).toBe(join(root, "ItalianInstalledPowerPlantsExplorer"));
+  expect(existsSync(join(root, "ItalianCapacityExplorer"))).toBe(true);
 });
 
 test("le credenziali salvano il client id nel file e il segreto nel portachiavi", async () => {

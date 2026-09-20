@@ -1,4 +1,4 @@
-# Italian Capacity Explorer
+# Italian Installed Power Plants Explorer
 
 **Explore Italy's installed generation capacity — solar, wind, hydro, geothermal
 and thermal — region by region, with charts, tables and CSV exports.** The data
@@ -31,7 +31,7 @@ browser, or install it as an app with its own window and Start-menu entry.
 With [Bun](https://bun.sh) installed — nothing to download, always current:
 
 ```bash
-bunx italian-capacity-explorer
+bunx italian-installed-power-plants-explorer
 ```
 
 The app serves itself on `http://127.0.0.1:8731` and opens a browser window. Use
@@ -48,8 +48,8 @@ Then, inside the app:
 ### From source
 
 ```bash
-git clone https://github.com/tomdacu/italian-capacity-explorer
-cd italian-capacity-explorer
+git clone https://github.com/tomdacu/italian-installed-power-plants-explorer
+cd italian-installed-power-plants-explorer
 bun install
 bun run serve          # local server + browser window
 bun run dev            # Vite dev server with hot reload, proxies the API
@@ -60,7 +60,7 @@ bun test               # 39 tests
 
 ```mermaid
 flowchart LR
-  CLI["ice / bunx italian-capacity-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
+  CLI["ice / bunx italian-installed-power-plants-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
   SRV --> SPA["React interface<br/>served from the same origin"]
   SRV --> DB[("SQLite cache")]
   SRV --> SEC[("client secret<br/>DPAPI / Keychain / secret-tool")]

@@ -3,7 +3,7 @@
  * fretta. Non mette mai in cache le risposte dell'API (i dati sono già locali e
  * devono restare freschi): solo l'involucro statico.
  */
-const CACHE = "ice-shell-v2";
+const CACHE = "ice-shell-v3";
 const SHELL = ["/", "/index.html", "/favicon.svg", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

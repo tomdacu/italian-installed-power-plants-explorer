@@ -1,5 +1,5 @@
 {
-  "name": "Italian Capacity Explorer",
+  "name": "Italian Installed Power Plants Explorer",
   "short_name": "Capacity Explorer",
   "description": "Explore Italy's installed generation capacity from the Terna Developer API, locally on your machine.",
   "start_url": "/",

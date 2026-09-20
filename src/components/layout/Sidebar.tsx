@@ -113,9 +113,9 @@ export function Sidebar() {
           <BrandMark className="h-10 w-10 rounded-xl shadow-glow" />
         </div>
         <div className="min-w-0">
-          <p className="font-display text-[15px] font-semibold leading-tight text-white">Italian</p>
+          <p className="font-display text-[14px] font-semibold leading-tight text-white">Italian Installed</p>
           <p className="truncate text-[11px] font-medium tracking-wide text-brand-300/80">
-            Capacity Explorer
+            Power Plants Explorer
           </p>
         </div>
       </div>

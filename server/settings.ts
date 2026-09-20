@@ -9,8 +9,9 @@ import { join } from "node:path";
 
 import { createSecretStore, type SecretStore } from "./secrets.ts";
 
-const APP_DIR_NAME = "ItalianCapacityExplorer";
-const LEGACY_APP_DIR_NAME = "TernaInstalledCapacity";
+const APP_DIR_NAME = "ItalianInstalledPowerPlantsExplorer";
+/** Cartelle usate prima della rinomina: la migrazione le segue in ordine. */
+const LEGACY_APP_DIR_NAMES = ["ItalianCapacityExplorer", "TernaInstalledCapacity"];
 export const SETTINGS_FILE = "settings.json";
 
 interface SettingsPayload {
@@ -29,12 +30,16 @@ export function appDataDir(root: string = appDataRoot()): string {
   if (override) return override;
 
   const target = join(root, APP_DIR_NAME);
-  const legacy = join(root, LEGACY_APP_DIR_NAME);
-  if (!existsSync(target) && existsSync(legacy)) {
-    try {
-      renameSync(legacy, target); // migrazione una tantum, stessa cartella padre
-    } catch {
-      return legacy;
+  if (!existsSync(target)) {
+    for (const legacyName of LEGACY_APP_DIR_NAMES) {
+      const legacy = join(root, legacyName);
+      if (!existsSync(legacy)) continue;
+      try {
+        renameSync(legacy, target); // migrazione una tantum, stessa cartella padre
+      } catch {
+        return legacy;
+      }
+      break;
     }
   }
   return target;

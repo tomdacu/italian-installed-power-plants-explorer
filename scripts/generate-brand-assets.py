@@ -42,6 +42,20 @@ def fit_cover(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return ImageOps.fit(image.convert("RGBA"), size, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
 
 
+def lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))  # type: ignore[return-value]
+
+
+def gradient(size: tuple[int, int], start: tuple[int, int, int], end: tuple[int, int, int]) -> Image.Image:
+    """Gradiente diagonale costruito in piccolo e poi ingrandito (usato dall'icona maskable)."""
+    small = Image.new("RGBA", (64, 64))
+    pixels = small.load()
+    for y in range(64):
+        for x in range(64):
+            pixels[x, y] = (*lerp(start, end, (x + y) / 126), 255)
+    return small.resize(size, Image.Resampling.LANCZOS)
+
+
 def brand_icon(size: int = 1024) -> Image.Image:
     """Return the vector brand mark rasterised at the requested size (RGBA)."""
     return ImageOps.fit(
@@ -116,10 +130,15 @@ def draw_share_card(path: Path, size: tuple[int, int], *, height: int, top: int,
     left = max(48, round(w * 0.055))
     accent_y = round(h * 0.19)
     draw.rounded_rectangle((left, accent_y, left + 70, accent_y + 6), radius=3, fill=BRAND)
-    small = font("seguisb.ttf", max(13, round(w * 0.018)))
+    small = font("seguisb.ttf", max(12, round(w * 0.0155)))
     title = font("segoeuib.ttf", max(32, round(w * 0.037)))
     body = font("segoeui.ttf", max(16, round(w * 0.018)))
-    draw.text((left, accent_y + 27), "ITALIAN CAPACITY EXPLORER", font=small, fill=(113, 226, 181, 255))
+    draw.text(
+        (left, accent_y + 27),
+        "ITALIAN INSTALLED POWER PLANTS",
+        font=small,
+        fill=(113, 226, 181, 255),
+    )
     draw.multiline_text(
         (left, accent_y + 66),
         "Explore Italy's\ninstalled capacity",

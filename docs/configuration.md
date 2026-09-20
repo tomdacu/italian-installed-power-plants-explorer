@@ -33,13 +33,13 @@ would then need reinstalling on the new origin).
 
 | Path (Windows) | Content |
 | --- | --- |
-| `%APPDATA%\ItalianCapacityExplorer\terna_cache.sqlite` | local cache — delete it to force a full re-sync |
-| `%APPDATA%\ItalianCapacityExplorer\settings.json` | non-secret settings (client id, database path) |
-| `%APPDATA%\ItalianCapacityExplorer\secret.bin` | client secret, encrypted with DPAPI |
-| `%APPDATA%\ItalianCapacityExplorer\backend.log` | startup log |
+| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\terna_cache.sqlite` | local cache — delete it to force a full re-sync |
+| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\settings.json` | non-secret settings (client id, database path) |
+| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\secret.bin` | client secret, encrypted with DPAPI |
+| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\backend.log` | startup log |
 
-On macOS the data folder is `~/Library/Application Support/ItalianCapacityExplorer`,
-on Linux `~/.local/share/ItalianCapacityExplorer`. There the secret goes to the
+On macOS the data folder is `~/Library/Application Support/ItalianInstalledPowerPlantsExplorer`,
+on Linux `~/.local/share/ItalianInstalledPowerPlantsExplorer`. There the secret goes to the
 Keychain or, when `secret-tool` is unavailable, to a `secret.bin.plain` file with
 `0600` permissions and a warning in the log.
 
