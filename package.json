@@ -23,8 +23,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "preview": "vite preview --port 1420",
     "prepack": "bun run build && bun run scripts/copy-static.ts",
-    "compile": "bun run prepack && bun build server/cli.ts --compile --outfile dist-exe/ice.exe --windows-hide-console --windows-icon=assets/icon.ico --windows-title=\"Italian Capacity Explorer\"",
-    "start:exe": "dist-exe/ice.exe --no-window"
+    "compile": "bun run prepack && bun build server/cli.ts --compile --outfile dist-exe/ice.exe --windows-hide-console --windows-icon=assets/icon.ico --windows-title=\"Italian Capacity Explorer\""
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

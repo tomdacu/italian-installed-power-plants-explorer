@@ -1,55 +1,39 @@
 <!-- Release notes template used by .github/workflows/release.yml (body_path).
-     Replace the "What's new" section for each release; keep the download
-     guidance, it prevents the two most common support questions. -->
+     Replace the "What's new" section for each release. -->
 
 ## What's new
 
 - _Describe the user-visible changes here._
 
-## How to run it
-
-**With Bun already installed** (fastest, nothing to download from here):
+## Install or update
 
 ```bash
 bunx italian-capacity-explorer
 ```
 
-**Without any runtime** — download `ItalianCapacityExplorer_<version>_x64-portable.zip`,
-extract it and run `ice.exe`. The archive holds the executable plus the `static/`
-folder with the interface: keep them together.
+`bunx` always runs the latest published version, so updating is the same command.
+Bun is a single binary: [bun.sh](https://bun.sh).
 
-> ⚠️ Extract the zip first. Running `ice.exe` from inside the compressed folder
-> leaves the interface behind and the app starts without its UI.
+Prefer a checkout?
 
-Either way the app serves itself on `http://127.0.0.1:8731` and opens a browser
-window; in Chromium-based browsers you can then install it as an app (its own
-window, entry in the Start menu).
-
-## First run
-
-1. Windows may warn about an unknown publisher: the binary is not code-signed
-   yet. Choose *More info → Run anyway*, or verify the SHA-256 below first.
-2. The app needs your own **free** Terna Developer credentials
-   ([developer.terna.it](https://developer.terna.it)): create an application and
-   paste the Client ID and secret in the Credentials page. They stay on your
-   machine — the secret is encrypted with Windows DPAPI, and the app never reads
-   credentials belonging to other applications.
-3. Press *Download everything* on the Data sync page — a multi-year sync takes a
-   few minutes (the Terna API is rate limited) and everything is stored locally.
-
-Requirements: Windows 10/11, or macOS/Linux with Bun. WebView2/Chromium comes
-from the browser you already use.
-
-## Verifying the download (optional)
-
-```powershell
-Get-FileHash "ItalianCapacityExplorer_<version>_x64-portable.zip" -Algorithm SHA256
+```bash
+git clone https://github.com/tomdacu/italian-capacity-explorer
+cd italian-capacity-explorer
+bun install && bun run serve
 ```
 
-Compare it with `SHA256SUMS.txt` published with this release.
+## Using it
 
-## Notes
+1. Create a free application on [developer.terna.it](https://developer.terna.it)
+   and paste Client ID and secret in **Credentials** — they stay on your machine
+   (the secret is encrypted with Windows DPAPI, the macOS Keychain or
+   `secret-tool`).
+2. Open **Data sync**, choose the years and press *Download everything*. A
+   multi-year sync takes a few minutes: Terna paces requests at about one per
+   second.
+3. Explore the **Dashboard**. Every chart can be copied as PNG or exported as
+   SVG/CSV. In Chromium-based browsers you can install the app for a standalone
+   window with its own icon.
 
-- Data source: Terna Developer API. This project is independent and not
-  affiliated with Terna S.p.A.
-- Everything runs locally: no telemetry, no account, no cloud.
+Data comes from the Terna Developer API; this project is independent and not
+affiliated with Terna S.p.A.

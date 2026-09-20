@@ -2,12 +2,8 @@ import { BrandMark } from "@/components/ui/BrandMark";
 import { APP_VERSION } from "@/lib/version";
 
 /**
- * Barra di intestazione dell'app.
- *
- * Nella versione precedente questa barra sostituiva il chrome di Windows e
- * ospitava i pulsanti min/max/chiudi della finestra Tauri. Ora l'app gira nel
- * browser (o in una finestra "app" del browser), che porta i propri controlli:
- * qui restano solo identità e versione.
+ * Application header. The app runs in a browser window — or as an installed app
+ * — so the window controls belong to the browser: here only identity and version.
  */
 export function TitleBar() {
   return (

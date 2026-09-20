@@ -1,10 +1,9 @@
 """Prepare the raster companions of the brand mark.
 
 The master is ``app-icon.svg`` (vector, hand-authored) rendered to
-``app-icon.png`` at 1024x1024 — regenerate that raster by loading the SVG in a
-browser and screenshotting it at exactly 1024x1024, then run
-``npx tauri icon app-icon.png``. This script only resizes and composes that
-master; it never redraws the mark. The hero/social images use the abstract
+``app-icon.png`` at 1024x1024: regenerate that raster by loading the SVG in a
+browser and screenshotting it at exactly 1024x1024. This script only resizes and
+composes that master; it never redraws the mark. The hero/social images use the abstract
 background plate in ``docs/assets/hero-background.png`` and the real capture in
 ``docs/screenshot-dashboard.png`` (1440x900 viewport, deviceScaleFactor 1.25,
 themes dark and light — capture them from the running app, do not synthesise).
@@ -12,7 +11,6 @@ themes dark and light — capture them from the running app, do not synthesise).
 Run from the repository root with the machine's global Python + Pillow:
 
     python scripts/generate-brand-assets.py
-    npx tauri icon app-icon.png
 """
 
 from __future__ import annotations
@@ -42,20 +40,6 @@ def font(name: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 def fit_cover(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return ImageOps.fit(image.convert("RGBA"), size, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-
-
-def lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
-    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))  # type: ignore[return-value]
-
-
-def gradient(size: tuple[int, int], start: tuple[int, int, int], end: tuple[int, int, int]) -> Image.Image:
-    """Build a diagonal gradient cheaply at a small size, then upscale it."""
-    small = Image.new("RGBA", (64, 64))
-    pixels = small.load()
-    for y in range(64):
-        for x in range(64):
-            pixels[x, y] = (*lerp(start, end, (x + y) / 126), 255)
-    return small.resize(size, Image.Resampling.LANCZOS)
 
 
 def brand_icon(size: int = 1024) -> Image.Image:
@@ -174,39 +158,6 @@ def make_pwa_icons() -> None:
     canvas.save(ROOT / "public" / "icon-maskable-512.png", "PNG", optimize=True)
 
 
-def make_installer_header() -> None:
-    size = (150, 57)
-    base = gradient(size, (4, 19, 14), (7, 74, 56)).convert("RGB")
-    icon = brand_icon(36)
-    base.paste(icon, (10, 10), icon)
-    draw = ImageDraw.Draw(base)
-    draw.text((54, 13), "Italian", font=font("seguisb.ttf", 10), fill=WHITE)
-    draw.text((54, 28), "Capacity Explorer", font=font("segoeui.ttf", 8), fill=(113, 226, 181, 255))
-    base.save(ROOT / "src-tauri" / "icons" / "nsis-header.bmp", "BMP")
-
-
-def make_installer_sidebar() -> None:
-    size = (164, 314)
-    base = gradient(size, (4, 19, 14), (7, 74, 56)).convert("RGB")
-    draw = ImageDraw.Draw(base)
-    glow = Image.new("RGBA", size, (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((-55, 160, 195, 390), fill=(20, 176, 127, 65))
-    base = Image.alpha_composite(base.convert("RGBA"), glow.filter(ImageFilter.GaussianBlur(25)))
-    icon = brand_icon(64)
-    base.paste(icon, (50, 28), icon)
-    draw = ImageDraw.Draw(base)
-    draw.multiline_text((22, 116), "Italian\nCapacity Explorer", font=font("segoeuib.ttf", 17), fill=WHITE, spacing=2)
-    draw.multiline_text(
-        (22, 178),
-        "Explore Italy's\ninstalled\ngeneration\ncapacity.",
-        font=font("segoeui.ttf", 11),
-        fill=(183, 226, 208, 255),
-        spacing=3,
-    )
-    draw.line([(23, 270), (72, 244), (103, 257), (141, 218)], fill=BRAND, width=3, joint="curve")
-    base.convert("RGB").save(ROOT / "src-tauri" / "icons" / "nsis-sidebar.bmp", "BMP")
-
-
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     required = (SCREENSHOT, BACKGROUND, ICON_SOURCE)
@@ -219,8 +170,6 @@ def main() -> None:
     draw_share_card(ASSETS / "github-social-preview.png", (1280, 630), height=460, top=80, right=62)
     draw_share_card(ROOT / "public" / "og-image.png", (1200, 630), height=430, top=100, right=50)
     make_pwa_icons()
-    make_installer_header()
-    make_installer_sidebar()
 
 
 if __name__ == "__main__":
