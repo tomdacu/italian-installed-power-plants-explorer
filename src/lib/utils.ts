@@ -25,13 +25,19 @@ export function formatNumber(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+/** Valore compatto con l'unità leggibile: 74.508,7 MW → "74.51 GW". */
 export function compactMw(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M MW`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k MW`;
+  if (Math.abs(value) >= 1_000) return `${formatGw(value / 1_000)} GW`;
   return `${formatMw(value)} MW`;
 }
+
+/**
+ * Colore per grafici in cui la categoria non è un tipo di impianto (regioni,
+ * province): i colori restano riservati alle fonti, così non suggeriscono
+ * differenze che non esistono.
+ */
+export const SINGLE_SERIES_COLOR = "#14b07f";
 
 export const SOURCE_COLORS: Record<string, string> = {
   Fotovoltaico: "#f59e0b",

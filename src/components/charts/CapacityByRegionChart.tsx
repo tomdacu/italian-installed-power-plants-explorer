@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "@/api/client";
-import { colorFor, formatGw, formatMw } from "@/lib/utils";
+import { SINGLE_SERIES_COLOR, formatGw, formatMw } from "@/lib/utils";
 import type { GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
@@ -84,7 +84,7 @@ export function CapacityByRegionChart({
             />
             <Bar dataKey={valueKey} name={isGw ? "Installed capacity GW" : "Efficient power MW"} radius={[0, 8, 8, 0]} maxBarSize={18}>
               {top.map((r, i) => (
-                <Cell key={r[groupBy] ?? i} fill={colorFor(String(r[groupBy] ?? ""), i, filters.dataset)} />
+                <Cell key={r[groupBy] ?? i} fill={SINGLE_SERIES_COLOR} />
               ))}
             </Bar>
           </BarChart>
