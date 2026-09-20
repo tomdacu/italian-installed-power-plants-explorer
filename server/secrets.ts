@@ -80,10 +80,19 @@ export function dpapiUnprotect(sealed: Uint8Array): string {
   return new TextDecoder().decode(takeOutput(output));
 }
 
+/**
+ * Esegue un comando di sistema senza mai sollevare eccezioni: su Linux il
+ * portachiavi (`secret-tool`) può mancare — CI, desktop minimali — e in quel
+ * caso il chiamante deve poter degradare invece di far fallire l'app.
+ */
 async function run(command: string[]): Promise<{ code: number; stdout: string }> {
-  const process_ = Bun.spawn(command, { stdout: "pipe", stderr: "ignore" });
-  const stdout = await new Response(process_.stdout).text();
-  return { code: await process_.exited, stdout: stdout.trim() };
+  try {
+    const process_ = Bun.spawn(command, { stdout: "pipe", stderr: "ignore" });
+    const stdout = await new Response(process_.stdout).text();
+    return { code: await process_.exited, stdout: stdout.trim() };
+  } catch {
+    return { code: 127, stdout: "" };
+  }
 }
 
 export interface SecretStore {
@@ -128,21 +137,41 @@ export function createSecretStore(filePath: string): SecretStore {
     };
   }
 
+  // Linux: `secret-tool` quando c'è (GNOME/KDE), altrimenti un file leggibile
+  // solo dal proprietario, con un avviso nel log. Mai un fallimento silenzioso.
+  const fallbackPath = `${filePath}.plain`;
+  const unavailable = () => {
+    console.warn(
+      "[secrets] secret-tool non disponibile: il client secret viene salvato in un file con permessi 0600 " +
+        `(${fallbackPath}). Installa libsecret per usare il portachiavi di sistema.`,
+    );
+  };
+
   return {
     async save(clientId, secret) {
-      const process_ = Bun.spawn(["secret-tool", "store", "--label", SERVICE, "service", SERVICE, "account", clientId], {
-        stdin: "pipe",
-      });
-      process_.stdin.write(secret);
-      process_.stdin.end();
-      await process_.exited;
+      const { code } = await run([
+        "secret-tool",
+        "store",
+        "--label",
+        SERVICE,
+        "service",
+        SERVICE,
+        "account",
+        clientId,
+      ]);
+      if (code === 0) return;
+      unavailable();
+      await Bun.write(fallbackPath, secret, { mode: 0o600 });
     },
     async load(clientId) {
       const { code, stdout } = await run(["secret-tool", "lookup", "service", SERVICE, "account", clientId]);
-      return code === 0 && stdout ? stdout : null;
+      if (code === 0 && stdout) return stdout;
+      const file = Bun.file(fallbackPath);
+      return (await file.exists()) ? (await file.text()).trim() || null : null;
     },
     async remove(clientId) {
       await run(["secret-tool", "clear", "service", SERVICE, "account", clientId]);
+      await run(["rm", "-f", fallbackPath]);
     },
   };
 }
