@@ -1,7 +1,7 @@
 {
-  "name": "Italian Installed Power Plants Explorer",
+  "name": "Italian Renewable Capacity Explorer",
   "short_name": "Capacity Explorer",
-  "description": "Explore Italy's installed generation capacity from the Terna Developer API, locally on your machine.",
+  "description": "Explore Italy's renewable installed capacity by region and province — data from the Terna Developer API, cached locally.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

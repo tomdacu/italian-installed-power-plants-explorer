@@ -52,7 +52,7 @@ export function OnboardingPage() {
             <h1 className="mt-7 font-display text-[28px] font-semibold leading-tight tracking-tight text-white">
               Welcome to{" "}
               <span className="bg-gradient-to-r from-brand-300 to-emerald-200 bg-clip-text text-transparent">
-                Italian Installed Power Plants Explorer
+                Italian Renewable Capacity Explorer
               </span>
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-ink-300">

@@ -1,10 +1,11 @@
-# Italian Installed Power Plants Explorer
+# Italian Renewable Capacity Explorer
 
-**Explore Italy's installed generation capacity — solar, wind, hydro, geothermal
-and thermal — region by region, with charts, tables and CSV exports.** The data
-comes from the [Terna Developer API](https://developer.terna.it) and is cached in
-a local SQLite database, so after the first sync the app works offline. Nothing
-leaves your machine.
+**Explore Italy's renewable installed capacity — solar, wind, hydro, bioenergy and
+geothermal — region by region, with charts, tables and CSV exports.**
+Thermoelectric capacity and the national totals are included for comparison. The
+data comes from the [Terna Developer API](https://developer.terna.it) and is
+cached in a local SQLite database: after the first sync the app works offline,
+and nothing leaves your machine.
 
 It runs as a small local server that also serves its own interface: open it in a
 browser, or install it as an app with its own window and Start-menu entry.
@@ -31,7 +32,7 @@ browser, or install it as an app with its own window and Start-menu entry.
 With [Bun](https://bun.sh) installed — nothing to download, always current:
 
 ```bash
-bunx italian-installed-power-plants-explorer
+bunx italian-renewable-capacity-explorer
 ```
 
 The app serves itself on `http://127.0.0.1:8731` and opens a browser window. Use
@@ -48,8 +49,8 @@ Then, inside the app:
 ### From source
 
 ```bash
-git clone https://github.com/tomdacu/italian-installed-power-plants-explorer
-cd italian-installed-power-plants-explorer
+git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
+cd italian-renewable-capacity-explorer
 bun install
 bun run serve          # local server + browser window
 bun run dev            # Vite dev server with hot reload, proxies the API
@@ -60,7 +61,7 @@ bun test               # 39 tests
 
 ```mermaid
 flowchart LR
-  CLI["ice / bunx italian-installed-power-plants-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
+  CLI["ice / bunx italian-renewable-capacity-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
   SRV --> SPA["React interface<br/>served from the same origin"]
   SRV --> DB[("SQLite cache")]
   SRV --> SEC[("client secret<br/>DPAPI / Keychain / secret-tool")]

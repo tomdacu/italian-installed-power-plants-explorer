@@ -45,7 +45,7 @@ function parseArgs(argv: string[]): CliOptions {
   --browser     apre il browser di sistema invece della finestra app
   --no-window   avvia solo il server locale
   --port N      forza la porta (default: libera scelta dal sistema)
-  --data-dir    cartella dati alternativa (default: %APPDATA%/ItalianInstalledPowerPlantsExplorer)`);
+  --data-dir    cartella dati alternativa (default: %APPDATA%/ItalianRenewableCapacityExplorer)`);
       process.exit(0);
     }
   }
@@ -82,7 +82,7 @@ function main(): void {
     // il log non è critico: se la cartella non è scrivibile si prosegue
   }
 
-  console.log(`Italian Installed Power Plants Explorer in ascolto su ${app.url}`);
+  console.log(`Italian Renewable Capacity Explorer in ascolto su ${app.url}`);
   console.log(`Dati in ${app.settings.load().dataDir}`);
   if (app.portFallback) {
     console.warn(`Porta preferita occupata: uso ${app.port}. La PWA installata punta alla porta stabile.`);

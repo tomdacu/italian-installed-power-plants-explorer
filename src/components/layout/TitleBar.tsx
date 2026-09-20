@@ -16,7 +16,7 @@ export function TitleBar() {
       <div className="relative flex min-w-0 items-center gap-2.5 pl-3">
         <BrandMark className="h-5 w-5 rounded-md" />
         <span className="truncate font-display text-xs font-semibold tracking-wide text-ink-200">
-          Italian Installed Power Plants Explorer
+          Italian Renewable Capacity Explorer
         </span>
         <span className="hidden rounded-full border border-white/10 px-1.5 py-px font-mono text-[9px] text-ink-500 sm:inline">
           v{APP_VERSION}

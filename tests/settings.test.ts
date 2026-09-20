@@ -14,7 +14,11 @@ afterEach(() => {
 
 test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
   delete process.env.TERNA_APP_DATA_DIR;
-  for (const legacyName of ["ItalianCapacityExplorer", "TernaInstalledCapacity"]) {
+  for (const legacyName of [
+    "ItalianInstalledPowerPlantsExplorer",
+    "ItalianCapacityExplorer",
+    "TernaInstalledCapacity",
+  ]) {
     const root = mkdtempSync(join(tmpdir(), "ice-root-"));
     const legacy = join(root, legacyName);
     mkdirSync(legacy, { recursive: true });
@@ -22,7 +26,7 @@ test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
 
     const resolved = appDataDir(root);
 
-    expect(resolved).toBe(join(root, "ItalianInstalledPowerPlantsExplorer"));
+    expect(resolved).toBe(join(root, "ItalianRenewableCapacityExplorer"));
     expect(existsSync(join(resolved, "settings.json"))).toBe(true);
     expect(existsSync(legacy)).toBe(false);
   }
@@ -31,11 +35,11 @@ test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
 test("se esistono entrambe vince la cartella nuova", () => {
   delete process.env.TERNA_APP_DATA_DIR;
   const root = mkdtempSync(join(tmpdir(), "ice-root-"));
-  mkdirSync(join(root, "ItalianCapacityExplorer"), { recursive: true });
   mkdirSync(join(root, "ItalianInstalledPowerPlantsExplorer"), { recursive: true });
+  mkdirSync(join(root, "ItalianRenewableCapacityExplorer"), { recursive: true });
 
-  expect(appDataDir(root)).toBe(join(root, "ItalianInstalledPowerPlantsExplorer"));
-  expect(existsSync(join(root, "ItalianCapacityExplorer"))).toBe(true);
+  expect(appDataDir(root)).toBe(join(root, "ItalianRenewableCapacityExplorer"));
+  expect(existsSync(join(root, "ItalianInstalledPowerPlantsExplorer"))).toBe(true);
 });
 
 test("le credenziali salvano il client id nel file e il segreto nel portachiavi", async () => {

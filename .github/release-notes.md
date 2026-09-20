@@ -8,7 +8,7 @@
 ## Install or update
 
 ```bash
-bunx italian-installed-power-plants-explorer
+bunx italian-renewable-capacity-explorer
 ```
 
 `bunx` always runs the latest published version, so updating is the same command.
@@ -17,8 +17,8 @@ Bun is a single binary: [bun.sh](https://bun.sh).
 Prefer a checkout?
 
 ```bash
-git clone https://github.com/tomdacu/italian-installed-power-plants-explorer
-cd italian-installed-power-plants-explorer
+git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
+cd italian-renewable-capacity-explorer
 bun install && bun run serve
 ```
 

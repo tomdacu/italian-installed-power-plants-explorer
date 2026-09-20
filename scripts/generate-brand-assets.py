@@ -135,7 +135,7 @@ def draw_share_card(path: Path, size: tuple[int, int], *, height: int, top: int,
     body = font("segoeui.ttf", max(16, round(w * 0.018)))
     draw.text(
         (left, accent_y + 27),
-        "ITALIAN INSTALLED POWER PLANTS",
+        "ITALIAN RENEWABLE CAPACITY",
         font=small,
         fill=(113, 226, 181, 255),
     )

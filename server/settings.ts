@@ -9,9 +9,13 @@ import { join } from "node:path";
 
 import { createSecretStore, type SecretStore } from "./secrets.ts";
 
-const APP_DIR_NAME = "ItalianInstalledPowerPlantsExplorer";
+const APP_DIR_NAME = "ItalianRenewableCapacityExplorer";
 /** Cartelle usate prima della rinomina: la migrazione le segue in ordine. */
-const LEGACY_APP_DIR_NAMES = ["ItalianCapacityExplorer", "TernaInstalledCapacity"];
+const LEGACY_APP_DIR_NAMES = [
+  "ItalianInstalledPowerPlantsExplorer",
+  "ItalianCapacityExplorer",
+  "TernaInstalledCapacity",
+];
 export const SETTINGS_FILE = "settings.json";
 
 interface SettingsPayload {

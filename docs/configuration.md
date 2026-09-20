@@ -33,13 +33,13 @@ would then need reinstalling on the new origin).
 
 | Path (Windows) | Content |
 | --- | --- |
-| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\terna_cache.sqlite` | local cache — delete it to force a full re-sync |
-| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\settings.json` | non-secret settings (client id, database path) |
-| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\secret.bin` | client secret, encrypted with DPAPI |
-| `%APPDATA%\ItalianInstalledPowerPlantsExplorer\backend.log` | startup log |
+| `%APPDATA%\ItalianRenewableCapacityExplorer\terna_cache.sqlite` | local cache — delete it to force a full re-sync |
+| `%APPDATA%\ItalianRenewableCapacityExplorer\settings.json` | non-secret settings (client id, database path) |
+| `%APPDATA%\ItalianRenewableCapacityExplorer\secret.bin` | client secret, encrypted with DPAPI |
+| `%APPDATA%\ItalianRenewableCapacityExplorer\backend.log` | startup log |
 
-On macOS the data folder is `~/Library/Application Support/ItalianInstalledPowerPlantsExplorer`,
-on Linux `~/.local/share/ItalianInstalledPowerPlantsExplorer`. There the secret goes to the
+On macOS the data folder is `~/Library/Application Support/ItalianRenewableCapacityExplorer`,
+on Linux `~/.local/share/ItalianRenewableCapacityExplorer`. There the secret goes to the
 Keychain or, when `secret-tool` is unavailable, to a `secret.bin.plain` file with
 `0600` permissions and a warning in the log.
 
