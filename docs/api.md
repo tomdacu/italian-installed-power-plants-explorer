@@ -30,8 +30,9 @@ Accepted by `/records`, `/analytics/*` and `/export/csv`:
 
 Empty or missing parameters are ignored, so a bare `GET /records` returns the
 first 5000 rows of everything stored. A value that is *present but unknown*
-(`dataset=bogus`, `capacity_type=netta`) is a `400`, not a silently ignored
-filter: answering with the whole database is worse than an error. `limit` (≤ 100000) and `offset` page the
+(`dataset=bogus`, `capacity_type=lor-da`) is a `400`, not a silently ignored
+filter: answering with the whole database is worse than an error. Case is folded
+for enumerated values, so `capacity_type=netta` is accepted and means `Netta`. `limit` (≤ 100000) and `offset` page the
 result; the response carries `x-total-count` with the number of matching rows, so
 a client can say "showing 20.000 of 68.482" instead of guessing. Non-numeric
 values are rejected with `400`.

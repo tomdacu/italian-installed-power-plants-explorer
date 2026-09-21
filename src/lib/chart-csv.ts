@@ -7,9 +7,13 @@ import { csvNumber, type CsvTable } from "@/lib/csv";
 import type { AreaSeries, GrowthData, YearlySplit } from "@/lib/chart-data";
 import type { AggregatePoint } from "@/types";
 
-/** Nome della colonna dei valori: l'unità fa parte del nome, come negli altri export. */
+/**
+ * Nome della colonna dei valori: gli stessi nomi dell'API e della tabella
+ * (`efficient_power_mw` / `installed_capacity_gw`), così due export della stessa
+ * grandezza non si chiamano in due modi.
+ */
 function measureCsvKey(isGw: boolean): string {
-  return isGw ? "installed_capacity_gw" : "installed_capacity_mw";
+  return isGw ? "installed_capacity_gw" : "efficient_power_mw";
 }
 
 /** Source mix: gli stessi dati più la quota di quella serie nell'anno. */

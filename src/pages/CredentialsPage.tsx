@@ -11,7 +11,7 @@ const FACTS = [
   {
     icon: Laptop2,
     title: "Stored on this device only",
-    text: "Credentials are kept in the Windows credential manager — they are never sent anywhere except Terna's API.",
+    text: "Credentials are kept in the encrypted local secret store (DPAPI on Windows, Keychain on macOS, secret-tool on Linux) — they are never sent anywhere except Terna's API.",
   },
   {
     icon: ShieldCheck,

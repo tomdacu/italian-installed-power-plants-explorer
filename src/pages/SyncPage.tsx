@@ -213,6 +213,7 @@ export function SyncPage() {
   };
 
   const running = job && (job.status === "running" || job.status === "queued");
+  const startingUp = starting && !job;
   const pct = job ? Math.round((job.completed_steps / Math.max(1, job.total_steps)) * 100) : 0;
 
   return (
@@ -339,7 +340,7 @@ export function SyncPage() {
                       <Gauge className="h-5 w-5" />
                     </span>
                     <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
-                      No active sync. Press{" "}
+                      {startingUp ? "Starting the sync…" : "No active sync."} Press{" "}
                       <span className="font-semibold text-ink-800 dark:text-ink-100">Download everything</span> to fetch the
                       latest records from Terna.
                     </p>
@@ -371,6 +372,20 @@ export function SyncPage() {
                       </span>
                     </p>
                   )}
+                  {job.status === "completed" &&
+                    (job.failed_steps ?? 0) === 0 &&
+                    (job.empty_steps ?? 0) === 0 &&
+                    (job.skipped_steps ?? 0) > 0 && (
+                      <p className="flex items-start gap-2 rounded-xl border border-ink-200/70 bg-ink-50/60 p-3.5 text-sm leading-relaxed text-ink-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-ink-300">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                          {job.skipped_steps} step{job.skipped_steps === 1 ? "" : "s"} skipped: those
+                          years are not published for the selected datasets (the national series
+                          starts in 2021). Everything there is to download was downloaded.
+                        </span>
+                      </p>
+                    )}
+
                   {job.status === "completed" && (job.failed_steps ?? 0) === 0 && (job.empty_steps ?? 0) > 0 && (
                     <p className="flex items-start gap-2 rounded-xl border border-ink-200/70 bg-ink-50/60 p-3.5 text-sm leading-relaxed text-ink-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-ink-300">
                       <Info className="mt-0.5 h-4 w-4 shrink-0" />

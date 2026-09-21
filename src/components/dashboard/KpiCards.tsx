@@ -113,19 +113,33 @@ export function KpiCards({
   isGw?: boolean;
 }) {
   const measure = measureFor(summary, isGw);
-  const noData = !loading && (summary == null || measure.total === null);
+  const noRecords = !loading && summary != null && summary.row_count === 0;
+  const noValueInLatestYear = !loading && summary != null && summary.row_count > 0 && measure.total === null;
   const yoyPct = summary?.yoy_pct ?? null;
-  /** Un guasto dell'API non è "selezione vuota": l'utente deve sapere cosa rifare. */
+  /**
+   * Tre stati diversi, non uno: l'API che non risponde, la selezione che non ha
+   * righe, e la selezione che ha righe ma nessun valore pubblicato nell'ultimo
+   * anno (una provincia dove quella fonte non c'è). Dire "nessuna riga" mentre
+   * la tabella sotto ne elenca tredici è semplicemente falso.
+   */
   const emptyHint = isError
     ? "The local service is not responding — try again"
-    : "No records in the current selection";
+    : noValueInLatestYear
+      ? `No value published for ${summary?.latest_year ?? "the latest year"} — try another year`
+      : "No records in the current selection";
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <Kpi
         label={measure.label}
         value={loading || measure.total === null ? (loading ? undefined : "—") : measure.stock(measure.total)}
-        hint={loading ? undefined : noData || measure.total === null ? emptyHint : measure.stockHint(measure.total, summary?.latest_year)}
+        hint={
+          loading || measure.total === null || noRecords
+            ? loading
+              ? undefined
+              : emptyHint
+            : measure.stockHint(measure.total, summary?.latest_year)
+        }
         icon={TrendingUp}
         accent="bg-gradient-to-br from-brand-400 to-brand-700"
         glow="bg-brand-500/20"
@@ -144,7 +158,7 @@ export function KpiCards({
           loading || summary?.previous_year == null
             ? undefined
             : `${summary.previous_year} → ${summary.latest_year}${
-                yoyPct !== null ? ` (${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%)` : ""
+                yoyPct !== null ? ` (${yoyPct >= 0 ? "+" : "−"}${Math.abs(yoyPct).toFixed(1)}%)` : ""
               }`
         }
         icon={Layers}
@@ -162,7 +176,9 @@ export function KpiCards({
             ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
             : isError
               ? "The local service is not responding"
-              : "Earliest to latest year in stored data"
+              : noRecords
+                ? "No records in the current selection"
+                : "Earliest to latest year in stored data"
         }
         icon={CalendarDays}
         accent="bg-gradient-to-br from-violet-400 to-violet-700"

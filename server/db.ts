@@ -242,6 +242,18 @@ export class CapacityStore {
     return rows as CapacityRecord[];
   }
 
+  /** Provincia → regione: serve a non offrire province di un'altra regione. */
+  provinceRegions(): Record<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT province, region FROM capacity_records
+         WHERE province IS NOT NULL AND province <> '' AND region IS NOT NULL AND region <> ''
+         ORDER BY province`,
+      )
+      .all() as { province: string; region: string }[];
+    return Object.fromEntries(rows.map((row) => [row.province, row.region]));
+  }
+
   options(): Record<string, unknown[]> {
     const fields = ["dataset", "year", "region", "province", "source", "capacity_type", "category", "subcategory", "type"];
     // Il tipo promette `categories`/`subcategories`: le chiavi si costruiscono
@@ -509,9 +521,12 @@ export class CapacityStore {
   repairPlaceNames(fixes: Record<string, string>): number {
     type StoredRow = CapacityRecord & { id: number };
     let repaired = 0;
+    // `id <> ?` esclude la riga in esame: senza, dopo la rinomina il controllo
+    // trovava la riga stessa e la cancellava come se fosse un doppione (due
+    // esecuzioni sovrapposte, o un riavvio a metà, perdevano quel dato).
     const check = this.db.prepare(
       `SELECT COUNT(*) AS n FROM capacity_records
-       WHERE dataset = ? AND year = ? AND province IS ? AND source IS ?
+       WHERE id <> ? AND dataset = ? AND year = ? AND province IS ? AND source IS ?
          AND capacity_type IS ? AND category IS ? AND subcategory IS ? AND type IS ? AND region IS ?`,
     );
     const move = this.db.prepare(
@@ -532,6 +547,7 @@ export class CapacityStore {
         const province = fixes[row.province as string] ?? row.province;
         if (region === row.region && province === row.province) continue;
         const twin = check.get(
+          row.id,
           row.dataset,
           row.year,
           province,

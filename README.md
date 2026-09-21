@@ -25,7 +25,7 @@ browser, or install it as an app with its own window and Start-menu entry.
 - **One-click sync** of any year range: every dataset, source and capacity type,
   paced to respect the API limits, resumable, with per-step progress.
 - **Dashboard** with KPI cards (latest-year stock, year-on-year additions), five
-  interactive charts and a searchable, sortable, paginated table.
+  charts and a searchable, sortable, paginated table.
 - **Exports**: any chart as PNG or SVG, the filtered data as CSV.
 - **Offline after sync**, light and dark themes, no telemetry.
 
@@ -55,10 +55,20 @@ Then, inside the app:
 git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
 cd italian-renewable-capacity-explorer
 bun install
-bun run serve          # local server + browser window
-bun run dev            # Vite dev server with hot reload, proxies the API
-bun test               # 52 tests
+bun run prepack        # build the interface into static/ (needed before serving)
+bun run serve          # local server + browser window on 127.0.0.1:8731
+bun run dev            # Vite dev server with hot reload; run `bun run serve` too
+bun test               # 53 tests
 ```
+
+The interface is built, not committed: without `bun run prepack` (or `bun run
+build`) the server answers 500 "Interfaccia non trovata" — it has the API but
+nothing to show. The dev server proxies the API to `127.0.0.1:8799` by default,
+so start the local server with `bun run serve --port 8799` if you use `bun run
+dev`.
+
+To get a single executable: `bun run compile` writes `dist-exe/ice.exe` **with
+its `static/` folder next to it** — the two must travel together.
 
 ## How it works
 

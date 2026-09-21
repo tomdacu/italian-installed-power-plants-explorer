@@ -153,6 +153,12 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     if (Array.isArray(body.datasets) && body.datasets.length === 0) {
       return c.json({ detail: "datasets cannot be empty when provided" }, 422);
     }
+    if (Array.isArray(body.datasets)) {
+      const unknown = body.datasets.filter((dataset) => !DATASETS.includes(dataset));
+      if (unknown.length > 0) {
+        return c.json({ detail: `unknown datasets: ${unknown.join(", ")}` }, 422);
+      }
+    }
     // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
     // trasformarsi in centinaia di richieste e bruciare la quota Terna.
     const { years } = clampYears(body.years.map(Number).filter(Number.isFinite));
@@ -163,6 +169,13 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
       );
     }
     const jobId = sync.start({ years, datasets: body.datasets });
+    const status = sync.status(jobId);
+    // Un piano che non contiene nemmeno un passo (tutti gli anni sotto la soglia
+    // del dataset scelto) non è un job: meglio dirlo subito che restituire un
+    // "completed" che non ha scaricato niente.
+    if (!status || status.total_steps === 0) {
+      return c.json({ detail: "no step to run for the requested years and datasets" }, 422);
+    }
     return c.json({ job_id: jobId, status: "queued" });
   });
 
@@ -183,7 +196,7 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
       first_year: DATA_FIRST_YEAR,
       installed_capacity_first_year: INSTALLED_CAPACITY_FIRST_YEAR,
       current_year: currentYear(),
-      database: store.options(),
+      database: { ...store.options(), province_region: store.provinceRegions() },
     }),
   );
 

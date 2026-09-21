@@ -38,6 +38,8 @@ interface JobState {
   error: string | null;
   failedSteps: number;
   emptySteps: number;
+  /** Passi mai eseguiti perché quel dataset non pubblica quell'anno. */
+  skippedSteps: number;
 }
 
 /**
@@ -96,7 +98,8 @@ export class SyncManager {
       message: "Queued",
       error: null,
       failedSteps: 0,
-      emptySteps: dropped,
+      emptySteps: 0,
+      skippedSteps: dropped,
     });
     // La coda non deve poter restare bloccata: `run` gestisce già i propri
     // errori, questo è il paracadute perché un job non fermi tutti i successivi.
@@ -116,6 +119,7 @@ export class SyncManager {
       error: state.error,
       failed_steps: state.failedSteps,
       empty_steps: state.emptySteps,
+      skipped_steps: state.skippedSteps,
     };
   }
 

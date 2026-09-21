@@ -25,7 +25,7 @@ test("il CSV della miscela porta anno, fonte, valore e BOM", () => {
   const csv = toCsv(sourceMixCsv(split));
 
   expect(csv.charCodeAt(0)).toBe(0xfeff); // BOM: senza, Excel sbaglia gli accenti
-  expect(csv).toContain("year,source,installed_capacity_mw,share_percent");
+  expect(csv).toContain("year,source,efficient_power_mw,share_percent");
   expect(csv).toContain("2024,Fotovoltaico,40");
 });
 
@@ -66,7 +66,7 @@ test("la ripartizione per area somma le fonti e ne scrive la quota", () => {
 
   expect(series.rows[0]?.area).toBe("Toscana");
   expect(series.rows[0]?.total).toBe(100);
-  expect(csv).toContain("region,source,installed_capacity_mw,share_in_area_percent");
+  expect(csv).toContain("region,source,efficient_power_mw,share_in_area_percent");
   expect(csv).toContain("Toscana,Fotovoltaico,75,75");
   expect(csv).toContain("Toscana,Geotermoelettrico,25,25");
 });

@@ -42,6 +42,9 @@ export function CapacityByRegionChart({
   const query = useTimeseries(`${groupBy},${splitKey}` as GroupBy, filters, { latestOnly: true });
   const series = areaSeries(query.data ?? [], groupBy, splitKey, valueKey);
   const top = series.rows.slice(0, 15);
+  // `areaSeries` azzera i valori nulli: un'area con totale 0 disegnerebbe una
+  // barra invisibile invece di dire che non c'è nulla da mostrare.
+  const hasValue = series.rows.some((row) => row.total > 0);
 
   return (
     <ChartCard
@@ -54,7 +57,7 @@ export function CapacityByRegionChart({
         <LoadingOverlay label="Loading geography" />
       ) : query.isError ? (
         <ErrorState message={(query.error as Error).message} />
-      ) : top.length > 0 ? (
+      ) : top.length > 0 && hasValue ? (
         <ResponsiveContainer width="100%" height={Math.max(240, top.length * 30)}>
           <BarChart data={top} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="24%">
             <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" horizontal={false} />

@@ -50,10 +50,21 @@ export function FiltersPanel({
 
   // Il dataset nazionale parte dal 2021: gli anni precedenti non esistono.
   const minYear = isNational ? (meta.data?.installed_capacity_first_year ?? 2021) : (meta.data?.first_year ?? 2000);
-  const maxYear = meta.data?.current_year ?? new Date().getFullYear();
+  // I menu si fermano all'ultimo anno che c'è davvero in cache: offrire il 2025
+  // o il 2026, che Terna non ha ancora pubblicato, produceva solo dashboard
+  // vuote. L'anno corrente resta disponibile quando è sincronizzato.
+  const storedYears = (db.years ?? []).filter((year) => year >= minYear);
+  const maxYear = Math.max(...(storedYears.length ? storedYears : [meta.data?.current_year ?? new Date().getFullYear()]));
 
   const regionOptions = toOptions(db.regions ?? []);
-  const provinceOptions = toOptions(db.provinces ?? []);
+  // Solo le province della regione scelta: offrire Roma mentre è selezionata la
+  // Lombardia produceva una dashboard vuota senza spiegazione.
+  const provinceRegion = db.province_region ?? {};
+  const provinceOptions = toOptions(
+    (db.provinces ?? []).filter(
+      (province) => !filters.region || provinceRegion[province] === filters.region,
+    ),
+  );
   // Le fonti del dataset scelto, non tutte quelle presenti nel database:
   // "Bioenergie" in Generation plants non esiste e produrrebbe una dashboard vuota.
   const sourceOptions = toOptions(

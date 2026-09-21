@@ -31,6 +31,9 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
   const records = (query.data ?? [])
     .slice()
     .sort((a, b) => ((b[valueKey] as number | null) ?? 0) - ((a[valueKey] as number | null) ?? 0));
+  // Una riga con valore nullo (la fonte non c'è in quell'area) disegnerebbe
+  // assi e legenda senza barre: meglio lo stato vuoto, che spiega.
+  const hasValue = records.some((record) => (record[valueKey] as number | null) !== null);
 
   return (
     <ChartCard
@@ -43,7 +46,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
         <LoadingOverlay label="Loading sources" />
       ) : query.isError ? (
         <ErrorState message={(query.error as Error).message} />
-      ) : records.length > 0 ? (
+      ) : records.length > 0 && hasValue ? (
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={records} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="28%">
             <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" horizontal={false} />

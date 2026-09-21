@@ -123,6 +123,8 @@ export interface SyncJobStatus {
   error: string | null;
   failed_steps: number;
   empty_steps: number;
+  /** Passi saltati perché quel dataset non pubblica quell'anno (es. il nazionale prima del 2021). */
+  skipped_steps: number;
 }
 
 export interface AvailabilityYear {
@@ -171,6 +173,8 @@ export interface MetadataOptions {
     capacity_types?: string[];
     categories?: string[];
     subcategories?: string[];
+    /** Provincia → regione, per filtrare i menu l'uno con l'altro. */
+    province_region?: Record<string, string>;
     types?: string[];
   };
 }

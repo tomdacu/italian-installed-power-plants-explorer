@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Globe2 } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
@@ -31,7 +31,25 @@ const DEFAULT_FILTERS: DashboardFilters = {
 
 export function DashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
+  const [resetToken, setResetToken] = useState(0);
   const toast = useToast();
+  // Il dataset nazionale impone la geografia "nazionale": tornando a un dataset
+  // con geografia, si riprende l'ultimo livello scelto dall'utente invece di
+  // restare bloccati sul riquadro "you are viewing national data".
+  const lastGeoLevel = useRef<DashboardFilters["geoLevel"]>(
+    DEFAULT_FILTERS.geoLevel === "national" ? "region" : DEFAULT_FILTERS.geoLevel,
+  );
+  useEffect(() => {
+    if (filters.geoLevel !== "national") lastGeoLevel.current = filters.geoLevel;
+  }, [filters.geoLevel]);
+
+  const changeFilters = (next: DashboardFilters) => {
+    const national = next.dataset === "installed_capacity";
+    setFilters({
+      ...next,
+      geoLevel: national ? "national" : next.geoLevel === "national" ? lastGeoLevel.current : next.geoLevel,
+    });
+  };
 
   const apiFilters: RecordFilters = useMemo(() => {
     const yearFrom = filters.year_from || null;
@@ -89,9 +107,13 @@ export function DashboardPage() {
       <div className="mx-auto max-w-[1400px] animate-fade-in space-y-5 p-6 pt-4">
         <FiltersPanel
           filters={filters}
-          onChange={setFilters}
-          // Reset azzera tutto, dataset compreso: il pulsante non promette altro.
-          onReset={() => setFilters({ ...DEFAULT_FILTERS })}
+          onChange={changeFilters}
+          // Reset azzera tutto, dataset compreso, e azzera anche ricerca e
+          // ordinamento della tabella (che ha uno stato proprio).
+          onReset={() => {
+            setFilters({ ...DEFAULT_FILTERS });
+            setResetToken((token) => token + 1);
+          }}
         />
 
         <KpiCards
@@ -134,7 +156,7 @@ export function DashboardPage() {
           )}
         </div>
 
-        <DataTable filters={apiFilters} />
+        <DataTable filters={apiFilters} resetToken={resetToken} />
         <MethodologyNote />
       </div>
     </div>

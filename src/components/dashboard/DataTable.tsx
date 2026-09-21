@@ -59,7 +59,7 @@ function rowText(r: CapacityRecord): string {
     .toLowerCase();
 }
 
-export function DataTable({ filters }: { filters: RecordFilters }) {
+export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters; resetToken?: number }) {
   const [sortKey, setSortKey] = useState<SortKey>("year");
   const [order, setOrder] = useState<Order>("desc");
   const [query, setQuery] = useState("");
@@ -112,6 +112,15 @@ const RECORD_PAGE_LIMIT = 20000;
   useEffect(() => {
     setPage(0);
   }, [query, filters]);
+
+  // Il Reset della dashboard azzera anche ricerca e ordinamento: sono stato
+  // locale della tabella, ma l'utente se li aspetta azzerati.
+  useEffect(() => {
+    setQuery("");
+    setSortKey("year");
+    setOrder("desc");
+    setPage(0);
+  }, [resetToken]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setOrder((o) => (o === "asc" ? "desc" : "asc"));

@@ -8,6 +8,7 @@
  * macOS: `security`; Linux: `secret-tool` (entrambi one-shot, fuori dall'avvio).
  */
 import { dlopen, FFIType, ptr, toArrayBuffer, type Pointer } from "bun:ffi";
+import { existsSync, rmSync } from "node:fs";
 
 const SERVICE = "italian-renewable-capacity-explorer";
 
@@ -121,10 +122,10 @@ export function createSecretStore(filePath: string): SecretStore {
         }
       },
       async remove() {
-        await run(["cmd", "/c", "del", "/f", "/q", filePath]);
-        // `del` su un file inesistente non è un errore, ma un file ancora lì
-        // significa che il segreto è rimasto: meglio saperlo subito.
-        if (await Bun.file(filePath).exists()) {
+        // Niente `cmd /c del`: passava dal parsing della shell (percorso con
+        // spazi) e il file restava lì. Il filesystem diretto non ha ambiguità.
+        rmSync(filePath, { force: true });
+        if (existsSync(filePath)) {
           throw new Error("Could not remove the stored secret from the credential file");
         }
       },
@@ -186,8 +187,8 @@ export function createSecretStore(filePath: string): SecretStore {
       // `secret-tool` può mancare del tutto: in quel caso resta il file, e se
       // nemmeno quello si cancella l'errore deve arrivare al chiamante.
       await run(["secret-tool", "clear", "service", SERVICE, "account", clientId]);
-      await run(["rm", "-f", fallbackPath]);
-      if (await Bun.file(fallbackPath).exists()) {
+      rmSync(fallbackPath, { force: true });
+      if (existsSync(fallbackPath)) {
         throw new Error("Could not remove the stored secret from the fallback file");
       }
     },
