@@ -299,25 +299,29 @@ export class CapacityStore {
     const rows = this.db
       .prepare(
         `WITH cells AS (
-           SELECT dataset, province, source, capacity_type, category, subcategory, type, year,
+           SELECT dataset, region, province, source, capacity_type, category, subcategory, type, year,
                   MIN(CASE WHEN ${value("")} IS NULL THEN 1 ELSE 0 END) AS all_null,
                   MAX(CASE WHEN ${value("")} > 0 THEN 1 ELSE 0 END) AS is_positive
            FROM capacity_records
-           ${filtered}GROUP BY dataset, province, source, capacity_type, category, subcategory, type, year
+           ${filtered}GROUP BY dataset, region, province, source, capacity_type, category, subcategory, type, year
          ),
          keys AS (
-           SELECT dataset, province, source, capacity_type, category, subcategory, type,
-                  MAX(is_positive) AS ever_positive
+           SELECT dataset, region, province, source, capacity_type, category, subcategory, type,
+                  MIN(CASE WHEN is_positive = 1 THEN year END) AS first_positive,
+                  MAX(CASE WHEN is_positive = 1 THEN year END) AS last_positive
            FROM cells
-           GROUP BY dataset, province, source, capacity_type, category, subcategory, type
+           GROUP BY dataset, region, province, source, capacity_type, category, subcategory, type
          )
          SELECT c.year, COUNT(*) AS missing_values
          FROM cells c
          JOIN keys k
-           ON k.dataset = c.dataset AND k.province IS c.province AND k.source IS c.source
-          AND k.capacity_type IS c.capacity_type AND k.category IS c.category
-          AND k.subcategory IS c.subcategory AND k.type IS c.type
-         WHERE c.all_null = 1 AND k.ever_positive = 1
+           ON k.dataset = c.dataset AND k.region IS c.region AND k.province IS c.province
+          AND k.source IS c.source AND k.capacity_type IS c.capacity_type
+          AND k.category IS c.category AND k.subcategory IS c.subcategory AND k.type IS c.type
+         -- Un buco è una cella vuota *dentro* la serie della chiave: prima che la
+         -- serie inizi non manca nulla (nel 2000 il fotovoltaico in quella
+         -- provincia semplicemente non esisteva), e dopo la fine nemmeno.
+         WHERE c.all_null = 1 AND k.first_positive < c.year AND k.last_positive > c.year
          GROUP BY c.year ORDER BY c.year`,
       )
       .all(params) as DataQualityYear[];
@@ -358,7 +362,13 @@ export class CapacityStore {
   }
 
   summary(filters: RecordFilters): Summary {
-    const { clause, params } = this.where(filters);
+    const applied = this.capacityApplied(filters);
+    // Lo stesso indice dei totali: contare le righe di Lorda e Netta mentre i
+    // totali ne usano una sola dava due numeri che non tornavano fra loro.
+    const scoped = applied
+      ? { ...filters, capacity_type: applied as RecordFilters["capacity_type"] }
+      : filters;
+    const { clause, params } = this.where(scoped);
     const base = this.db
       .prepare(
         `SELECT COUNT(*) AS row_count,
@@ -373,7 +383,6 @@ export class CapacityStore {
       year_max: null,
     };
 
-    const applied = this.capacityApplied(filters);
     const latestYear = totals.year_max;
     let latestMw: number | null = null;
     let latestGw: number | null = null;
@@ -467,6 +476,66 @@ export class CapacityStore {
     // UTF-8 BOM: without it Excel on Windows reads the accented place names
     // ("Forlì-Cesena", "Vallée d'Aoste") as mojibake.
     return `\uFEFF${lines.join("\r\n")}\r\n`;
+  }
+
+  /**
+   * Riscrive i nomi di regione/provincia che Terna pubblica in modo incoerente
+   * (uno zero al posto del trattino, due grafie per la Valle d'Aosta): senza,
+   * la stessa provincia compare due volte e la sua serie resta spezzata.
+   * Idempotente: le righe già canoniche non vengono toccate.
+   */
+  repairPlaceNames(fixes: Record<string, string>): number {
+    type StoredRow = CapacityRecord & { id: number };
+    let repaired = 0;
+    const check = this.db.prepare(
+      `SELECT COUNT(*) AS n FROM capacity_records
+       WHERE dataset = ? AND year = ? AND province IS ? AND source IS ?
+         AND capacity_type IS ? AND category IS ? AND subcategory IS ? AND type IS ? AND region IS ?`,
+    );
+    const move = this.db.prepare(
+      `UPDATE capacity_records SET region = $region, province = $province, record_key = $record_key WHERE id = $id`,
+    );
+    const drop = this.db.prepare("DELETE FROM capacity_records WHERE id = ?");
+    const stale = this.db
+      .prepare(
+        `SELECT * FROM capacity_records WHERE ${Object.keys(fixes)
+          .map((_, index) => `province = $p${index} OR region = $p${index}`)
+          .join(" OR ")}`,
+      )
+      .all({ ...Object.fromEntries(Object.keys(fixes).map((name, index) => [`$p${index}`, name])) }) as StoredRow[];
+
+    const run = this.db.transaction((rows: StoredRow[]) => {
+      for (const row of rows) {
+        const region = fixes[row.region as string] ?? row.region;
+        const province = fixes[row.province as string] ?? row.province;
+        if (region === row.region && province === row.province) continue;
+        const twin = check.get(
+          row.dataset,
+          row.year,
+          province,
+          row.source,
+          row.capacity_type,
+          row.category,
+          row.subcategory,
+          row.type,
+          region,
+        ) as CountRow | null;
+        if (twin && twin.n > 0) {
+          // La riga canonica esiste già: questa è un doppione da rimuovere.
+          drop.run(row.id);
+        } else {
+          move.run({
+            $region: region,
+            $province: province,
+            $record_key: recordKey({ ...row, region, province }),
+            $id: row.id,
+          });
+        }
+        repaired += 1;
+      }
+    });
+    run(stale);
+    return repaired;
   }
 
   close(): void {

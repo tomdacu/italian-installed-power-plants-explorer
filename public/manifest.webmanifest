@@ -5,7 +5,6 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#0d1118",
   "theme_color": "#04130e",
   "categories": ["utilities", "productivity", "education"],

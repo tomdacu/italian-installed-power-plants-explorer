@@ -36,6 +36,13 @@ async function readJsonBody(c: { req: { json: () => Promise<unknown> } }): Promi
   }
 }
 
+/**
+ * Errore di validazione di un filtro: rispondere con *tutto* quando il valore
+ * non è riconosciuto (comportamento precedente) è peggio di un 400, perché
+ * l'utente crede di aver filtrato e vede invece l'intero database.
+ */
+class FilterError extends Error {}
+
 function filtersFromQuery(query: URLSearchParams): RecordFilters {
   const text = (key: string): string | null => {
     const value = query.get(key);
@@ -45,21 +52,50 @@ function filtersFromQuery(query: URLSearchParams): RecordFilters {
     const value = text(key);
     if (value === null) return null;
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+    if (!Number.isInteger(parsed)) throw new FilterError(`${key} must be an integer year`);
+    return parsed;
   };
-  const dataset = text("dataset");
-  const capacityType = text("capacity_type");
+  const oneOf = <T extends string>(key: string, allowed: readonly T[], fold = false): T | null => {
+    const raw = text(key);
+    if (raw === null) return null;
+    const value = fold ? raw.toLowerCase() : raw;
+    const match = fold ? allowed.find((candidate) => candidate.toLowerCase() === value) : allowed.find((candidate) => candidate === raw);
+    if (!match) throw new FilterError(`${key} must be one of: ${allowed.join(", ")}`);
+    return match;
+  };
+
   return {
-    dataset: dataset && (DATASETS as readonly string[]).includes(dataset) ? (dataset as DatasetName) : null,
+    dataset: oneOf<DatasetName>("dataset", DATASETS as readonly DatasetName[]),
     year_from: years("year_from"),
     year_to: years("year_to"),
     region: text("region"),
     province: text("province"),
     source: text("source"),
-    capacity_type: capacityType && (CAPACITY_TYPES as readonly string[]).includes(capacityType) ? (capacityType as CapacityType) : null,
+    // `capacity_type=netta` applicava in silenzio Lorda: ora il confronto non
+    // distingue le maiuscole e un valore ignoto è un errore.
+    capacity_type: oneOf<CapacityType>("capacity_type", CAPACITY_TYPES as readonly CapacityType[], true),
     category: text("category"),
     subcategory: text("subcategory"),
     type: text("type"),
+  };
+}
+
+/** Context Hono ridotto a ciò che serve: il wrapper resta indipendente dai tipi del router. */
+interface FilterContext {
+  req: { url: string };
+  json: (body: unknown, status?: number) => Response;
+}
+
+/** Avvolge un handler: i filtri non validi diventano 400, non 500. */
+function withFilters(handler: (filters: RecordFilters, c: FilterContext) => Response | Promise<Response>) {
+  return async (c: FilterContext) => {
+    const query = new URL(c.req.url).searchParams;
+    try {
+      return await handler(filtersFromQuery(query), c);
+    } catch (error) {
+      if (error instanceof FilterError) return c.json({ detail: error.message }, 400);
+      throw error;
+    }
   };
 }
 
@@ -114,6 +150,9 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     if (body.datasets !== undefined && !Array.isArray(body.datasets)) {
       return c.json({ detail: "datasets must be an array of dataset names" }, 422);
     }
+    if (Array.isArray(body.datasets) && body.datasets.length === 0) {
+      return c.json({ detail: "datasets cannot be empty when provided" }, 422);
+    }
     // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
     // trasformarsi in centinaia di richieste e bruciare la quota Terna.
     const { years } = clampYears(body.years.map(Number).filter(Number.isFinite));
@@ -150,14 +189,20 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
 
   app.get("/metadata/availability", (c) => c.json(store.availability()));
 
-  app.get("/metadata/data-quality", (c) =>
-    c.json({
-      years: store.dataQuality(filtersFromQuery(new URL(c.req.url).searchParams)),
-    }),
+  app.get(
+    "/metadata/data-quality",
+    withFilters((filters, c) => c.json({ years: store.dataQuality(filters) })),
   );
 
-  app.get("/records", (c) => {
+  app.get("/records", async (c) => {
     const query = new URL(c.req.url).searchParams;
+    let filters;
+    try {
+      filters = filtersFromQuery(query);
+    } catch (error) {
+      if (error instanceof FilterError) return c.json({ detail: error.message }, 400);
+      throw error;
+    }
     // `limit=abc` faceva arrivare un NaN fino a SQLite: 500 invece di una
     // risposta sensata. Qui si valida, si lima e si risponde sempre qualcosa.
     const numeric = (key: string, fallback: number, min: number, max: number): number | null => {
@@ -172,35 +217,43 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     if (limit === null || offset === null) {
       return c.json({ detail: "limit and offset must be numbers" }, 400);
     }
-    const rows = store.records(filtersFromQuery(query), limit, offset);
+    const rows = store.records(filters, limit, offset);
     return c.json(rows, 200, {
       // Il conteggio vero, così l'interfaccia può dire "50 di 12.330 righe"
       // invece di far credere che la selezione finisca dove finisce la pagina.
-      "x-total-count": String(store.countRecords(filtersFromQuery(query))),
+      "x-total-count": String(store.countRecords(filters)),
       "access-control-expose-headers": "x-total-count",
     });
   });
 
-  app.get("/analytics/summary", (c) => {
-    const query = new URL(c.req.url).searchParams;
-    return c.json(store.summary(filtersFromQuery(query)));
-  });
+  app.get(
+    "/analytics/summary",
+    withFilters((filters, c) => c.json(store.summary(filters))),
+  );
 
-  app.get("/analytics/timeseries", (c) => {
+  app.get("/analytics/timeseries", async (c) => {
     const url = new URL(c.req.url);
     const groupBy = url.searchParams.get("group_by") ?? "year";
+    let filters;
     try {
       parseGroupBy(groupBy);
+      filters = filtersFromQuery(url.searchParams);
     } catch (error) {
       return c.json({ detail: (error as Error).message }, 400);
     }
     const latestOnly = ["true", "1"].includes((url.searchParams.get("latest_only") ?? "").toLowerCase());
-    return c.json(store.aggregate(filtersFromQuery(url.searchParams), groupBy, latestOnly));
+    return c.json(store.aggregate(filters, groupBy, latestOnly));
   });
 
-  app.get("/export/csv", (c) => {
+  app.get("/export/csv", async (c) => {
     const query = new URL(c.req.url).searchParams;
-    return new Response(store.toCsv(filtersFromQuery(query)), {
+    let filters;
+    try {
+      filters = filtersFromQuery(query);
+    } catch (error) {
+      return c.json({ detail: (error as Error).message }, 400);
+    }
+    return new Response(store.toCsv(filters), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": 'attachment; filename="italian-renewable-capacity-records.csv"',

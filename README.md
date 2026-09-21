@@ -2,8 +2,6 @@
 
 ![Italian Renewable Capacity Explorer banner](docs/readme-banner.png)
 
-![Italian Renewable Capacity Explorer](docs/assets/readme-banner.png)
-
 **Explore Italy's renewable installed capacity — solar, wind, hydro, bioenergy and
 geothermal — region by region, with charts, tables and CSV exports.**
 Thermoelectric capacity and the national totals are included for comparison. The

@@ -5,7 +5,7 @@
  * eccezioni CSP: il browser parla solo con `127.0.0.1:<porta>`.
  */
 import type { Server } from "bun";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 
 import { createApi } from "./api.ts";
@@ -63,7 +63,15 @@ export function startServer(options: ServerOptions): LocalServer {
       }
 
       const candidate = normalize(join(staticRoot, url.pathname));
-      if (url.pathname !== "/" && candidate.startsWith(staticRoot) && existsSync(candidate) && !url.pathname.endsWith("/")) {
+      // `existsSync` è vero anche per una cartella: servire una directory con
+      // `Bun.file` faceva rispondere 500 invece del contenuto o di index.html.
+      if (
+        url.pathname !== "/" &&
+        candidate.startsWith(staticRoot) &&
+        !url.pathname.endsWith("/") &&
+        existsSync(candidate) &&
+        statSync(candidate).isFile()
+      ) {
         return withSecurityHeaders(new Response(Bun.file(candidate)));
       }
       if (existsSync(indexPath)) {

@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { createTernaClient } from "./client.ts";
+import { PLACE_FIXES } from "./normalize.ts";
 import { CapacityStore } from "./db.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type LocalServer } from "./http.ts";
@@ -46,6 +47,10 @@ export function startApp(options: StartOptions = {}) {
   const settings = new SettingsStore(options.dataDir);
   const appSettings = settings.load();
   const store = new CapacityStore(appSettings.databasePath);
+  // Una volta sola: i nomi che Terna scrive in modo incoerente (due province con
+  // uno zero al posto del trattino, due grafie per la Valle d'Aosta) dividono le
+  // serie e fanno comparire due voci identiche nei menu.
+  store.repairPlaceNames(PLACE_FIXES);
 
   const sync = new SyncManager(store, () => createTernaClient(settings));
 

@@ -64,7 +64,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   --browser     apre il browser di sistema invece della finestra app
   --no-window   avvia solo il server locale
-  --port N      forza la porta (default: libera scelta dal sistema)
+  --port N      forza la porta (default: ${DEFAULT_PORT})
   --data-dir    cartella dati alternativa (default: %APPDATA%/ItalianRenewableCapacityExplorer)`);
       process.exit(0);
     }
@@ -76,7 +76,14 @@ function openInterface(url: string, mode: CliOptions["window"]): void {
   if (mode === "none") return;
 
   if (mode === "browser") {
-    const opener = process.platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
+    // Su macOS `xdg-open` non esiste: il browser non si apriva e lo spawn
+    // faceva terminare il processo. `open` è il comando giusto lì.
+    const opener =
+      process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : process.platform === "darwin"
+          ? ["open", url]
+          : ["xdg-open", url];
     Bun.spawn(opener, { stdout: "ignore", stderr: "ignore" });
     return;
   }

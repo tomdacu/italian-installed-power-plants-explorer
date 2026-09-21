@@ -46,7 +46,7 @@ export function CapacityByRegionChart({
   return (
     <ChartCard
       title={title}
-      description={`Latest-year stock (${unit}) per ${groupBy}, split by ${splitKey} — top 15 areas`}
+      description={`Latest-year stock (${unit}) per ${groupBy}, split by ${splitKey} — top 15 drawn, all areas in the CSV`}
       filename={filename}
       csv={() => capacityByAreaSourceCsv(series, groupBy, splitKey, isGw)}
     >

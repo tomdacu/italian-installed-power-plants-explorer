@@ -96,6 +96,7 @@ async function run(command: string[]): Promise<{ code: number; stdout: string }>
 }
 
 export interface SecretStore {
+  /** Rimuove il segreto; `false` se il portachiavi non ha potuto (non fatale). */
   save(clientId: string, secret: string): Promise<void>;
   load(clientId: string): Promise<string | null>;
   remove(clientId: string): Promise<void>;

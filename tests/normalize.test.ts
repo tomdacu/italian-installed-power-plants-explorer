@@ -122,9 +122,9 @@ test("le righe duplicate dello stesso dato vengono fuse", () => {
   expect(rows[0]?.efficient_power_mw).toBe(598.943);
 });
 
-test("i frammenti della stessa chiave si sommano", () => {
-  // generation-plants pubblica due righe con valori diversi per la stessa
-  // chiave (impianti diversi nella stessa provincia): vanno sommate.
+test("duplicati con valori diversi: vince il maggiore", () => {
+  // generation-plants pubblica una riga per impianto (213,193 e 1,001 a Modena
+  // nel 2024): sono impianti diversi e vanno sommati, come conferma l'annuario.
   const payload = {
     generation_plants: [
       { year: "2023", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", source: "Termoelettrico", efficient_power_MW: 225.824 },
@@ -150,4 +150,22 @@ test("una cella vuota in tutte le righe resta vuota", () => {
 
   expect(rows).toHaveLength(1);
   expect(rows[0]?.efficient_power_mw).toBeNull();
+});
+
+test("il termoelettrico non somma la stessa riga ripetuta", () => {
+  // thermoelectric-capacity pubblica per categoria e sottocategoria e può
+  // ripetere la stessa riga (Modena «Celle combustibili» 1,0 e 1,0): sommarle
+  // portava i totali 1,465 MW sopra l'annuario.
+  const payload = {
+    thermoelectric: [
+      { year: "2024", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", category: "Non cogenerative", subcategory: "Celle combustibili", efficient_power_MW: 1.0 },
+      { year: "2024", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", category: "Non cogenerative", subcategory: "Celle combustibili", efficient_power_MW: 1.0 },
+      { year: "2024", capacity_type: "Lorda", region: "Emilia-Romagna", province: "Modena", category: "Non cogenerative", subcategory: "Celle combustibili", efficient_power_MW: 0.0 },
+    ],
+  };
+
+  const rows = thermoelectricCapacityRows(payload);
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.efficient_power_mw).toBe(1);
 });

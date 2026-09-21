@@ -105,9 +105,11 @@ export class SettingsStore {
   async deleteCredentials(): Promise<void> {
     const payload = this.readPayload();
     const clientId = payload.client_id;
+    // Prima il segreto, poi il riferimento: se la rimozione dal portachiavi
+    // fallisce non resta un client id che punta a un segreto orfano.
+    if (clientId) await this.secrets.remove(clientId);
     delete payload.client_id;
     writeFileSync(this.settingsPath, JSON.stringify(payload, null, 2), "utf8");
-    if (clientId) await this.secrets.remove(clientId);
   }
 
   async getClientSecret(clientId?: string): Promise<string | null> {

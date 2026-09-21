@@ -85,18 +85,34 @@ export function rowKey(row: CapacityRow | Record<string, unknown>): string {
   return rowKeyParts(row).join("|");
 }
 
-const addNullable = (a: number | null, b: number | null): number | null =>
+const maxNullable = (a: number | null, b: number | null): number | null =>
+  a === null ? b : b === null ? a : Math.max(a, b);
+
+const sumNullable = (a: number | null, b: number | null): number | null =>
   a === null ? b : b === null ? a : a + b;
 
 /**
- * Terna emette più righe per la stessa chiave: una con il valore e le altre
- * vuote (o frammenti dello stesso totale). Tenere l'ultima riga — come faceva
- * il salvataggio — buttava via il valore ogni volta che una riga vuota veniva
- * dopo quella piena, ed è quella la ragione dei buchi nel fotovoltaico 2021-2023.
- * Sommare i valori non nulli copre entrambi i casi: le righe vuote non
- * aggiungono nulla, i frammenti si sommano.
+ * Come si fondono due righe con la stessa chiave. Non è la stessa cosa per
+ * tutti gli endpoint, e l'arbitro è l'annuario Terna pubblicato:
+ *
+ * - `generation-plants` pubblica una riga per impianto (Modena 2024: 213,193 e
+ *   1,001): sono impianti diversi, vanno **sommati** — con il massimo il
+ *   termoelettrico 2024 resta 1,5 MW sotto l'annuario;
+ * - `thermoelectric-capacity` pubblica per categoria e sottocategoria, e la
+ *   stessa riga può comparire due volte identica (Modena «Celle combustibili»
+ *   1,0 e 1,0): qui vale **una sola**, altrimenti i totali salgono (erano
+ *   1,465 MW sopra l'annuario).
  */
-function mergeDuplicates(rows: CapacityRow[]): CapacityRow[] {
+type MergeStrategy = "sum" | "max";
+
+/**
+ * Terna emette più righe per la stessa chiave: una con il valore e altre vuote,
+ * oppure righe ripetute. Tenere l'ultima — come faceva il salvataggio — buttava
+ * via il valore quando ne arrivava una vuota dopo (i buchi nel fotovoltaico
+ * 2021-2023). Come fonderle dipende dall'endpoint, vedi `MergeStrategy`.
+ */
+function mergeDuplicates(rows: CapacityRow[], strategy: MergeStrategy = "max"): CapacityRow[] {
+  const combine = strategy === "sum" ? sumNullable : maxNullable;
   const merged = new Map<string, CapacityRow>();
   for (const row of rows) {
     const key = rowKey(row);
@@ -105,8 +121,8 @@ function mergeDuplicates(rows: CapacityRow[]): CapacityRow[] {
       merged.set(key, { ...row });
       continue;
     }
-    existing.efficient_power_mw = addNullable(existing.efficient_power_mw, row.efficient_power_mw);
-    existing.installed_capacity_gw = addNullable(existing.installed_capacity_gw, row.installed_capacity_gw);
+    existing.efficient_power_mw = combine(existing.efficient_power_mw, row.efficient_power_mw);
+    existing.installed_capacity_gw = combine(existing.installed_capacity_gw, row.installed_capacity_gw);
   }
   return [...merged.values()];
 }
@@ -119,6 +135,23 @@ function itemRows(payload: Record<string, unknown>, key: string): Record<string,
 const asText = (value: unknown): string | null =>
   value === null || value === undefined || value === "" ? null : String(value);
 
+/**
+ * Refusi nei file Terna, verificati sul payload reale: due province arrivano
+ * con uno zero al posto del trattino (2000-2016) e la Valle d'Aosta compare con
+ * due grafie a seconda dell'endpoint. Senza correzione la stessa provincia si
+ * presenta due volte nel menu e la sua serie si spezza fra le due voci.
+ */
+export const PLACE_FIXES: Record<string, string> = {
+  Olbia0tempio: "Olbia-Tempio",
+  Verbano0cusio0ossola: "Verbano-Cusio-Ossola",
+  "Valle d'Aosta": "Valle D'Aosta",
+};
+
+/** Nome canonico di regione/provincia: qui e solo qui si correggono i refusi. */
+export function canonicalPlace(value: string | null): string | null {
+  return value === null ? null : (PLACE_FIXES[value] ?? value);
+}
+
 export function renewableSourceCapacityRows(
   payload: Record<string, unknown>,
   fetchedAt = utcNowIso(),
@@ -127,8 +160,8 @@ export function renewableSourceCapacityRows(
     dataset: "renewable_source_capacity",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
-    region: asText(item.region),
-    province: asText(item.province),
+    region: canonicalPlace(asText(item.region)),
+    province: canonicalPlace(asText(item.province)),
     source: asText(item.source),
     category: null,
     subcategory: null,
@@ -147,8 +180,8 @@ export function generationPlantsRows(
     dataset: "generation_plants",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
-    region: asText(item.region),
-    province: asText(item.province),
+    region: canonicalPlace(asText(item.region)),
+    province: canonicalPlace(asText(item.province)),
     source: asText(item.source),
     category: null,
     subcategory: null,
@@ -156,7 +189,7 @@ export function generationPlantsRows(
     efficient_power_mw: parseDecimal(item.efficient_power_MW),
     installed_capacity_gw: null,
     fetched_at: fetchedAt,
-  })));
+  })), "sum");
 }
 
 export function installedCapacityRows(
@@ -189,8 +222,8 @@ export function thermoelectricCapacityRows(
     dataset: "thermoelectric_capacity",
     year: Number(item.year),
     capacity_type: asText(item.capacity_type),
-    region: asText(item.region),
-    province: asText(item.province),
+    region: canonicalPlace(asText(item.region)),
+    province: canonicalPlace(asText(item.province)),
     source: "Termoelettrico",
     category: asText(item.category),
     subcategory: asText(item.subcategory),

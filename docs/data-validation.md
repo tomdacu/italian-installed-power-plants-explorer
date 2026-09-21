@@ -141,17 +141,21 @@ row came after the filled one the value was dropped. In the 2023 payload:
 Milan's photovoltaic row for 2023 arrived as `null, 598.943, null`: the value was
 there, the app just kept the wrong row. The ingestion now merges duplicates —
 empty rows add nothing, fragments are summed — and the upsert never overwrites a
-stored value with a NULL. After the fix every photovoltaic cell (428 of 428) is
-identical to `generation_plants` and to the yearbook, `Lorda ≥ Netta` holds for
-every row, and the only empty cells left are two (Trapani bioenergy 2023, Teramo
-wind 2024).
+stored value with a NULL. How duplicate rows are merged is per endpoint, and the yearbook decides: rows
+that are distinct plants are summed (`generation-plants`), rows that are the same
+publication repeated are not (`thermoelectric-capacity`, where summing put the
+2024 total 1,465 MW above the official figure). After the fix every photovoltaic
+cell (428 of 428) is identical to `generation_plants` and to the yearbook, and
+`Lorda ≥ Netta` holds for every row.
 
 ### What is still genuinely upstream
 
 - **Hydro perimeter**: `renewable_source_capacity` excludes pure pumped storage
   (−3.986,3 MW in 2024), `generation_plants` includes it.
-- **Two stray empty cells**: Trapani bioenergy 2023 and Teramo wind 2024 are
-  empty in the platform's own files.
+- **A handful of empty cells inside a series**: the dashboard's amber note counts
+  them (22 cells across 2001–2010 with the default filters). Empty cells *before*
+  a series starts — photovoltaic in 2000, when it did not exist in most provinces
+  — are not gaps and are not counted.
 - **`Accumulo stand alone`** (standalone storage) appears in `generation_plants`
   from 2023 and is synced like every other source.
 - **Region spelling**: thermoelectric rows say `Valle d'Aosta`, the other
@@ -208,7 +212,7 @@ equality, but to see whether the magnitudes and the trends are the same story.
 | Wind | 12,99 GW | **12,99 GW** | DataCivicLab (same series) |
 | Hydro (excl. pumping) | 19,64 GW | **19,64 GW** | DataCivicLab (same series) |
 | Total installed, gross efficient | 137,60 GW (+5,7 %) | **137,6 GW, +5,7 % vs 2023** | Terna, *Pubblicazioni statistiche* |
-| New renewable capacity in 2024 | +7.700 MW (our deltas) | **+7.480 MW** | Terna, *Rapporto mensile dicembre 2024* |
+| New renewable capacity in 2024 | +7.700 MW (our deltas, net index) · +7.683,7 MW (gross, the dashboard default) | **+7.480 MW** | Terna, *Rapporto mensile dicembre 2024* |
 | New photovoltaic in 2024 | +6.683 MW (our deltas) | **+6.795 MW** | Terna, *Rapporto mensile dicembre 2024* |
 | Trend into 2025 | not in the API yet | **145,9 GW, +6 % vs 2024** | Terna, *Pubblicazioni statistiche* |
 

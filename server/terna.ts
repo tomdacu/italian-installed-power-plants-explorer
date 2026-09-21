@@ -13,10 +13,13 @@ const BASE_URL = "https://api.terna.it/generation/v2.0";
  * reali, con `retry-after: 1`). Il margine tiene conto che la finestra è
  * allineata ai secondi dell'orologio, non ai nostri intervalli.
  */
-export const MIN_REQUEST_INTERVAL = Math.max(
-  0,
-  Number(process.env.TERNA_MIN_REQUEST_INTERVAL ?? "1.2") || 1.2,
-);
+export const MIN_REQUEST_INTERVAL = (() => {
+  const raw = process.env.TERNA_MIN_REQUEST_INTERVAL;
+  // `Number(raw) || 1.2` trasformava uno 0 esplicito (utile nei test) in 1,2.
+  if (raw === undefined || raw.trim() === "") return 1.2;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1.2;
+})();
 
 /**
  * Oltre al limite per secondo c'è una quota più ampia (`403 Developer Over
@@ -186,6 +189,7 @@ export class TernaClient {
       let response: Response | null = null;
       let retryAfter: string | null = null;
 
+      let body = "";
       try {
         response = await this.fetchImpl(url, {
           method,
@@ -193,12 +197,15 @@ export class TernaClient {
           body: options.form ? new URLSearchParams(options.form).toString() : undefined,
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
+        // La lettura del corpo può fallire a metà (connessione interrotta):
+        // dentro il try diventa un errore ritentabile invece di sfuggire.
+        body = await response.text();
       } catch (error) {
         lastError = `network error: ${(error as Error).name}`;
+        response = null;
       }
 
       if (response) {
-        const body = await response.text();
         if (response.status < 400) {
           return new Response(body, { status: response.status, headers: response.headers });
         }

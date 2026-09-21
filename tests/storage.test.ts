@@ -144,14 +144,18 @@ describe("CapacityStore", () => {
     expect(Object.fromEntries((dataset?.years ?? []).map((year) => [year.year, year.rows]))).toEqual({ 2023: 4, 2024: 4 });
   });
 
-  test("dataQuality segnala i buchi di pubblicazione e ignora le celle vuote strutturali", () => {
-    // Bergamo/Fotovoltaico ha un valore nel 2024 ma non nel 2023: il NULL del
-    // 2023 è un buco di pubblicazione. Bergamo/Geotermoelettrico è vuoto in
-    // tutti gli anni → la fonte non esiste lì e non è un dato mancante.
+  test("dataQuality segnala i buchi dentro una serie e ignora le celle vuote strutturali", () => {
+    // Un buco è una cella vuota *dentro* la serie della stessa chiave:
+    // Bergamo/Fotovoltaico ha valori nel 2022 e nel 2024 e nulla nel 2023 → conta.
+    // Bergamo/Geotermoelettrico è vuoto in tutti gli anni (la fonte non esiste
+    // lì) e Bergamo/Eolico è vuoto prima di iniziare: nessuno dei due è un buco.
     seed(store);
     store.upsertRecords([
+      row({ year: 2022, province: "Bergamo", source: "Fotovoltaico", efficient_power_mw: 20 }),
       row({ year: 2023, province: "Bergamo", source: "Fotovoltaico", efficient_power_mw: null as unknown as number }),
       row({ year: 2024, province: "Bergamo", source: "Fotovoltaico", efficient_power_mw: 30 }),
+      row({ year: 2024, province: "Bergamo", source: "Eolico", efficient_power_mw: 5 }),
+      row({ year: 2023, province: "Bergamo", source: "Eolico", efficient_power_mw: null as unknown as number }),
       row({ year: 2024, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
       row({ year: 2023, province: "Bergamo", source: "Geotermoelettrico", efficient_power_mw: null as unknown as number }),
     ]);
@@ -159,6 +163,7 @@ describe("CapacityStore", () => {
     const years = store.dataQuality({ dataset: "renewable_source_capacity" });
     const byYear = Object.fromEntries(years.map((entry) => [entry.year, entry.missing_values]));
 
+    // Solo il fotovoltaico 2023: l'eolico è vuoto *prima* che la serie inizi.
     expect(byYear[2023]).toBe(1);
     expect(byYear[2024]).toBeUndefined();
   });

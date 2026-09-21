@@ -8,11 +8,18 @@ One row of `capacity_records` is a dataset × year × geography × source ×
 capacity-type combination, upserted by a stable `record_key` (SHA-256 of the
 dimension values), so re-syncing never duplicates rows.
 
-The platform sometimes returns **several rows for the same key** — one with the
-value and the others empty, or fragments that add up. The ingestion merges them
-before writing (empty rows add nothing, fragments are summed) and the upsert
-never overwrites a stored value with a `NULL`: keeping the last row instead is
-what used to lose photovoltaic capacity for 2021–2023.
+The platform sometimes returns **several rows for the same key**. How they are
+merged depends on the endpoint, and the yearbook decides which rule is right:
+
+| Endpoint | Rows for one key | Rule |
+| --- | --- | --- |
+| `renewable-source-capacity` | one value + empty rows | largest non-empty value |
+| `generation-plants` | one row per plant (Modena 2024: 213.193 and 1.001) | **sum**: with the largest, the 2024 thermoelectric total sits 1,5 MW below the yearbook |
+| `thermoelectric-capacity` | the same row published twice (Modena "Celle combustibili" 1,0 and 1,0) | **largest**: summing put the totals 1,465 MW above the yearbook |
+| `installed-capacity` | one row per type and year | largest |
+
+The upsert also never overwrites a stored value with a `NULL`. Keeping the last
+row instead is what used to lose photovoltaic capacity for 2021–2023.
 
 | Column | Unit | Notes |
 | --- | --- | --- |
@@ -34,8 +41,11 @@ what used to lose photovoltaic capacity for 2021–2023.
   years in the selection — a proxy for new capacity, net of decommissioning.
 - **Missing values are `NULL`, upstream zeros are kept as `0`.** Terna answers
   unpublished years and combinations with an empty body; the sync counts those as
-  `empty_steps`, never as failures. Only two cells are empty upstream (Trapani
-  bioenergy 2023, Teramo wind 2024).
+  `empty_steps`, never as failures.
+- **A gap is an empty cell inside a series**: the value is missing in a year that
+  sits between two years where the same province/source/index does carry a value.
+  Empty cells before a series starts (photovoltaic in 2000) or after it ends are
+  not gaps — `/metadata/data-quality` counts only the first kind.
 
 ## Units and upstream quirks
 

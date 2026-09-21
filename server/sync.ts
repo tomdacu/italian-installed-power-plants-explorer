@@ -143,9 +143,11 @@ export class SyncManager {
   }
 
   private async runStep(jobId: string, client: TernaClient, step: SyncStep): Promise<void> {
-    let rows: CapacityRow[];
+    let stored: number;
     try {
-      rows = await this.fetchStep(client, step);
+      // Anche la scrittura sta nel try: un errore del database su un passo non
+      // deve far cadere l'intero job (gli altri passi restano utili).
+      stored = this.store.upsertRecords(await this.fetchStep(client, step));
     } catch (error) {
       const state = this.jobs.get(jobId);
       if (state) {
@@ -155,7 +157,6 @@ export class SyncManager {
       }
       return;
     }
-    const stored = this.store.upsertRecords(rows);
     const state = this.jobs.get(jobId);
     if (!state) return;
     state.completedSteps += 1;
