@@ -10,6 +10,7 @@ evergreen gradient plate, legible down to 16 px.
 | In-app mark | [`BrandMark.tsx`](../../src/components/ui/BrandMark.tsx) | inline SVG with the same geometry |
 | Favicon | [`public/favicon.svg`](../../public/favicon.svg) | same drawing, browser tab |
 | BrandMark PNG | [`public/brandmark.png`](../../public/brandmark.png) | raster mark for third-party surfaces |
+| Repository banner | `readme-banner.png` | shown at the top of the README (dark plate, emblem with orbit rings, extruded title) |
 | GitHub preview | `github-social-preview.png` | upload in GitHub repository settings |
 | Website hero | `hero-site.png` | real dashboard screenshot + abstract plate |
 | Hero background plate | `hero-background.png` | background source for the hero composition |
@@ -22,7 +23,7 @@ evergreen gradient plate, legible down to 16 px.
 ```powershell
 # 1. rasterise app-icon.svg at exactly 1024x1024 with transparent corners,
 #    replacing app-icon.png (any browser: load the SVG, screenshot at 1:1)
-# 2. hero, social preview, OG image, PWA icons, brandmark.png
+# 2. hero, banner, social preview, OG image, PWA icons, brandmark.png
 python scripts/generate-brand-assets.py
 ```
 
