@@ -6,7 +6,6 @@ import { FiltersPanel, type DashboardFilters } from "@/components/dashboard/Filt
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { DataQualityNote } from "@/components/dashboard/DataQualityNote";
-import { CapacityOverTimeChart } from "@/components/charts/CapacityOverTimeChart";
 import { CapacityBySourceChart } from "@/components/charts/CapacityBySourceChart";
 import { CapacityByRegionChart } from "@/components/charts/CapacityByRegionChart";
 import { SourceMixChart } from "@/components/charts/SourceMixChart";
@@ -105,7 +104,6 @@ export function DashboardPage() {
         <DataQualityNote filters={apiFilters} />
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <CapacityOverTimeChart filters={apiFilters} />
           <SourceMixChart filters={apiFilters} />
           <GrowthChart filters={apiFilters} />
           <CapacityBySourceChart filters={apiFilters} />

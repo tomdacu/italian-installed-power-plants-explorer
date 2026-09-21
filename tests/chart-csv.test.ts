@@ -5,7 +5,6 @@ import {
   capacityByAreaSourceCsv,
   capacityBySplitCsv,
   sourceMixCsv,
-  yearlySplitCsv,
 } from "../src/lib/chart-csv.ts";
 import { areaSeries, yearlyAdditions, type YearlySplit } from "../src/lib/chart-data.ts";
 import { toCsv } from "../src/lib/csv.ts";
@@ -22,11 +21,11 @@ const split: YearlySplit = {
   names: ["Eolico", "Fotovoltaico"],
 };
 
-test("il CSV per anno porta anno, fonte e valore", () => {
-  const csv = toCsv(yearlySplitCsv(split));
+test("il CSV della miscela porta anno, fonte, valore e BOM", () => {
+  const csv = toCsv(sourceMixCsv(split));
 
   expect(csv.charCodeAt(0)).toBe(0xfeff); // BOM: senza, Excel sbaglia gli accenti
-  expect(csv).toContain("year,source,installed_capacity_mw");
+  expect(csv).toContain("year,source,installed_capacity_mw,share_percent");
   expect(csv).toContain("2024,Fotovoltaico,40");
 });
 

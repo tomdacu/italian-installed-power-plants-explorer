@@ -12,27 +12,6 @@ function measureCsvKey(isGw: boolean): string {
   return isGw ? "installed_capacity_gw" : "installed_capacity_mw";
 }
 
-/** Capacity over time: anno, serie e valore dello stock. */
-export function yearlySplitCsv(split: YearlySplit): CsvTable {
-  const valueKey = measureCsvKey(split.measure.isGw);
-  const rows: Record<string, unknown>[] = [];
-  for (const entry of split.data) {
-    for (const name of split.names) {
-      const value = entry[name];
-      if (typeof value !== "number") continue;
-      rows.push({ year: Number(entry.year), [split.splitKey]: name, [valueKey]: csvNumber(value) });
-    }
-  }
-  return {
-    columns: [
-      { key: "year", label: "year" },
-      { key: split.splitKey, label: split.splitKey },
-      { key: valueKey, label: valueKey },
-    ],
-    rows,
-  };
-}
-
 /** Source mix: gli stessi dati più la quota di quella serie nell'anno. */
 export function sourceMixCsv(split: YearlySplit): CsvTable {
   const valueKey = measureCsvKey(split.measure.isGw);

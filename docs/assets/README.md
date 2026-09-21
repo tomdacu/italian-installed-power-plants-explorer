@@ -10,6 +10,7 @@ evergreen gradient plate, legible down to 16 px.
 | In-app mark | [`BrandMark.tsx`](../../src/components/ui/BrandMark.tsx) | inline SVG with the same geometry |
 | Favicon | [`public/favicon.svg`](../../public/favicon.svg) | same drawing, browser tab |
 | BrandMark PNG | [`public/brandmark.png`](../../public/brandmark.png) | raster mark for third-party surfaces |
+| Repository banner | `readme-banner.png` | shown at the top of the README; designed outside the script (hand-made raster, kept as delivered) |
 | GitHub preview | `github-social-preview.png` | upload in GitHub repository settings |
 | Website hero | `hero-site.png` | real dashboard screenshot + abstract plate |
 | Hero background plate | `hero-background.png` | background source for the hero composition |
