@@ -16,10 +16,10 @@ export function MethodologyNote() {
           (net of decommissioning).
         </p>
         <p>
-          Wind, photovoltaic, bioenergy and geothermal agree to the decimal between{" "}
+          Wind, photovoltaic and geothermal agree to the decimal between{" "}
           <strong className="font-semibold">Renewable source capacity</strong> and{" "}
-          <strong className="font-semibold">Generation plants</strong>, and both reproduce Terna&apos;s yearbook for
-          2021–2024. They differ on hydro: <em>Renewable source capacity</em> excludes pure pumped storage
+          <strong className="font-semibold">Generation plants</strong>, and every series reproduces Terna&apos;s
+          yearbook for 2000–2024 (bioenergy exists only in <em>Renewable source capacity</em>). They differ on hydro: <em>Renewable source capacity</em> excludes pure pumped storage
           (−3,99 GW in 2024) while <em>Generation plants</em> includes it. For the thermal breakdown by category use{" "}
           <strong className="font-semibold">Thermoelectric capacity</strong>.{" "}
           <strong className="font-semibold">Installed capacity (national)</strong> uses its own perimeter and is only

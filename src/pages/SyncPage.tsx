@@ -129,6 +129,7 @@ export function SyncPage() {
     qc.invalidateQueries({ queryKey: ["summary"] });
     qc.invalidateQueries({ queryKey: ["records"] });
     qc.invalidateQueries({ queryKey: ["timeseries"] });
+    qc.invalidateQueries({ queryKey: ["data-quality"] });
   };
 
   const startSync = async () => {
