@@ -172,8 +172,8 @@ export const api = {
   },
 
   /**
-   * Pagina di record con il conteggio totale della selezione: senza, la tabella
-   * non può sapere se sta mostrando tutto o solo le prime N righe.
+   * Pagina di record (le più recenti) con il conteggio totale della selezione:
+   * senza, la tabella non può sapere se sta mostrando tutto o solo le prime N.
    */
   recordsPage(
     filters: Partial<RecordFilters> = {},
