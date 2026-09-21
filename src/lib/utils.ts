@@ -32,7 +32,7 @@ export function compactMw(value: number | null | undefined): string {
   return `${formatMw(value)} MW`;
 }
 
-export const SOURCE_COLORS: Record<string, string> = {
+const SOURCE_COLORS: Record<string, string> = {
   Fotovoltaico: "#f59e0b",
   // Blu pieno per l'idrico e verde-azzurro per l'eolico: prima erano due ciano
   // quasi identici, e nelle barre impilate non si distinguevano.
@@ -48,7 +48,7 @@ export const SOURCE_COLORS: Record<string, string> = {
 };
 
 /** Tinte per le dimensioni che non sono fonti (categoria, sottocategoria). */
-export const DEFAULT_PALETTE = [
+const DEFAULT_PALETTE = [
   "#6366f1",
   "#ec4899",
   "#f97316",
@@ -62,7 +62,7 @@ export const DEFAULT_PALETTE = [
 ];
 
 // Il dataset nazionale è un'altra misura (GW invece di MW): famiglia a parte.
-export const INSTALLED_CAPACITY_PALETTE = [
+const INSTALLED_CAPACITY_PALETTE = [
   "#0a8f66",
   "#14b07f",
   "#2fd98f",
@@ -70,7 +70,7 @@ export const INSTALLED_CAPACITY_PALETTE = [
   "#076048",
 ];
 
-export function colorFor(key: string, index: number, dataset?: string): string {
+export function colorFor(key: string, index: number, dataset?: string | null): string {
   if (dataset === "installed_capacity") {
     return INSTALLED_CAPACITY_PALETTE[index % INSTALLED_CAPACITY_PALETTE.length];
   }

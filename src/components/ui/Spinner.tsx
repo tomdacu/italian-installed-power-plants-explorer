@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export function Spinner({ className }: { className?: string }) {
+function Spinner({ className }: { className?: string }) {
   return (
     <span
       role="status"

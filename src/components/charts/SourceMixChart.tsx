@@ -60,11 +60,11 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
             />
             <Legend iconType="circle" iconSize={8} />
             {data.names.map((source, index) => (
-              <Bar key={source} dataKey={source} stackId="mix" fill={colorFor(source, index, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+              <Bar key={source} dataKey={source} stackId="mix" fill={colorFor(source, index, filters.dataset ?? undefined)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>
-      ) : <ChartEmptyState dataset={filters.dataset} />}
+      ) : <ChartEmptyState dataset={filters.dataset ?? undefined} />}
     </ChartCard>
   );
 }

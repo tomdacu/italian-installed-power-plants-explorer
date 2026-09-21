@@ -16,6 +16,7 @@ browser, or install it as an app with its own window and Start-menu entry.
 > data is © Terna S.p.A. and is fetched with each user's own free credentials.
 
 ![Dashboard](docs/screenshot-dashboard.png)
+![Data sync](docs/screenshot-sync.png)
 
 ## Features
 
@@ -57,7 +58,7 @@ cd italian-renewable-capacity-explorer
 bun install
 bun run serve          # local server + browser window
 bun run dev            # Vite dev server with hot reload, proxies the API
-bun test               # 39 tests
+bun test               # 52 tests
 ```
 
 ## How it works

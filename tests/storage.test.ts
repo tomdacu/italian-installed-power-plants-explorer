@@ -79,7 +79,7 @@ describe("CapacityStore", () => {
 
     // Il secondo upsert aggiorna Milano (10 → 5): la somma è 5 + 5 di Bergamo.
     expect(summary.row_count).toBe(2);
-    expect(summary.total_efficient_power_mw).toBe(10);
+    expect(summary.latest_total_efficient_power_mw).toBe(10);
     // Il contratto espone tutte le dimensioni: le non raggruppate sono null.
     expect(byRegion).toEqual([
       {

@@ -16,7 +16,7 @@ const LEGACY_APP_DIR_NAMES = [
   "ItalianCapacityExplorer",
   "TernaInstalledCapacity",
 ];
-export const SETTINGS_FILE = "settings.json";
+const SETTINGS_FILE = "settings.json";
 
 interface SettingsPayload {
   client_id?: string;
@@ -89,12 +89,17 @@ export class SettingsStore {
     };
   }
 
-  saveCredentials(clientId: string, clientSecret: string): void {
+  /**
+   * Salva client id (file) e secret (portachiavi). L'attesa è necessaria: con
+   * una scrittura "fire and forget" il controllo di stato successivo poteva
+   * rispondere `configured: false` e un errore del portachiavi spariva.
+   */
+  async saveCredentials(clientId: string, clientSecret: string): Promise<void> {
     mkdirSync(this.dataDir, { recursive: true });
     const payload = this.readPayload();
     payload.client_id = clientId;
     writeFileSync(this.settingsPath, JSON.stringify(payload, null, 2), "utf8");
-    void this.secrets.save(clientId, clientSecret);
+    await this.secrets.save(clientId, clientSecret);
   }
 
   async deleteCredentials(): Promise<void> {

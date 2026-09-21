@@ -1,17 +1,20 @@
 /**
  * Service worker minimo: rende l'app installabile e accelera l'avvio.
  *
- * Due strategie, perché i due tipi di risorsa invecchiano in modo diverso:
- * - `/assets/*` porta l'hash del contenuto nel nome → la copia in cache è
- *   sempre quella giusta, quindi cache-first;
- * - la shell (`/`, `index.html`, icone) no: una copia vecchia terra l'app
- *   indietro dopo un aggiornamento, perché referenzia bundle che ormai hanno
- *   un altro nome → network-first, con la cache solo come rete di sicurezza
- *   quando il server locale non risponde.
+ * Tre strategie, perché le risorse invecchiano in modo diverso:
+ * - `/assets/*` porta l'hash del contenuto nel nome → cache-first;
+ * - la shell (`/`, `index.html`, icone) → network-first, con la cache come rete
+ *   di sicurezza quando il server locale non risponde;
+ * - le rotte dell'app (`/dashboard`, `/sync`, …) → network-first con ricaduta
+ *   sulla shell in cache: sono navigazioni, e senza questa ricaduta una finestra
+ *   installata che ricarica su `/dashboard` col server spento mostrerebbe la
+ *   pagina di errore del browser invece dell'app.
  *
- * Le risposte dell'API non entrano mai in cache: i dati sono già locali.
+ * In cache entrano solo risposte `ok`: un 404 o un 500 memorizzato resterebbe
+ * "avvelenato" fino al cambio di nome della cache. Le risposte dell'API non
+ * vengono mai messe in cache (i dati sono già locali).
  */
-const CACHE = "ice-shell-v4";
+const CACHE = "ice-shell-v5";
 const SHELL = ["/", "/index.html", "/favicon.svg", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -27,9 +30,16 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-function cache(request, response) {
-  const copy = response.clone();
-  return caches.open(CACHE).then((store) => store.put(request, copy)).then(() => response);
+function cacheIfOk(request, response) {
+  if (response.ok) {
+    const copy = response.clone();
+    caches.open(CACHE).then((store) => store.put(request, copy));
+  }
+  return response;
+}
+
+function fromCache(request, fallback) {
+  return caches.match(request).then((cached) => cached ?? (fallback ? caches.match(fallback) : null));
 }
 
 self.addEventListener("fetch", (event) => {
@@ -38,24 +48,30 @@ self.addEventListener("fetch", (event) => {
 
   const isHashedAsset = url.pathname.startsWith("/assets/");
   const isShell = SHELL.includes(url.pathname);
-  if (!isHashedAsset && !isShell) return;
+  const isNavigation = event.request.mode === "navigate";
+
+  if (!isHashedAsset && !isShell && !isNavigation) return;
 
   if (isHashedAsset) {
     event.respondWith(
-      caches
-        .match(event.request)
-        .then((cached) => cached ?? fetch(event.request).then((response) => cache(event.request, response))),
+      caches.match(event.request).then(
+        (cached) =>
+          cached ??
+          fetch(event.request)
+            .then((response) => cacheIfOk(event.request, response))
+            .catch(() => new Response("", { status: 503, statusText: "Offline" })),
+      ),
     );
     return;
   }
 
   event.respondWith(
     fetch(event.request)
-      .then((response) => cache(event.request, response))
+      .then((response) => cacheIfOk(event.request, response))
       .catch(() =>
-        caches
-          .match(event.request)
-          .then((cached) => cached ?? new Response("Offline", { status: 503, statusText: "Offline" })),
+        fromCache(event.request, "/index.html").then(
+          (cached) => cached ?? new Response("Offline", { status: 503, statusText: "Offline" }),
+        ),
       ),
   );
 });

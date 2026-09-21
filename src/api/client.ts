@@ -48,10 +48,27 @@ export class ApiError extends Error {
   }
 }
 
+/** Come `request`, ma restituisce anche le intestazioni (per `x-total-count`). */
+async function requestWithMeta<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ data: T; headers: Headers }> {
+  const data = await fetchJson<T>(path, init, true);
+  return data as { data: T; headers: Headers };
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  return (await fetchJson<T>(path, init, false)) as T;
+}
+
+async function fetchJson<T>(
+  path: string,
+  init: RequestInit,
+  withMeta: boolean,
+): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(`${apiBase()}${path}`, {
@@ -84,12 +101,13 @@ async function request<T>(
     throw new ApiError(response.status, message, detail);
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) return withMeta ? { data: undefined, headers: response.headers } : undefined;
+
   const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as T;
-  }
-  return (await response.text()) as unknown as T;
+  const data = contentType.includes("application/json")
+    ? ((await response.json()) as T)
+    : ((await response.text()) as unknown as T);
+  return withMeta ? { data, headers: response.headers } : data;
 }
 
 function buildQuery(filters: Partial<RecordFilters>): string {
@@ -151,6 +169,24 @@ export const api = {
 
   records(filters: Partial<RecordFilters> = {}): Promise<CapacityRecord[]> {
     return request<CapacityRecord[]>(`/records${buildQuery(filters)}`);
+  },
+
+  /**
+   * Pagina di record con il conteggio totale della selezione: senza, la tabella
+   * non può sapere se sta mostrando tutto o solo le prime N righe.
+   */
+  recordsPage(
+    filters: Partial<RecordFilters> = {},
+    limit = 20000,
+  ): Promise<{ rows: CapacityRecord[]; total: number }> {
+    const query = buildQuery(filters);
+    const separator = query ? "&" : "?";
+    return requestWithMeta<CapacityRecord[]>(`/records${query}${separator}limit=${limit}`).then(
+      (response) => ({
+        rows: response.data,
+        total: Number(response.headers.get("x-total-count") ?? response.data.length),
+      }),
+    );
   },
 
   summary(filters: Partial<RecordFilters> = {}): Promise<Summary> {

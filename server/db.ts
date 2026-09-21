@@ -68,8 +68,6 @@ interface YearRow {
 }
 interface SummaryBaseRow {
   row_count: number;
-  total_efficient_power_mw: number | null;
-  total_installed_capacity_gw: number | null;
   year_min: number | null;
   year_max: number | null;
 }
@@ -199,6 +197,15 @@ export class CapacityStore {
     return { clause: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
   }
 
+  /** Righe che i filtri selezionano: serve a dire "50 di 12.330" nell'interfaccia. */
+  countRecords(filters: RecordFilters): number {
+    const { clause, params } = this.where(filters);
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM capacity_records ${clause}`)
+      .get(params) as CountRow | null;
+    return row?.n ?? 0;
+  }
+
   records(filters: RecordFilters, limit = 5000, offset = 0): CapacityRecord[] {
     const { clause, params } = this.where(filters);
     const rows = this.db
@@ -206,7 +213,7 @@ export class CapacityStore {
         `SELECT dataset, year, capacity_type, region, province, source, category,
                 subcategory, type, efficient_power_mw, installed_capacity_gw, fetched_at
          FROM capacity_records ${clause}
-         ORDER BY year, region, province, source, capacity_type, category, subcategory, type
+         ORDER BY dataset, year, region, province, source, capacity_type, category, subcategory, type
          LIMIT $limit OFFSET $offset`,
       )
       .all({ ...params, $limit: limit, $offset: offset });
@@ -215,6 +222,14 @@ export class CapacityStore {
 
   options(): Record<string, unknown[]> {
     const fields = ["dataset", "year", "region", "province", "source", "capacity_type", "category", "subcategory", "type"];
+    // Il tipo promette `categories`/`subcategories`: le chiavi si costruiscono
+    // dal plurale vero, non aggiungendo una "s" a caso.
+    const plurals: Record<string, string> = {
+      dataset: "datasets",
+      category: "categories",
+      subcategory: "subcategories",
+      capacity_type: "capacity_types",
+    };
     const result: Record<string, unknown[]> = {};
     for (const field of fields) {
       const rows = this.db
@@ -223,7 +238,7 @@ export class CapacityStore {
            WHERE ${field} IS NOT NULL ORDER BY ${field}`,
         )
         .all() as OptionRow[];
-      result[`${field}s`] = rows.map((row) => row.value);
+      result[plurals[field] ?? `${field}s`] = rows.map((row) => row.value);
     }
     return result;
   }
@@ -347,8 +362,6 @@ export class CapacityStore {
     const base = this.db
       .prepare(
         `SELECT COUNT(*) AS row_count,
-                SUM(efficient_power_mw) AS total_efficient_power_mw,
-                SUM(installed_capacity_gw) AS total_installed_capacity_gw,
                 MIN(year) AS year_min, MAX(year) AS year_max
          FROM capacity_records ${clause}`,
       )
@@ -356,8 +369,6 @@ export class CapacityStore {
 
     const totals: SummaryBaseRow = base ?? {
       row_count: 0,
-      total_efficient_power_mw: null,
-      total_installed_capacity_gw: null,
       year_min: null,
       year_max: null,
     };
@@ -405,7 +416,11 @@ export class CapacityStore {
 
   aggregate(filters: RecordFilters, groupBy: string, latestOnly = false): AggregatePoint[] {
     const keys = parseGroupBy(groupBy);
-    const { clause, params } = this.where(filters);
+    // Stesso indice implicito dei totali: senza, un `group_by=source` senza
+    // `capacity_type` somma Lorda e Netta e raddoppia ogni megawatt.
+    const applied = this.capacityApplied(filters);
+    const scoped: RecordFilters = applied ? { ...filters, capacity_type: applied as RecordFilters["capacity_type"] } : filters;
+    const { clause, params } = this.where(scoped);
     const scopedClause = latestOnly
       ? clause
         ? `${clause} AND year = (SELECT MAX(year) FROM capacity_records ${clause})`

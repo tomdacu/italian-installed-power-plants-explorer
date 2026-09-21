@@ -6,6 +6,7 @@ import { Hono } from "hono";
 
 import {
   DATA_FIRST_YEAR,
+  DEFAULT_RECORD_LIMIT,
   DEFAULT_CAPACITY_TYPE,
   DATASET_SOURCES,
   INSTALLED_CAPACITY_FIRST_YEAR,
@@ -23,6 +24,16 @@ interface Dependencies {
   store: CapacityStore;
   settings: SettingsStore;
   sync: SyncManager;
+}
+
+/** Corpo JSON non valido = 400, non un 500 con stack trace. */
+async function readJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<Record<string, unknown> | null> {
+  try {
+    const body = await c.req.json();
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function filtersFromQuery(query: URLSearchParams): RecordFilters {
@@ -69,11 +80,14 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
   app.get("/settings/credentials/status", async (c) => c.json(await credentialStatus()));
 
   app.post("/settings/credentials", async (c) => {
-    const body = (await c.req.json()) as { client_id?: string; client_secret?: string };
-    if (!body.client_id || !body.client_secret) {
+    const body = await readJsonBody(c);
+    if (typeof body?.client_id !== "string" || typeof body.client_secret !== "string") {
       return c.json({ detail: "client_id and client_secret are required" }, 422);
     }
-    settings.saveCredentials(body.client_id.trim(), body.client_secret.trim());
+    if (!body.client_id.trim() || !body.client_secret.trim()) {
+      return c.json({ detail: "client_id and client_secret cannot be blank" }, 422);
+    }
+    await settings.saveCredentials(body.client_id.trim(), body.client_secret.trim());
     return c.json(await credentialStatus());
   });
 
@@ -93,9 +107,12 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
   });
 
   app.post("/sync/jobs", async (c) => {
-    const body = (await c.req.json()) as { years?: number[]; datasets?: DatasetName[] };
-    if (!Array.isArray(body.years) || body.years.length === 0) {
+    const body = (await readJsonBody(c)) as { years?: number[]; datasets?: DatasetName[] } | null;
+    if (!body || !Array.isArray(body.years) || body.years.length === 0) {
       return c.json({ detail: "years must be a non-empty array" }, 422);
+    }
+    if (body.datasets !== undefined && !Array.isArray(body.datasets)) {
+      return c.json({ detail: "datasets must be an array of dataset names" }, 422);
     }
     // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
     // trasformarsi in centinaia di richieste e bruciare la quota Terna.
@@ -141,9 +158,27 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
 
   app.get("/records", (c) => {
     const query = new URL(c.req.url).searchParams;
-    const limit = Math.min(100_000, Math.max(1, Number(query.get("limit") ?? 5000)));
-    const offset = Math.max(0, Number(query.get("offset") ?? 0));
-    return c.json(store.records(filtersFromQuery(query), limit, offset));
+    // `limit=abc` faceva arrivare un NaN fino a SQLite: 500 invece di una
+    // risposta sensata. Qui si valida, si lima e si risponde sempre qualcosa.
+    const numeric = (key: string, fallback: number, min: number, max: number): number | null => {
+      const raw = query.get(key);
+      if (raw === null || raw === "") return fallback;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) return null;
+      return Math.min(max, Math.max(min, Math.trunc(value)));
+    };
+    const limit = numeric("limit", DEFAULT_RECORD_LIMIT, 1, 100_000);
+    const offset = numeric("offset", 0, 0, Number.MAX_SAFE_INTEGER);
+    if (limit === null || offset === null) {
+      return c.json({ detail: "limit and offset must be numbers" }, 400);
+    }
+    const rows = store.records(filtersFromQuery(query), limit, offset);
+    return c.json(rows, 200, {
+      // Il conteggio vero, così l'interfaccia può dire "50 di 12.330 righe"
+      // invece di far credere che la selezione finisca dove finisce la pagina.
+      "x-total-count": String(store.countRecords(filtersFromQuery(query))),
+      "access-control-expose-headers": "x-total-count",
+    });
   });
 
   app.get("/analytics/summary", (c) => {

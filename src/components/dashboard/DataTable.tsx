@@ -65,13 +65,20 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+/** Righe caricate nella tabella: oltre questa soglia si dichiara il troncamento. */
+const RECORD_PAGE_LIMIT = 20000;
 
   const recordsQuery = useQuery({
     queryKey: ["records", filters],
-    queryFn: () => api.records(filters),
+    // 20.000 righe: oltre, l'ordinamento e la ricerca lato client diventano
+    // pesanti. Il totale vero arriva insieme alla pagina, così la tabella può
+    // dire quante righe restano fuori invece di far credere di averle tutte.
+    queryFn: () => api.recordsPage(filters, RECORD_PAGE_LIMIT),
   });
 
-  const rows = recordsQuery.data ?? [];
+  const rows = recordsQuery.data?.rows ?? [];
+  const totalRows = recordsQuery.data?.total ?? rows.length;
+  const truncated = totalRows > rows.length;
   const sorted = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = rows;
@@ -112,6 +119,8 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
   };
 
   const exportVisibleCsv = () => {
+    // Esporta quello che la tabella ha caricato: se la selezione è troncata lo
+    // dice il messaggio sotto, e "Export all CSV" in alto esporta tutto.
     const fields = COLUMNS.map((c) => c.key);
     const rows = sorted.map((record) => {
       const row: Record<string, unknown> = { dataset: record.dataset };
@@ -143,7 +152,9 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
             Capacity records
           </h3>
           <span className="chip border-ink-200/80 text-ink-500 dark:border-white/10 dark:text-ink-400">
-            {formatNumber(sorted.length)} rows
+            {truncated
+              ? `${formatNumber(sorted.length)} of ${formatNumber(totalRows)} rows`
+              : `${formatNumber(sorted.length)} rows`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -181,7 +192,12 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
             <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 backdrop-blur dark:bg-ink-900/95 dark:text-ink-400">
               <tr>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} className="px-4 py-2.5 font-semibold">
+                  <th
+                    key={c.key}
+                    // Lo stato di ordinamento va annunciato, non solo colorato.
+                    aria-sort={sortKey === c.key ? (order === "asc" ? "ascending" : "descending") : "none"}
+                    className="px-4 py-2.5 font-semibold"
+                  >
                     <button
                       onClick={() => toggleSort(c.key)}
                       className="inline-flex items-center gap-1 transition hover:text-ink-800 dark:hover:text-white"
@@ -226,6 +242,13 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
         )}
       </div>
 
+      {truncated && (
+        <p className="flex flex-wrap items-center gap-1.5 border-t border-amber-300/60 bg-amber-50/70 px-4 py-2 text-xs text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+          Showing {formatNumber(rows.length)} of {formatNumber(totalRows)} matching rows — narrow the
+          filters to see the rest, or use <span className="font-medium">Export all CSV</span> for the
+          full selection.
+        </p>
+      )}
       {sorted.length > PAGE_SIZE && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-4 py-2.5 text-xs text-ink-500 dark:border-white/[0.06] dark:text-ink-400">
           <span>

@@ -7,7 +7,7 @@
  * ("Forlì-Cesena", "Vallée d'Aoste") instead of mojibake.
  */
 
-export interface CsvColumn {
+interface CsvColumn {
   key: string;
   label: string;
 }

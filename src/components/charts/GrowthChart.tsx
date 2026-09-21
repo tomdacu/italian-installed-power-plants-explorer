@@ -62,7 +62,7 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
             />
             <Legend iconType="circle" iconSize={8} />
             {growth.names.map((source, index) => (
-              <Bar key={source} dataKey={source} stackId="growth" fill={colorFor(source, index, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+              <Bar key={source} dataKey={source} stackId="growth" fill={colorFor(source, index, filters.dataset ?? undefined)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -70,7 +70,7 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
         <div className="grid h-[200px] place-items-center text-center text-sm text-ink-500 dark:text-ink-400">
           Select at least two consecutive years to see annual additions
         </div>
-      ) : <ChartEmptyState dataset={filters.dataset} />}
+      ) : <ChartEmptyState dataset={filters.dataset ?? undefined} />}
     </ChartCard>
   );
 }

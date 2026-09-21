@@ -17,7 +17,7 @@ import type { SyncManager } from "./sync.ts";
 const API_PREFIXES = ["/health", "/settings/", "/sync/", "/metadata/", "/analytics/", "/export/", "/records"];
 
 /** CSP stretta: nessuna risorsa remota, niente eval, solo stessa origine. */
-export const CONTENT_SECURITY_POLICY = [
+const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
@@ -29,7 +29,7 @@ export const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
 ].join("; ");
 
-export interface ServerOptions {
+interface ServerOptions {
   store: CapacityStore;
   settings: SettingsStore;
   sync: SyncManager;

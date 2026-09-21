@@ -91,7 +91,7 @@ export function CapacityByRegionChart({
             ))}
           </BarChart>
         </ResponsiveContainer>
-      ) : <ChartEmptyState dataset={filters.dataset} />}
+      ) : <ChartEmptyState dataset={filters.dataset ?? undefined} />}
     </ChartCard>
   );
 }

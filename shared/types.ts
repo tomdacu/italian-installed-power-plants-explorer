@@ -14,11 +14,17 @@ export type DatasetName = (typeof DATASETS)[number];
 export const CAPACITY_TYPES = ["Lorda", "Netta"] as const;
 export type CapacityType = (typeof CAPACITY_TYPES)[number];
 
-export const MW_DATASETS: readonly DatasetName[] = [
-  "renewable_source_capacity",
-  "generation_plants",
-  "thermoelectric_capacity",
-];
+export type GroupBy =
+  | (typeof GROUP_BY_FIELDS)[number]
+  | "year,source"
+  | "year,type"
+  | "year,region"
+  | "year,province"
+  | "year,capacity_type"
+  | "region,source"
+  | "region,type"
+  | "province,source"
+  | "province,type";
 
 export const GROUP_BY_FIELDS = [
   "year",
@@ -38,7 +44,7 @@ export interface RecordFilters {
   region?: string | null;
   province?: string | null;
   source?: string | null;
-  capacity_type?: CapacityType | null;
+  capacity_type?: CapacityType | "" | null;
   category?: string | null;
   subcategory?: string | null;
   type?: string | null;
@@ -61,8 +67,6 @@ export interface CapacityRecord {
 
 export interface Summary {
   row_count: number;
-  total_efficient_power_mw: number | null;
-  total_installed_capacity_gw: number | null;
   year_min: number | null;
   year_max: number | null;
   latest_year: number | null;
@@ -87,6 +91,10 @@ export interface AggregatePoint {
   type: string | null;
   efficient_power_mw: number | null;
   installed_capacity_gw: number | null;
+}
+
+export interface HealthStatus {
+  status: string;
 }
 
 export interface CredentialStatus {

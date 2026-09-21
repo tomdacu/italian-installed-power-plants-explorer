@@ -17,8 +17,8 @@ used the same routes, so anything written against it keeps working.
 | `GET /metadata/availability` | row counts per dataset and year actually cached |
 | `GET /metadata/data-quality` | per year, cells Terna left empty even though the same key has a value another year (filters: `dataset`, `capacity_type`, `source`) |
 | `GET /records` | paged rows (`limit` ≤ 100000, `offset`) |
-| `GET /analytics/summary` | latest-year stock, previous year, YoY delta, row count |
-| `GET /analytics/timeseries` | grouped sums; `group_by=year,source`, `latest_only=true` |
+| `GET /analytics/summary` | latest-year stock, previous year, YoY delta, row count (all with a single capacity index; without an explicit `capacity_type` it applies `Lorda`) |
+| `GET /analytics/timeseries` | grouped sums; `group_by=year,source`, `latest_only=true`; same implicit single index as `summary`, so a group by source never sums Lorda and Netta together |
 | `GET /export/csv` | every row matching the filters, as CSV |
 
 ## Filters
@@ -29,7 +29,10 @@ Accepted by `/records`, `/analytics/*` and `/export/csv`:
 `capacity_type` (`Lorda`/`Netta`), `category`, `subcategory`, `type`.
 
 Empty or missing parameters are ignored, so a bare `GET /records` returns the
-first 5000 rows of everything stored.
+first 5000 rows of everything stored. `limit` (≤ 100000) and `offset` page the
+result; the response carries `x-total-count` with the number of matching rows, so
+a client can say "showing 20.000 of 68.482" instead of guessing. Non-numeric
+values are rejected with `400`.
 
 ## Sync request
 
@@ -37,17 +40,15 @@ first 5000 rows of everything stored.
 {
   "years": [2000, 2001, "…", 2024],
   "datasets": ["renewable_source_capacity", "generation_plants",
-               "installed_capacity", "thermoelectric_capacity"],
-  "sources": ["Bioenergie", "Eolico", "Fotovoltaico",
-              "Geotermoelettrico", "Idrico", "Termoelettrico"],
-  "capacity_types": ["Lorda", "Netta"]
+               "installed_capacity", "thermoelectric_capacity"]
 }
 ```
 
-The planner intersects the request with what each endpoint accepts (for example
-`Bioenergie` does not exist for generation plants) and reports the combinations
-it dropped as `empty_steps`, so a plan never fails because of a value Terna
-ignores. Sources and types omitted in the request default to everything valid.
+One request per dataset and year: the endpoints return every source and both
+capacity indexes in a single response, so there is nothing to select here. Years
+outside 2000 → the current year are clamped away, and a year a dataset cannot
+serve (the national endpoint starts at 2021) is skipped and counted in
+`empty_steps`, so a plan never fails because of a year Terna does not publish.
 
 ## Conventions
 

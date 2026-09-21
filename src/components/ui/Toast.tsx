@@ -88,7 +88,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            role="status"
+            role={t.variant === "error" ? "alert" : "status"}
             className="pointer-events-auto flex w-full max-w-md items-stretch overflow-hidden rounded-2xl border border-ink-200/80 bg-white/95 shadow-pop backdrop-blur-xl animate-fade-in dark:border-white/10 dark:bg-ink-900/95"
           >
             <span className={cn("w-1 shrink-0", ACCENT[t.variant])} />

@@ -25,7 +25,7 @@ would then need reinstalling on the new origin).
 | --- | --- | --- |
 | `ICE_PORT` | `8731` | same as `--port` |
 | `ICE_STATIC_DIR` | `static/` next to the executable, or `dist/` in a checkout | where the built interface lives |
-| `TERNA_MIN_REQUEST_INTERVAL` | `1.0` | minimum seconds between Terna API calls |
+| `TERNA_MIN_REQUEST_INTERVAL` | `1.2` | minimum seconds between Terna API calls (the platform allows ~1/second) |
 | `TERNA_APP_DATA_DIR` | see below | alternative data folder |
 | `TERNA_CLIENT_ID` / `TERNA_CLIENT_SECRET` | – | credentials for headless runs, bypassing the stored ones |
 
@@ -50,7 +50,7 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 39 tests, no network or credentials required
+bun test                 # 52 tests, no network or credentials required
 bun run typecheck        # interface + server
 bun run build            # production interface bundle into dist/
 ```

@@ -44,8 +44,8 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
             <defs>
               {series.data.names.map((source, index) => (
                 <linearGradient key={source} id={`grad-${index}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={colorFor(source, index, filters.dataset)} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={colorFor(source, index, filters.dataset)} stopOpacity={0.04} />
+                  <stop offset="0%" stopColor={colorFor(source, index, filters.dataset ?? undefined)} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={colorFor(source, index, filters.dataset ?? undefined)} stopOpacity={0.04} />
                 </linearGradient>
               ))}
             </defs>
@@ -72,7 +72,7 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
                 type="monotone"
                 dataKey={source}
                 stackId="1"
-                stroke={colorFor(source, index, filters.dataset)}
+                stroke={colorFor(source, index, filters.dataset ?? undefined)}
                 strokeWidth={2}
                 fill={`url(#grad-${index})`}
                 activeDot={{ r: 4, strokeWidth: 2 }}
@@ -80,7 +80,7 @@ export function CapacityOverTimeChart({ filters }: { filters: RecordFilters }) {
             ))}
           </AreaChart>
         </ResponsiveContainer>
-      ) : <ChartEmptyState dataset={filters.dataset} />}
+      ) : <ChartEmptyState dataset={filters.dataset ?? undefined} />}
     </ChartCard>
   );
 }

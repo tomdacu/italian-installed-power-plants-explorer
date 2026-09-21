@@ -9,7 +9,7 @@ import type { AggregatePoint, RecordFilters } from "@/types";
 
 export type SeriesRow = Record<string, number | string>;
 
-export interface Measure {
+interface Measure {
   isGw: boolean;
   valueKey: "efficient_power_mw" | "installed_capacity_gw";
   unit: "MW" | "GW";

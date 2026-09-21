@@ -72,12 +72,12 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
             />
             <Bar dataKey={valueKey} name={isInstalled ? `Installed capacity ${unit}` : `Efficient power ${unit}`} radius={[0, 8, 8, 0]} maxBarSize={26}>
               {records.map((record, index) => (
-                <Cell key={record[splitKey] ?? index} fill={colorFor(String(record[splitKey] ?? ""), index, filters.dataset)} />
+                <Cell key={record[splitKey] ?? index} fill={colorFor(String(record[splitKey] ?? ""), index, filters.dataset ?? undefined)} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      ) : <ChartEmptyState dataset={filters.dataset} />}
+      ) : <ChartEmptyState dataset={filters.dataset ?? undefined} />}
     </ChartCard>
   );
 }

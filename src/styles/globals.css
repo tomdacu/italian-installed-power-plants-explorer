@@ -17,6 +17,12 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
+/* I widget nativi (menu a tendina, scrollbar) seguono color-scheme: senza
+   questa riga in tema scuro le opzioni dei select restano bianche su bianco. */
+.dark {
+  color-scheme: dark;
+}
+
 .dark body {
   @apply bg-ink-950 text-ink-100;
 }

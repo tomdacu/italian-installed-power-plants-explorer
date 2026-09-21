@@ -54,7 +54,7 @@ function takeOutput(output: Uint8Array): Uint8Array {
   return bytes;
 }
 
-export function dpapiProtect(plain: string): Uint8Array {
+function dpapiProtect(plain: string): Uint8Array {
   if (!crypt32) throw new Error("DPAPI disponibile solo su Windows");
   const input = dataBlob(new TextEncoder().encode(plain));
   const output = new Uint8Array(16);
@@ -71,7 +71,7 @@ export function dpapiProtect(plain: string): Uint8Array {
   return takeOutput(output);
 }
 
-export function dpapiUnprotect(sealed: Uint8Array): string {
+function dpapiUnprotect(sealed: Uint8Array): string {
   if (!crypt32) throw new Error("DPAPI disponibile solo su Windows");
   const input = dataBlob(sealed);
   const output = new Uint8Array(16);

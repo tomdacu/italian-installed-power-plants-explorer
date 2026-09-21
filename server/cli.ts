@@ -23,7 +23,11 @@ const BROWSER_CANDIDATES = [
 /** Porta stabile: l'origine della PWA installata include la porta, quindi una
  * porta casuale a ogni avvio invaliderebbe l'installazione. Se è occupata si
  * ripiega su una porta libera (in quel caso la PWA va reinstallata). */
-const DEFAULT_PORT = Number(process.env.ICE_PORT ?? 8731);
+/** Una ICE_PORT malformata non deve far esplodere l'avvio: si ricade sul default. */
+const DEFAULT_PORT = (() => {
+  const raw = Number(process.env.ICE_PORT ?? 8731);
+  return Number.isInteger(raw) && raw > 0 && raw < 65536 ? raw : 8731;
+})();
 
 interface CliOptions {
   port: number;
@@ -34,11 +38,27 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = { port: DEFAULT_PORT, window: "app" };
   for (let index = 0; index < argv.length; index += 1) {
+    // `--port` senza un numero non deve mangiarsi il flag successivo.
     const arg = argv[index];
     if (arg === "--browser") options.window = "browser";
     else if (arg === "--no-window") options.window = "none";
-    else if (arg === "--port") options.port = Number(argv[++index] ?? 0) || 0;
-    else if (arg === "--data-dir") options.dataDir = argv[++index];
+    else if (arg === "--port") {
+      // Solo un numero consuma il token successivo: `--port --no-window`
+      // altrimenti si mangiava il flag e restava senza porta.
+      const parsed = Number(argv[index + 1]);
+      if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) {
+        options.port = parsed;
+        index += 1;
+      } else {
+        options.port = 0;
+      }
+    } else if (arg === "--data-dir") {
+      const next = argv[index + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        options.dataDir = next;
+        index += 1;
+      }
+    }
     else if (arg === "--help" || arg === "-h") {
       console.log(`Uso: ice [--browser|--no-window] [--port N] [--data-dir DIR]
 

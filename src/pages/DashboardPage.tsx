@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { api } from "@/api/client";
 import { downloadString } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
-import type { CapacityType, DatasetName, RecordFilters } from "@/types";
+import type { CapacityType, RecordFilters } from "@/types";
 
 const DEFAULT_FILTERS: DashboardFilters = {
   dataset: "renewable_source_capacity",
@@ -91,10 +91,16 @@ export function DashboardPage() {
         <FiltersPanel
           filters={filters}
           onChange={setFilters}
-          onReset={() => setFilters({ ...DEFAULT_FILTERS, dataset: filters.dataset as DatasetName })}
+          // Reset azzera tutto, dataset compreso: il pulsante non promette altro.
+          onReset={() => setFilters({ ...DEFAULT_FILTERS })}
         />
 
-        <KpiCards summary={summary.data} loading={summary.isLoading} isGw={apiFilters.dataset === "installed_capacity"} />
+        <KpiCards
+          summary={summary.data}
+          loading={summary.isLoading}
+          isError={summary.isError}
+          isGw={apiFilters.dataset === "installed_capacity"}
+        />
 
         <DataQualityNote filters={apiFilters} />
 

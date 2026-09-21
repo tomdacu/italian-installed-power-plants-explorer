@@ -22,6 +22,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Tema applicato prima del primo paint: senza, chi ha il tema scuro vede
+      // un lampo bianco all'avvio. Stessa chiave di src/context/ThemeContext.tsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem("terna.theme");
+          var dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (error) {
+          /* localStorage non disponibile: resta il tema chiaro */
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

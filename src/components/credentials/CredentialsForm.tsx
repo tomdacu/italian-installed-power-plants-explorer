@@ -105,7 +105,6 @@ export function CredentialsForm({ compact }: { compact?: boolean }) {
               onClick={() => setShow((s) => !s)}
               className="rounded-lg p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-white/10 dark:hover:text-white"
               aria-label={show ? "Hide secret" : "Show secret"}
-              tabIndex={-1}
             >
               {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>

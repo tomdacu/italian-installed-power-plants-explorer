@@ -240,7 +240,6 @@ export function SyncPage() {
                   value={yearFrom}
                   onChange={(e) => setYearFrom(e.target.value)}
                   className="h-9 max-w-[140px]"
-                  aria-label="Start year"
                 />
                 <Input
                   label="To"
@@ -248,7 +247,6 @@ export function SyncPage() {
                   value={yearTo}
                   onChange={(e) => setYearTo(e.target.value)}
                   className="h-9 max-w-[140px]"
-                  aria-label="End year"
                 />
                 <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={starting} disabled={!!running || polling}>
                   <DownloadCloud className="h-3.5 w-3.5" /> Download

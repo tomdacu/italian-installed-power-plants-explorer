@@ -59,12 +59,19 @@ function formatSigned(value: number, unit: string, digits = 1): string {
 export function KpiCards({
   summary,
   loading,
+  isError,
   isGw,
 }: {
   summary: Summary | undefined;
   loading: boolean;
+  isError?: boolean;
   isGw?: boolean;
 }) {
+  /** Un guasto dell'API non è "selezione vuota": l'utente deve sapere cosa rifare. */
+  const emptyHint = isError
+    ? "The local service is not responding — try again"
+    : "No records in the current selection";
+
   if (isGw) {
     const total = summary?.latest_total_installed_capacity_gw ?? null;
     const noData = !loading && (summary == null || total === null);
@@ -76,11 +83,7 @@ export function KpiCards({
           label="Installed stock"
           value={loading ? undefined : total === null ? "—" : `${formatGw(total)} GW`}
           hint={
-            loading
-              ? undefined
-              : noData
-                ? "No records in the current selection"
-                : `National stock in ${summary?.latest_year} · by type`
+            loading ? undefined : noData ? emptyHint : `National stock in ${summary?.latest_year} · by type`
           }
           icon={TrendingUp}
           accent="bg-gradient-to-br from-brand-400 to-brand-700"
@@ -103,14 +106,14 @@ export function KpiCards({
         <Kpi
           label="Year range"
           value={
-            !summary?.year_min
-              ? "—"
-              : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
+            !summary?.year_min ? "—" : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
           }
           hint={
             summary?.latest_year
               ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
-              : "Earliest to latest year in stored data"
+              : isError
+                ? "The local service is not responding"
+                : "Earliest to latest year in stored data"
           }
           icon={CalendarDays}
           accent="bg-gradient-to-br from-violet-400 to-violet-700"

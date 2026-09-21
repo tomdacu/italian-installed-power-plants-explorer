@@ -57,7 +57,7 @@ export function parseDecimal(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function utcNowIso(): string {
+function utcNowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00");
 }
 
@@ -66,7 +66,7 @@ export function utcNowIso(): string {
  * La stessa forma è usata dal database per `record_key`, così una sola
  * definizione decide cosa è "la stessa cella".
  */
-export function rowKeyParts(row: CapacityRow | Record<string, unknown>): string[] {
+function rowKeyParts(row: CapacityRow | Record<string, unknown>): string[] {
   const parts = [
     row.dataset,
     row.year,
@@ -96,7 +96,7 @@ const addNullable = (a: number | null, b: number | null): number | null =>
  * Sommare i valori non nulli copre entrambi i casi: le righe vuote non
  * aggiungono nulla, i frammenti si sommano.
  */
-export function mergeDuplicates(rows: CapacityRow[]): CapacityRow[] {
+function mergeDuplicates(rows: CapacityRow[]): CapacityRow[] {
   const merged = new Map<string, CapacityRow>();
   for (const row of rows) {
     const key = rowKey(row);

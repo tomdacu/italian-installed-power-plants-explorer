@@ -42,27 +42,35 @@ export function FiltersPanel({
 }) {
   const meta = useMetadata();
   const db = meta.data?.database ?? {};
-  const showRegionFilter = filters.geoLevel !== "national";
-  const showProvinceFilter = filters.geoLevel === "province";
+  const isNational = filters.dataset === "installed_capacity";
+  // Il dataset nazionale non ha geografia: offrire regione e provincia
+  // significherebbe proporre filtri che svuotano la dashboard.
+  const showRegionFilter = !isNational && filters.geoLevel !== "national";
+  const showProvinceFilter = !isNational && filters.geoLevel === "province";
 
-  // Keep the picker ranges strictly increasing regardless of API ordering.
-  const years = (db.years ?? []).slice().sort((a, b) => a - b);
-  const minYear = years.length ? years[0] : 2018;
-  const maxYear = years.length ? years[years.length - 1] : new Date().getFullYear();
+  // Il dataset nazionale parte dal 2021: gli anni precedenti non esistono.
+  const minYear = isNational ? (meta.data?.installed_capacity_first_year ?? 2021) : (meta.data?.first_year ?? 2000);
+  const maxYear = meta.data?.current_year ?? new Date().getFullYear();
 
   const regionOptions = toOptions(db.regions ?? []);
   const provinceOptions = toOptions(db.provinces ?? []);
+  // Le fonti del dataset scelto, non tutte quelle presenti nel database:
+  // "Bioenergie" in Generation plants non esiste e produrrebbe una dashboard vuota.
   const sourceOptions = toOptions(
-    filters.dataset === "installed_capacity"
+    isNational
       ? (meta.data?.known_installed_capacity_types ?? db.types ?? [])
-      : (db.sources ?? meta.data?.known_sources ?? []),
+      : (meta.data?.dataset_sources?.[filters.dataset] ?? db.sources ?? meta.data?.known_sources ?? []),
   );
 
-  const yearFromOptions = Array.from({ length: maxYear - minYear + 1 }, (_, i) => ({
-    label: String(minYear + i),
-    value: String(minYear + i),
-  }));
-  const yearToOptions = yearFromOptions.slice().reverse();
+  const maxYearFor = (to: number | null | undefined) => (to !== null && to !== undefined ? Math.min(to, maxYear) : maxYear);
+  const buildYears = (from: number, to: number) =>
+    Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => ({
+      label: String(from + i),
+      value: String(from + i),
+    }));
+  // I due menu non possono contraddirsi: "da" non supera "a" e viceversa.
+  const yearFromOptions = buildYears(minYear, maxYearFor(filters.year_to));
+  const yearToOptions = buildYears(filters.year_from ?? minYear, maxYear).reverse();
 
   const set = (patch: Partial<DashboardFilters>) => onChange({ ...filters, ...patch });
 
@@ -84,30 +92,41 @@ export function FiltersPanel({
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <Select
           label="Dataset"
-          value={filters.dataset}
+          value={filters.dataset ?? ""}
           options={DATASET_OPTIONS}
-          onChange={(e) =>
+          onChange={(e) => {
+            const dataset = e.target.value as DatasetName;
+            const national = dataset === "installed_capacity";
             set({
-              dataset: e.target.value as DatasetName,
+              dataset,
               source: "",
               category: "",
               subcategory: "",
               type: "",
-            })
-          }
-        />
-        <Select
-          label="Geography level"
-          value={filters.geoLevel}
-          options={GEO_OPTIONS}
-          onChange={(e) =>
-            set({
-              geoLevel: e.target.value as DashboardFilters["geoLevel"],
+              // Il dataset nazionale non ha geografia né indice di capacità.
+              geoLevel: national ? "national" : filters.geoLevel,
               region: "",
               province: "",
-            })
-          }
+              year_from:
+                national && (filters.year_from ?? 0) > 0 && (filters.year_from ?? 0) < 2021 ? null : filters.year_from,
+              year_to: national && (filters.year_to ?? 0) > 0 && (filters.year_to ?? 0) < 2021 ? null : filters.year_to,
+            });
+          }}
         />
+        {!isNational && (
+          <Select
+            label="Geography level"
+            value={filters.geoLevel}
+            options={GEO_OPTIONS}
+            onChange={(e) =>
+              set({
+                geoLevel: e.target.value as DashboardFilters["geoLevel"],
+                region: "",
+                province: "",
+              })
+            }
+          />
+        )}
         <Select
           label="Year from"
           value={String(filters.year_from ?? "")}
@@ -125,7 +144,7 @@ export function FiltersPanel({
         {showRegionFilter && (
           <Select
             label="Region"
-            value={filters.region}
+            value={filters.region ?? ""}
             placeholder="All regions"
             options={regionOptions}
             disabled={!regionOptions.length}
@@ -135,34 +154,37 @@ export function FiltersPanel({
         {showProvinceFilter && (
           <Select
             label="Province"
-            value={filters.province}
+            value={filters.province ?? ""}
             placeholder="All provinces"
             options={provinceOptions}
             disabled={!provinceOptions.length}
             onChange={(e) => set({ province: e.target.value })}
           />
         )}
-        <Select
-          label={filters.dataset === "installed_capacity" ? "Type" : "Source"}
-          value={filters.dataset === "installed_capacity" ? (filters.type ?? "") : (filters.source ?? "")}
-          placeholder="All"
-          options={sourceOptions}
-          disabled={!sourceOptions.length}
-          onChange={(e) =>
-            filters.dataset === "installed_capacity"
-              ? set({ type: e.target.value, source: "" })
-              : set({ source: e.target.value })
-          }
-        />
-        <Select
-          label="Capacity type"
-          value={filters.capacity_type || "Lorda"}
-          options={CAPACITY_OPTIONS}
-          onChange={(e) => set({ capacity_type: e.target.value as CapacityType })}
-        />
+        {/* Il dataset termoelettrico non ha una dimensione "fonte": mostrare un
+            menu vuoto suggerirebbe un filtro che non esiste. */}
+        {sourceOptions.length > 0 && (
+          <Select
+            label={isNational ? "Type" : "Source"}
+            value={isNational ? (filters.type ?? "") : (filters.source ?? "")}
+            placeholder="All"
+            options={sourceOptions}
+            onChange={(e) =>
+              isNational ? set({ type: e.target.value, source: "" }) : set({ source: e.target.value })
+            }
+          />
+        )}
+        {!isNational && (
+          <Select
+            label="Capacity type"
+            value={filters.capacity_type || "Lorda"}
+            options={CAPACITY_OPTIONS}
+            onChange={(e) => set({ capacity_type: e.target.value as CapacityType })}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-export { DATASET_OPTIONS };
+

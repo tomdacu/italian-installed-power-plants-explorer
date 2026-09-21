@@ -42,6 +42,9 @@ export const DATASET_SOURCES: Record<DatasetName, readonly string[]> = {
 /** Indice singolo usato dai totali: Lorda e Netta non si sommano mai. */
 export const DEFAULT_CAPACITY_TYPE = "Lorda" as const;
 
+/** Righe restituite da `/records` quando il client non chiede una pagina. */
+export const DEFAULT_RECORD_LIMIT = 5000;
+
 /**
  * Primo anno pubblicato dagli endpoint della generazione. Verificato con le
  * chiavi reali: `renewable-source-capacity` risponde con 832 righe per il 2000

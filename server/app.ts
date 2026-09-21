@@ -54,12 +54,15 @@ export function startApp(options: StartOptions = {}) {
 
   // La porta preferita resta stabile (serve alla PWA installata); se è occupata
   // si ripiega su una porta libera scelta dal sistema operativo.
+  // Una porta non numerica (ICE_PORT sbagliata, chiamata da un altro modulo)
+  // deve cadere sulla scelta automatica, non far fallire l'avvio.
+  const requested = Number.isInteger(options.port) && options.port! > 0 ? options.port! : 0;
   let server: LocalServer;
   let fallback = false;
   try {
-    server = serve(options.port ?? 0);
+    server = serve(requested);
   } catch (error) {
-    if (!options.port) throw error;
+    if (!requested) throw error;
     fallback = true;
     server = serve(0);
   }
