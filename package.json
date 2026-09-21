@@ -49,5 +49,26 @@
     "tailwindcss": "^3.4.7",
     "typescript": "^5.5.4",
     "vite": "^5.3.5"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomdacu/italian-renewable-capacity-explorer.git"
+  },
+  "homepage": "https://github.com/tomdacu/italian-renewable-capacity-explorer#readme",
+  "bugs": {
+    "url": "https://github.com/tomdacu/italian-renewable-capacity-explorer/issues"
+  },
+  "keywords": [
+    "terna",
+    "italy",
+    "renewable",
+    "capacity",
+    "energy",
+    "solar",
+    "wind",
+    "hydro",
+    "open-data",
+    "bun"
+  ],
+  "author": "Tommaso D'Acunzio"
 }

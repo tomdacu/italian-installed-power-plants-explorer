@@ -14,8 +14,8 @@
  * "avvelenato" fino al cambio di nome della cache. Le risposte dell'API non
  * vengono mai messe in cache (i dati sono già locali).
  */
-const CACHE = "ice-shell-v5";
-const SHELL = ["/", "/index.html", "/favicon.svg", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CACHE = "ice-shell-v6";
+const SHELL = ["/", "/index.html", "/theme.js", "/favicon.svg", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
