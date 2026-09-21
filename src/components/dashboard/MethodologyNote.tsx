@@ -16,19 +16,20 @@ export function MethodologyNote() {
           (net of decommissioning).
         </p>
         <p>
-          Datasets are not equally aligned with Terna’s published yearbook. Wind, photovoltaic and hydro are exact in{" "}
-          <strong className="font-semibold">Generation plants</strong> for every year, so prefer it before the latest
-          one. <strong className="font-semibold">Renewable source capacity</strong> excludes pure pumped storage
-          (−3,99 GW in 2024) and keeps photovoltaic and hydro as first published. For thermal figures use{" "}
-          <strong className="font-semibold">Thermoelectric capacity</strong>: the generation-plants endpoint reports
-          about 3,5 GW less. <strong className="font-semibold">Installed capacity (national)</strong> uses its own
-          perimeter and is only comparable with itself.
+          Wind, photovoltaic, bioenergy and geothermal agree to the decimal between{" "}
+          <strong className="font-semibold">Renewable source capacity</strong> and{" "}
+          <strong className="font-semibold">Generation plants</strong>, and both reproduce Terna&apos;s yearbook for
+          2021–2024. They differ on hydro: <em>Renewable source capacity</em> excludes pure pumped storage
+          (−3,99 GW in 2024) while <em>Generation plants</em> includes it. For the thermal breakdown by category use{" "}
+          <strong className="font-semibold">Thermoelectric capacity</strong>.{" "}
+          <strong className="font-semibold">Installed capacity (national)</strong> uses its own perimeter and is only
+          comparable with itself.
         </p>
         <p>
-          Source: Terna Developer API (efficient power). Values can differ from Terna Gaudì / statistical
-          publications, which report nominal power with a different methodology and perimeter: wind, geothermal
-          and thermoelectric totals match the official yearbook to the decimal, while the API's hydro series
-          excludes pure pumped storage and its older photovoltaic figures are lower than the revised yearbook.
+          Source: Terna Developer API (efficient power, annual files). Values can differ from the Gaudì platform,
+          which publishes nominal power: the yearbook numbers for 2021–2024 match to the decimal. The API still
+          serves no 2025 data, and a few province cells are empty upstream — the dashboard says so when a year is
+          affected.
         </p>
       </div>
     </section>

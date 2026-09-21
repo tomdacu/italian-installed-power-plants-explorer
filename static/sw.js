@@ -1,9 +1,17 @@
 /**
- * Service worker minimo: serve a rendere l'app installabile e a partire più in
- * fretta. Non mette mai in cache le risposte dell'API (i dati sono già locali e
- * devono restare freschi): solo l'involucro statico.
+ * Service worker minimo: rende l'app installabile e accelera l'avvio.
+ *
+ * Due strategie, perché i due tipi di risorsa invecchiano in modo diverso:
+ * - `/assets/*` porta l'hash del contenuto nel nome → la copia in cache è
+ *   sempre quella giusta, quindi cache-first;
+ * - la shell (`/`, `index.html`, icone) no: una copia vecchia terra l'app
+ *   indietro dopo un aggiornamento, perché referenzia bundle che ormai hanno
+ *   un altro nome → network-first, con la cache solo come rete di sicurezza
+ *   quando il server locale non risponde.
+ *
+ * Le risposte dell'API non entrano mai in cache: i dati sono già locali.
  */
-const CACHE = "ice-shell-v3";
+const CACHE = "ice-shell-v4";
 const SHELL = ["/", "/index.html", "/favicon.svg", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -19,20 +27,35 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+function cache(request, response) {
+  const copy = response.clone();
+  return caches.open(CACHE).then((store) => store.put(request, copy)).then(() => response);
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const isAsset = url.origin === self.location.origin && (url.pathname.startsWith("/assets/") || SHELL.includes(url.pathname));
-  if (event.request.method !== "GET" || !isAsset) return;
+  if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  const isHashedAsset = url.pathname.startsWith("/assets/");
+  const isShell = SHELL.includes(url.pathname);
+  if (!isHashedAsset && !isShell) return;
+
+  if (isHashedAsset) {
+    event.respondWith(
+      caches
+        .match(event.request)
+        .then((cached) => cached ?? fetch(event.request).then((response) => cache(event.request, response))),
+    );
+    return;
+  }
 
   event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ??
-        fetch(event.request).then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-          return response;
-        }),
-    ),
+    fetch(event.request)
+      .then((response) => cache(event.request, response))
+      .catch(() =>
+        caches
+          .match(event.request)
+          .then((cached) => cached ?? new Response("Offline", { status: 503, statusText: "Offline" })),
+      ),
   );
 });

@@ -89,7 +89,9 @@ export class SyncManager {
       failedSteps: 0,
       emptySteps: dropped,
     });
-    this.queue = this.queue.then(() => this.run(jobId, steps));
+    // La coda non deve poter restare bloccata: `run` gestisce già i propri
+    // errori, questo è il paracadute perché un job non fermi tutti i successivi.
+    this.queue = this.queue.then(() => this.run(jobId, steps)).catch(() => undefined);
     return jobId;
   }
 

@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { api } from "@/api/client";
 import { downloadString, formatGw, formatMw, formatNumber } from "@/lib/utils";
+import { toCsv } from "@/lib/csv";
 import type { CapacityRecord, RecordFilters } from "@/types";
 
 type SortKey = keyof Pick<
@@ -112,19 +113,26 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
 
   const exportVisibleCsv = () => {
     const fields = COLUMNS.map((c) => c.key);
-    const header = ["dataset", ...fields, "fetched_at"].join(",");
-    const body = sorted
-      .map((r) =>
-        [
-          r.dataset,
-          ...fields.map((f) => r[f] ?? ""),
-          r.fetched_at,
-        ]
-          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-          .join(","),
-      )
-      .join("\r\n");
-    downloadString(`${header}\r\n${body}`, "capacity-records-view.csv", "text/csv;charset=utf-8");
+    const rows = sorted.map((record) => {
+      const row: Record<string, unknown> = { dataset: record.dataset };
+      for (const field of fields) row[field] = record[field];
+      row.fetched_at = record.fetched_at;
+      return row;
+    });
+    downloadString(
+      // Stesso serializzatore degli altri export: quoting coerente e BOM UTF-8
+      // (senza, Excel legge male i nomi con accenti: "Forlì-Cesena").
+      toCsv({
+        columns: [
+          { key: "dataset", label: "dataset" },
+          ...fields.map((field) => ({ key: field as string, label: field as string })),
+          { key: "fetched_at", label: "fetched_at" },
+        ],
+        rows,
+      }),
+      "capacity-records-view.csv",
+      "text/csv;charset=utf-8",
+    );
   };
 
   return (
