@@ -1,7 +1,5 @@
 # Italian Renewable Capacity Explorer
 
-![Italian Renewable Capacity Explorer](docs/assets/readme-banner.png)
-
 **Explore Italy's renewable installed capacity — solar, wind, hydro, bioenergy and
 geothermal — region by region, with charts, tables and CSV exports.**
 Thermoelectric capacity and the national totals are included for comparison. The
@@ -16,7 +14,6 @@ browser, or install it as an app with its own window and Start-menu entry.
 > data is © Terna S.p.A. and is fetched with each user's own free credentials.
 
 ![Dashboard](docs/screenshot-dashboard.png)
-![Data sync](docs/screenshot-sync.png)
 
 ## Features
 

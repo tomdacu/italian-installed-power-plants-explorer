@@ -56,91 +56,76 @@ function formatSigned(value: number, unit: string, digits = 1): string {
   return `${sign}${abs} ${unit}`;
 }
 
+/**
+ * Le due misure dell'app raccontano le stesse tre cose in unità diverse: il
+ * nazionale in GW (una sola cifra significativa in più), tutto il resto in MW.
+ * Qui c'è un solo insieme di card, parametrizzato — prima erano due rami
+ * quasi identici da mantenere in parallelo.
+ */
+interface Measure {
+  /** Totale dello stock dell'ultimo anno, nell'unità della misura. */
+  total: number | null;
+  /** Variazione sull'anno precedente, stessa unità. */
+  yoy: number | null;
+  unit: string;
+  /** Cifre decimali della variazione: i GW si leggono con due. */
+  yoyDigits: number;
+  /** Valore grande della prima card. */
+  stock: (value: number) => string;
+  /** Riga sotto il valore grande: qui si può essere più precisi del titolo. */
+  stockHint: (value: number, latestYear: number | null | undefined) => string;
+  label: string;
+}
+
+function measureFor(summary: Summary | undefined, isGw: boolean): Measure {
+  if (isGw) {
+    return {
+      total: summary?.latest_total_installed_capacity_gw ?? null,
+      yoy: summary?.yoy_new_gw ?? null,
+      unit: "GW",
+      yoyDigits: 2,
+      stock: (value) => `${formatGw(value)} GW`,
+      stockHint: (_value, latestYear) => `National stock in ${latestYear} · by type`,
+      label: "Installed stock",
+    };
+  }
+  const capLabel = summary?.capacity_type_applied ?? "Lorda";
+  return {
+    total: summary?.latest_total_efficient_power_mw ?? null,
+    yoy: summary?.yoy_new_mw ?? null,
+    unit: "MW",
+    yoyDigits: 1,
+    stock: (value) => compactMw(value),
+    stockHint: (value, latestYear) => `${formatMw(value)} MW in ${latestYear} · single ${capLabel} index`,
+    label: `Installed stock · ${capLabel}`,
+  };
+}
+
 export function KpiCards({
   summary,
   loading,
   isError,
-  isGw,
+  isGw = false,
 }: {
   summary: Summary | undefined;
   loading: boolean;
   isError?: boolean;
   isGw?: boolean;
 }) {
+  const measure = measureFor(summary, isGw);
+  const noData = !loading && (summary == null || measure.total === null);
+  const yoyPct = summary?.yoy_pct ?? null;
   /** Un guasto dell'API non è "selezione vuota": l'utente deve sapere cosa rifare. */
   const emptyHint = isError
     ? "The local service is not responding — try again"
     : "No records in the current selection";
 
-  if (isGw) {
-    const total = summary?.latest_total_installed_capacity_gw ?? null;
-    const noData = !loading && (summary == null || total === null);
-    const yoy = summary?.yoy_new_gw ?? null;
-    const yoyPct = summary?.yoy_pct ?? null;
-    return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi
-          label="Installed stock"
-          value={loading ? undefined : total === null ? "—" : `${formatGw(total)} GW`}
-          hint={
-            loading ? undefined : noData ? emptyHint : `National stock in ${summary?.latest_year} · by type`
-          }
-          icon={TrendingUp}
-          accent="bg-gradient-to-br from-brand-400 to-brand-700"
-          glow="bg-brand-500/20"
-          loading={loading}
-        />
-        <Kpi
-          label="Added vs previous year"
-          value={loading ? undefined : yoy === null ? "—" : formatSigned(yoy, "GW", 2)}
-          hint={
-            loading || summary?.previous_year == null
-              ? undefined
-              : `${summary.previous_year} → ${summary.latest_year}${yoyPct !== null ? ` (${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%)` : ""}`
-          }
-          icon={TrendingUp}
-          accent="bg-gradient-to-br from-sky-400 to-sky-700"
-          glow="bg-sky-500/20"
-          loading={loading}
-        />
-        <Kpi
-          label="Year range"
-          value={
-            !summary?.year_min ? "—" : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
-          }
-          hint={
-            summary?.latest_year
-              ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
-              : isError
-                ? "The local service is not responding"
-                : "Earliest to latest year in stored data"
-          }
-          icon={CalendarDays}
-          accent="bg-gradient-to-br from-violet-400 to-violet-700"
-          glow="bg-violet-500/20"
-          loading={loading}
-        />
-      </div>
-    );
-  }
-
-  const total = summary?.latest_total_efficient_power_mw ?? null;
-  const noData = !loading && (summary == null || total === null);
-  const yoy = summary?.yoy_new_mw ?? null;
-  const yoyPct = summary?.yoy_pct ?? null;
-  const capLabel = summary?.capacity_type_applied ?? "Lorda";
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <Kpi
-        label={`Installed stock · ${capLabel}`}
-        value={loading ? undefined : total === null ? "—" : compactMw(total)}
-        hint={
-          loading
-            ? undefined
-            : noData
-              ? "No records in the current selection"
-              : `${formatMw(total)} MW in ${summary?.latest_year} · single ${capLabel} index`
-        }
+        label={measure.label}
+        value={loading || measure.total === null ? (loading ? undefined : "—") : measure.stock(measure.total)}
+        hint={loading ? undefined : noData || measure.total === null ? emptyHint : measure.stockHint(measure.total, summary?.latest_year)}
         icon={TrendingUp}
         accent="bg-gradient-to-br from-brand-400 to-brand-700"
         glow="bg-brand-500/20"
@@ -148,11 +133,19 @@ export function KpiCards({
       />
       <Kpi
         label="Added vs previous year"
-        value={loading ? undefined : yoy === null ? "—" : formatSigned(yoy, "MW")}
+        value={
+          loading
+            ? undefined
+            : measure.yoy === null
+              ? "—"
+              : formatSigned(measure.yoy, measure.unit, measure.yoyDigits)
+        }
         hint={
           loading || summary?.previous_year == null
             ? undefined
-            : `${summary.previous_year} → ${summary.latest_year}${yoyPct !== null ? ` (${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%)` : ""}`
+            : `${summary.previous_year} → ${summary.latest_year}${
+                yoyPct !== null ? ` (${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%)` : ""
+              }`
         }
         icon={Layers}
         accent="bg-gradient-to-br from-sky-400 to-sky-700"
@@ -162,14 +155,14 @@ export function KpiCards({
       <Kpi
         label="Year range"
         value={
-          !summary?.year_min
-            ? "—"
-            : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
+          !summary?.year_min ? "—" : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
         }
         hint={
           summary?.latest_year
             ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
-            : "Earliest to latest year in stored data"
+            : isError
+              ? "The local service is not responding"
+              : "Earliest to latest year in stored data"
         }
         icon={CalendarDays}
         accent="bg-gradient-to-br from-violet-400 to-violet-700"
