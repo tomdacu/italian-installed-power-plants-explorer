@@ -50,7 +50,7 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 52 tests, no network or credentials required
+bun test                 # 53 tests, no network or credentials required
 bun run typecheck        # interface + server
 bun run build            # production interface bundle into dist/
 ```
@@ -72,7 +72,8 @@ bun run compile          # dist-exe/ice.exe plus static/ — needs both to run
 | “Interfaccia non trovata: manca la cartella static/” | the executable was copied without `static/`; keep them together or set `ICE_STATIC_DIR` |
 | The window is a plain browser tab | the browser was not detected for app mode: use your browser's *Install app*, or run with `--browser` |
 | “Porta preferita occupata: uso <port>” | another instance holds 8731; close it and restart |
-| Sync reports skipped steps | Terna rate limiting (`429`/`403 Developer Over Qps`): they are retried, then reported as `failed_steps`; re-run the sync, stored steps are upserted |
+| Sync reports skipped steps | Those years are not published for the selected datasets (the national series starts in 2021): nothing to download, `skipped_steps` counts them |
+| Sync reports failed steps | Terna refused the calls (quota: `403 Developer Over Rate`, or the network). They are retried with backoff; re-run the sync later, stored rows are upserted and nothing is duplicated |
 | Sync reports many empty steps | years or combinations the API does not publish |
 | Charts show nothing for a dataset | that dataset was never downloaded: run a sync covering its years |
 | “The local data service is not responding” | the server is still starting, or the port changed: check the log file listed above |
