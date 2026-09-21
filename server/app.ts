@@ -51,6 +51,7 @@ export function startApp(options: StartOptions = {}) {
   // uno zero al posto del trattino, due grafie per la Valle d'Aosta) dividono le
   // serie e fanno comparire due voci identiche nei menu.
   store.repairPlaceNames(PLACE_FIXES);
+  store.optimize();
 
   const sync = new SyncManager(store, () => createTernaClient(settings));
 

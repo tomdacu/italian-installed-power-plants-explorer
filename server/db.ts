@@ -146,6 +146,9 @@ export class CapacityStore {
     `);
   }
 
+  /** Cache delle opzioni: cambiano solo quando arrivano righe nuove. */
+  private optionsCache: Record<string, unknown[]> | null = null;
+
   /** Inserisce o aggiorna per `record_key`: risincronizzare non duplica righe. */
   upsertRecords(rows: CapacityRow[]): number {
     if (rows.length === 0) return 0;
@@ -185,6 +188,7 @@ export class CapacityStore {
       }
     });
     write(rows);
+    this.optionsCache = null;
     return rows.length;
   }
 
@@ -201,6 +205,18 @@ export class CapacityStore {
     if (filters.year_from !== null && filters.year_from !== undefined) {
       clauses.push("year >= $year_from");
       params.$year_from = filters.year_from;
+    }
+    // Ricerca libera: la fa il database, così la tabella non deve tenere in
+    // memoria migliaia di righe solo per filtrarle nel browser.
+    const search = filters.q?.trim();
+    if (search) {
+      const pattern = `%${search.replace(/[%_]/g, (char) => `\\${char}`)}%`;
+      clauses.push(
+        `(region LIKE $q ESCAPE '\\' OR province LIKE $q ESCAPE '\\' OR source LIKE $q ESCAPE '\\'
+          OR category LIKE $q ESCAPE '\\' OR subcategory LIKE $q ESCAPE '\\' OR type LIKE $q ESCAPE '\\'
+          OR capacity_type LIKE $q ESCAPE '\\' OR dataset LIKE $q ESCAPE '\\' OR CAST(year AS TEXT) LIKE $q ESCAPE '\\')`,
+      );
+      params.$q = pattern;
     }
     if (filters.year_to !== null && filters.year_to !== undefined) {
       clauses.push("year <= $year_to");
@@ -255,6 +271,7 @@ export class CapacityStore {
   }
 
   options(): Record<string, unknown[]> {
+    if (this.optionsCache) return this.optionsCache;
     const fields = ["dataset", "year", "region", "province", "source", "capacity_type", "category", "subcategory", "type"];
     // Il tipo promette `categories`/`subcategories`: le chiavi si costruiscono
     // dal plurale vero, non aggiungendo una "s" a caso.
@@ -274,6 +291,9 @@ export class CapacityStore {
         .all() as OptionRow[];
       result[plurals[field] ?? `${field}s`] = rows.map((row) => row.value);
     }
+    // Con 68.000 righe questo costava dieci scansioni complete a ogni
+    // caricamento della dashboard: il risultato si tiene finché non cambiano i dati.
+    this.optionsCache = result;
     return result;
   }
 
@@ -488,6 +508,12 @@ export class CapacityStore {
     return rows as AggregatePoint[];
   }
 
+  /** `PRAGMA optimize` all'apertura: aggiorna le statistiche che SQLite usa per
+   * scegliere gli indici, senza il costo di un ANALYZE completo. */
+  optimize(): void {
+    this.db.exec("PRAGMA optimize");
+  }
+
   toCsv(filters: RecordFilters): string {
     const fields: (keyof CapacityRecord)[] = [
       "dataset",
@@ -504,7 +530,7 @@ export class CapacityStore {
       "fetched_at",
     ];
     const lines = [fields.join(",")];
-    for (const row of this.records(filters, 1_000_000)) {
+    for (const row of this.records(filters, 100_000)) {
       lines.push(fields.map((field) => csvField(row[field])).join(","));
     }
     // UTF-8 BOM: without it Excel on Windows reads the accented place names

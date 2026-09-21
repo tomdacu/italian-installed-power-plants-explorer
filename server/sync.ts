@@ -90,6 +90,12 @@ export class SyncManager {
   start(request: SyncRequestPayload): string {
     const jobId = crypto.randomUUID();
     const { steps, dropped } = buildPlan(request);
+    // Un job completato serve solo a rispondere al polling dell'interfaccia:
+    // oltre venti, i più vecchi non servono più a nessuno.
+    if (this.jobs.size >= 20) {
+      const oldest = [...this.jobs.entries()].find(([, state]) => state.status === "completed" || state.status === "failed");
+      if (oldest) this.jobs.delete(oldest[0]);
+    }
     this.jobs.set(jobId, {
       jobId,
       status: "queued",

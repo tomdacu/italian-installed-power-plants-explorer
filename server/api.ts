@@ -77,6 +77,7 @@ function filtersFromQuery(query: URLSearchParams): RecordFilters {
     category: text("category"),
     subcategory: text("subcategory"),
     type: text("type"),
+    q: text("q"),
   };
 }
 

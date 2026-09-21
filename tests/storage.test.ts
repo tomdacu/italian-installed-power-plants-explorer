@@ -1,11 +1,25 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+
+import { cleanupTempDirs, tempDir } from "./temp.ts";
 
 import { CapacityStore, parseGroupBy } from "../server/db.ts";
 import type { CapacityRow } from "../server/normalize.ts";
 import type { RecordFilters } from "../shared/types.ts";
+
+const STORES: CapacityStore[] = [];
+
+afterAll(() => {
+  // I database vanno chiusi prima: su Windows rimuovere un file aperto è EBUSY.
+  for (const open of STORES) {
+    try {
+      open.close();
+    } catch {
+      /* già chiuso */
+    }
+  }
+  cleanupTempDirs();
+});
 
 const FETCHED = "2026-01-01T00:00:00+00:00";
 
@@ -44,7 +58,9 @@ function seed(store: CapacityStore): void {
 }
 
 function freshStore(): CapacityStore {
-  return new CapacityStore(join(mkdtempSync(join(tmpdir(), "ice-test-")), "cache.sqlite"));
+  const store = new CapacityStore(join(tempDir("ice-test-"), "cache.sqlite"));
+  STORES.push(store);
+  return store;
 }
 
 describe("parseGroupBy", () => {

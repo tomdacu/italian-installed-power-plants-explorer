@@ -1,9 +1,15 @@
-import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, afterEach, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { cleanupTempDirs, tempDir } from "./temp.ts";
+
 import { appDataDir, SettingsStore } from "../server/settings.ts";
+
+
+afterAll(() => {
+  cleanupTempDirs();
+});
 
 const previousDataDir = process.env.TERNA_APP_DATA_DIR;
 
@@ -19,7 +25,7 @@ test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
     "ItalianCapacityExplorer",
     "TernaInstalledCapacity",
   ]) {
-    const root = mkdtempSync(join(tmpdir(), "ice-root-"));
+    const root = tempDir("ice-root-");
     const legacy = join(root, legacyName);
     mkdirSync(legacy, { recursive: true });
     writeFileSync(join(legacy, "settings.json"), '{"client_id":"vecchio"}', "utf8");
@@ -34,7 +40,7 @@ test("la cartella dati migra dai nomi precedenti a quello attuale", () => {
 
 test("se esistono entrambe vince la cartella nuova", () => {
   delete process.env.TERNA_APP_DATA_DIR;
-  const root = mkdtempSync(join(tmpdir(), "ice-root-"));
+  const root = tempDir("ice-root-");
   mkdirSync(join(root, "ItalianInstalledPowerPlantsExplorer"), { recursive: true });
   mkdirSync(join(root, "ItalianRenewableCapacityExplorer"), { recursive: true });
 
@@ -44,7 +50,7 @@ test("se esistono entrambe vince la cartella nuova", () => {
 
 test("le credenziali salvano il client id nel file e il segreto nel portachiavi", async () => {
   delete process.env.TERNA_APP_DATA_DIR;
-  const dataDir = mkdtempSync(join(tmpdir(), "ice-settings-"));
+  const dataDir = tempDir("ice-settings-");
   const store = new SettingsStore(dataDir);
 
   store.saveCredentials("client-abc", "segreto-di-prova");

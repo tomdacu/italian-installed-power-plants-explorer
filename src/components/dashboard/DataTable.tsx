@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { ArrowUpDown, ArrowUp, ArrowDown, Download, Search, Inbox } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { api } from "@/api/client";
-import { downloadString, formatGw, formatMw, formatNumber } from "@/lib/utils";
-import { toCsv } from "@/lib/csv";
+import { formatGw, formatMw, formatNumber } from "@/lib/utils";
+import { useToast } from "@/components/ui/Toast";
 import type { CapacityRecord, RecordFilters } from "@/types";
 
 type SortKey = keyof Pick<
@@ -27,91 +27,58 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "installed_capacity_gw", label: "Inst. cap. (GW)" },
 ];
 
-function rowKey(r: CapacityRecord, i: number): string {
+const PAGE_SIZE = 50;
+
+function rowKey(record: CapacityRecord, index: number): string {
   return [
-    r.dataset,
-    r.year,
-    r.region,
-    r.province,
-    r.source,
-    r.type,
-    r.capacity_type,
-    i,
+    record.dataset,
+    record.year,
+    record.region,
+    record.province,
+    record.source,
+    record.type,
+    record.capacity_type,
+    index,
   ].join("|");
 }
 
-function rowText(r: CapacityRecord): string {
-  return [
-    r.dataset,
-    r.year,
-    r.region,
-    r.province,
-    r.source,
-    r.category,
-    r.subcategory,
-    r.type,
-    r.capacity_type,
-    r.efficient_power_mw,
-    r.installed_capacity_gw,
-  ]
-    .filter((v) => v !== null && v !== undefined)
-    .join(" ")
-    .toLowerCase();
-}
-
+/**
+ * Tabella dei record con paginazione, ricerca e ordinamento **sul server**: la
+ * pagina che si vede è quella che si chiede. Prima scaricava 20.000 righe (oltre
+ * 3 MB) per mostrarne cinquanta.
+ */
 export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters; resetToken?: number }) {
   const [sortKey, setSortKey] = useState<SortKey>("year");
   const [order, setOrder] = useState<Order>("desc");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
-  const PAGE_SIZE = 50;
-/** Righe caricate nella tabella: oltre questa soglia si dichiara il troncamento. */
-const RECORD_PAGE_LIMIT = 20000;
+  const toast = useToast();
 
+  // La ricerca parte dopo che l'utente smette di scrivere: `useDeferredValue`
+  // tiene l'input reattivo mentre la query viaggia.
+  const search = useDeferredValue(query).trim();
   const recordsQuery = useQuery({
-    queryKey: ["records", filters],
-    // 20.000 righe: oltre, l'ordinamento e la ricerca lato client diventano
-    // pesanti. Il totale vero arriva insieme alla pagina, così la tabella può
-    // dire quante righe restano fuori invece di far credere di averle tutte.
-    // Il server carica le righe **più recenti** (se la selezione supera il
-    // limite, sono quelle che interessano) e l'ordinamento che si vede resta
-    // lato client, così cliccare un'intestazione è istantaneo e non rifetcha.
-    queryFn: () => api.recordsPage(filters, RECORD_PAGE_LIMIT),
+    queryKey: ["records", filters, search, sortKey, order, page],
+    queryFn: () =>
+      api.recordsPage(filters, PAGE_SIZE, page * PAGE_SIZE, {
+        column: sortKey,
+        direction: order,
+        q: search,
+      }),
+    placeholderData: keepPreviousData,
   });
 
   const rows = recordsQuery.data?.rows ?? [];
-  const totalRows = recordsQuery.data?.total ?? rows.length;
-  const truncated = totalRows > rows.length;
-  const sorted = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = rows;
-    if (q) list = rows.filter((r) => rowText(r).includes(q));
-    return [...list].sort((a, b) => {
-      const av = a[sortKey] ?? null;
-      const bv = b[sortKey] ?? null;
-      if (av === bv) return 0;
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      if (typeof av === "number" && typeof bv === "number") {
-        return order === "asc" ? av - bv : bv - av;
-      }
-      return order === "asc"
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
-    });
-  }, [rows, query, sortKey, order]);
-
-  // Client-side pagination keeps the DOM light even with tens of thousands of
-  // records; filters or search changes jump back to the first page.
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const totalRows = recordsQuery.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
-  const pageRows = useMemo(
-    () => sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
-    [sorted, safePage],
-  );
+  const firstRow = totalRows === 0 ? 0 : safePage * PAGE_SIZE + 1;
+  const lastRow = Math.min((safePage + 1) * PAGE_SIZE, totalRows);
+  const searching = search.length > 0;
+
   useEffect(() => {
     setPage(0);
-  }, [query, filters]);
+  }, [search, filters]);
 
   // Il Reset della dashboard azzera anche ricerca e ordinamento: sono stato
   // locale della tabella, ma l'utente se li aspetta azzerati.
@@ -123,37 +90,35 @@ const RECORD_PAGE_LIMIT = 20000;
   }, [resetToken]);
 
   const toggleSort = (key: SortKey) => {
-    if (key === sortKey) setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    if (key === sortKey && order === "desc") setOrder("asc");
+    else if (key === sortKey) setOrder("desc");
     else {
       setSortKey(key);
-      setOrder("asc");
+      setOrder("desc");
     }
+    setPage(0);
   };
 
-  const exportVisibleCsv = () => {
-    // Esporta quello che la tabella ha caricato: se la selezione è troncata lo
-    // dice il messaggio sotto, e "Export all CSV" in alto esporta tutto.
-    const fields = COLUMNS.map((c) => c.key);
-    const rows = sorted.map((record) => {
-      const row: Record<string, unknown> = { dataset: record.dataset };
-      for (const field of fields) row[field] = record[field];
-      row.fetched_at = record.fetched_at;
-      return row;
-    });
-    downloadString(
-      // Stesso serializzatore degli altri export: quoting coerente e BOM UTF-8
-      // (senza, Excel legge male i nomi con accenti: "Forlì-Cesena").
-      toCsv({
-        columns: [
-          { key: "dataset", label: "dataset" },
-          ...fields.map((field) => ({ key: field as string, label: field as string })),
-          { key: "fetched_at", label: "fetched_at" },
-        ],
-        rows,
-      }),
-      "capacity-records-view.csv",
-      "text/csv;charset=utf-8",
-    );
+  const exportFilteredCsv = async () => {
+    try {
+      // Il server esporta tutto ciò che corrisponde ai filtri e alla ricerca:
+      // la pagina in memoria non è la selezione.
+      const text = await api.exportCsv({ ...filters, q: search });
+      const stamp = new Date().toISOString().slice(0, 10);
+      const name = `capacity-records-${stamp}.csv`;
+      const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success("CSV downloaded", `${name} is in your downloads`);
+    } catch (error) {
+      toast.error("Export failed", (error as Error).message);
+    }
   };
 
   return (
@@ -164,131 +129,132 @@ const RECORD_PAGE_LIMIT = 20000;
             Capacity records
           </h3>
           <span className="chip border-ink-200/80 text-ink-500 dark:border-white/10 dark:text-ink-400">
-            {truncated
-              ? `${formatNumber(sorted.length)} of ${formatNumber(totalRows)} rows`
-              : `${formatNumber(sorted.length)} rows`}
+            {formatNumber(totalRows)} {searching ? "matching" : ""} rows
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Input
-            leading={<Search className="h-4 w-4" />}
-            placeholder="Search rows…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-9 w-56 text-sm"
-            aria-label="Search records"
-          />
-          <Button variant="outline" size="sm" className="h-9" onClick={exportVisibleCsv}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search rows…"
+              className="h-9 w-[220px] pl-8"
+              aria-label="Search rows"
+            />
+          </div>
+          <Button variant="outline" size="sm" className="h-9" onClick={() => void exportFilteredCsv()}>
             <Download className="h-3.5 w-3.5" /> Export filtered
           </Button>
         </div>
       </div>
 
-      <div className="max-h-[460px] overflow-auto">
-        {recordsQuery.isLoading ? (
-          <LoadingOverlay label="Loading records" />
-        ) : recordsQuery.isError ? (
+      {recordsQuery.isLoading ? (
+        <LoadingOverlay label="Loading records" />
+      ) : recordsQuery.isError ? (
+        <div className="p-6">
           <EmptyState
-            icon={ArrowUpDown}
-            title="Could not load records"
+            icon={Inbox}
+            title="Could not load the records"
             description={(recordsQuery.error as Error).message}
           />
-        ) : sorted.length === 0 ? (
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="p-6">
           <EmptyState
             icon={Inbox}
             title="No matching records"
-            description="Try widening the filters or running a data sync."
+            description={
+              searching
+                ? "Nothing matches the search — clear it or try different words."
+                : "Try widening the filters or running a data sync."
+            }
           />
-        ) : (
-          <table className="min-w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 backdrop-blur dark:bg-ink-900/95 dark:text-ink-400">
-              <tr>
-                {COLUMNS.map((c) => (
-                  <th
-                    key={c.key}
-                    // Lo stato di ordinamento va annunciato, non solo colorato.
-                    aria-sort={sortKey === c.key ? (order === "asc" ? "ascending" : "descending") : "none"}
-                    className="px-4 py-2.5 font-semibold"
-                  >
-                    <button
-                      onClick={() => toggleSort(c.key)}
-                      className="inline-flex items-center gap-1 transition hover:text-ink-800 dark:hover:text-white"
-                    >
-                      {c.label}
-                      {sortKey === c.key ? (
-                        order === "asc" ? (
-                          <ArrowUp className="h-3 w-3 text-brand-500" />
-                        ) : (
-                          <ArrowDown className="h-3 w-3 text-brand-500" />
-                        )
-                      ) : (
-                        <ArrowUpDown className="h-3 w-3 opacity-35" />
-                      )}
-                    </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r, i) => (
-                <tr
-                  key={rowKey(r, i)}
-                  className="border-t border-ink-100/80 transition-colors last:border-b hover:bg-brand-50/50 dark:border-white/[0.05] dark:hover:bg-brand-500/[0.06]"
-                >
-                  <td className="px-4 py-2.5 font-medium text-ink-800 dark:text-ink-100">{r.year}</td>
-                  <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{r.region ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{r.province ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{r.source ?? r.type ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{r.capacity_type ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{r.type ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-800 dark:text-ink-100">
-                    {formatMw(r.efficient_power_mw)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-800 dark:text-ink-100">
-                    {formatGw(r.installed_capacity_gw)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {truncated && (
-        <p className="flex flex-wrap items-center gap-1.5 border-t border-amber-300/60 bg-amber-50/70 px-4 py-2 text-xs text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
-          Showing {formatNumber(rows.length)} of {formatNumber(totalRows)} matching rows — narrow the
-          filters to see the rest, or use <span className="font-medium">Export all CSV</span> for the
-          full selection.
-        </p>
-      )}
-      {sorted.length > PAGE_SIZE && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-4 py-2.5 text-xs text-ink-500 dark:border-white/[0.06] dark:text-ink-400">
-          <span>
-            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, sorted.length)} of{" "}
-            {formatNumber(sorted.length)}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={safePage === 0}
-            >
-              Previous
-            </Button>
-            <span className="px-1 font-mono">
-              {safePage + 1} / {pageCount}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              disabled={safePage >= pageCount - 1}
-            >
-              Next
-            </Button>
-          </div>
         </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 backdrop-blur dark:bg-ink-900/95 dark:text-ink-400">
+                <tr>
+                  {COLUMNS.map((column) => (
+                    <th
+                      key={column.key}
+                      // Lo stato di ordinamento va annunciato, non solo colorato.
+                      aria-sort={sortKey === column.key ? (order === "asc" ? "ascending" : "descending") : "none"}
+                      className="px-4 py-2.5 font-semibold"
+                    >
+                      <button
+                        onClick={() => toggleSort(column.key)}
+                        className="inline-flex items-center gap-1 transition hover:text-ink-800 dark:hover:text-white"
+                      >
+                        {column.label}
+                        {sortKey === column.key ? (
+                          order === "asc" ? (
+                            <ArrowUp className="h-3 w-3 text-brand-500" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3 text-brand-500" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3 w-3 opacity-35" />
+                        )}
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((record, index) => (
+                  <tr
+                    key={rowKey(record, index)}
+                    className="border-t border-ink-100/80 transition-colors last:border-b hover:bg-brand-50/50 dark:border-white/[0.05] dark:hover:bg-brand-500/[0.06]"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-ink-800 dark:text-ink-100">{record.year}</td>
+                    <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{record.region ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{record.province ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{record.source ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{record.capacity_type ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-ink-600 dark:text-ink-300">{record.type ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-800 dark:text-ink-100">
+                      {formatMw(record.efficient_power_mw)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-800 dark:text-ink-100">
+                      {formatGw(record.installed_capacity_gw)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-4 py-2.5 text-xs text-ink-500 dark:border-white/[0.06] dark:text-ink-400">
+            <span>
+              {formatNumber(firstRow)}–{formatNumber(lastRow)} of {formatNumber(totalRows)}
+              {searching ? " matching rows" : " rows"}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={safePage === 0}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+              >
+                Previous
+              </Button>
+              <span className="px-1 font-mono text-[11px]">
+                {safePage + 1} / {pageCount}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => setPage(safePage + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </section>
   );

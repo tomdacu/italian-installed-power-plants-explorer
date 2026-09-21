@@ -1,7 +1,7 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
+
+import { cleanupTempDirs, tempDir } from "./temp.ts";
 
 import { createApi } from "../server/api.ts";
 import { CapacityStore } from "../server/db.ts";
@@ -10,11 +10,26 @@ import { SettingsStore } from "../server/settings.ts";
 import { SyncManager } from "../server/sync.ts";
 import type { RecordFilters } from "../shared/types.ts";
 
+const STORES: CapacityStore[] = [];
+
+afterAll(() => {
+  // Prima le connessioni: su Windows rimuovere un database aperto è EBUSY.
+  for (const store of STORES) {
+    try {
+      store.close();
+    } catch {
+      /* già chiuso */
+    }
+  }
+  cleanupTempDirs();
+});
+
 const FETCHED = "2026-01-01T00:00:00+00:00";
 
 function buildApp() {
-  const root = mkdtempSync(join(tmpdir(), "ice-api-"));
+  const root = tempDir("ice-api-");
   const store = new CapacityStore(join(root, "cache.sqlite"));
+  STORES.push(store);
   const settings = new SettingsStore(root);
   const sync = new SyncManager(store, () => {
     throw new Error("nessuna credenziale nei test");

@@ -48,6 +48,8 @@ export interface RecordFilters {
   category?: string | null;
   subcategory?: string | null;
   type?: string | null;
+  /** Ricerca libera su dimensioni e anno (LIKE, case-insensitive per ASCII). */
+  q?: string | null;
 }
 
 export interface CapacityRecord {

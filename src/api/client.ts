@@ -172,18 +172,25 @@ export const api = {
   },
 
   /**
-   * Pagina di record (le più recenti) con il conteggio totale della selezione:
-   * senza, la tabella non può sapere se sta mostrando tutto o solo le prime N.
+   * Una pagina di record con il conteggio totale della selezione: ricerca,
+   * ordinamento e ritaglio li fa il database.
    */
   recordsPage(
     filters: Partial<RecordFilters> = {},
-    limit = 20000,
-    sort: { column: string; direction: "asc" | "desc" } = { column: "year", direction: "desc" },
+    limit = 50,
+    offset = 0,
+    sort: { column: string; direction: "asc" | "desc"; q?: string } = { column: "year", direction: "desc" },
   ): Promise<{ rows: CapacityRecord[]; total: number }> {
     const query = buildQuery(filters);
     const separator = query ? "&" : "?";
-    const order = `limit=${limit}&sort=${encodeURIComponent(sort.column)}&order=${sort.direction}`;
-    return requestWithMeta<CapacityRecord[]>(`/records${query}${separator}${order}`).then(
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      sort: sort.column,
+      order: sort.direction,
+    });
+    if (sort.q) params.set("q", sort.q);
+    return requestWithMeta<CapacityRecord[]>(`/records${query}${separator}${params.toString()}`).then(
       (response) => ({
         rows: response.data,
         total: Number(response.headers.get("x-total-count") ?? response.data.length),

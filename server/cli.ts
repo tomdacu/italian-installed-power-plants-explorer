@@ -7,8 +7,8 @@
  *   ice --browser      → browser di sistema
  *   ice --no-window    → solo server (script, test, uso da remoto)
  */
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { startApp } from "./app.ts";
 import { appDataDir } from "./settings.ts";
@@ -28,6 +28,34 @@ const DEFAULT_PORT = (() => {
   const raw = Number(process.env.ICE_PORT ?? 8731);
   return Number.isInteger(raw) && raw > 0 && raw < 65536 ? raw : 8731;
 })();
+
+/** File di log dell'istanza: aperto prima di costruire l'app, così ogni errore
+ * d'avvio resta scritto da qualche parte anche senza console. */
+let logTarget: string | null = null;
+
+function openLog(path: string): void {
+  // Un log che cresce all'infinito (una riga a ogni avvio) non serve a nessuno:
+  // oltre il megabyte si riparte da capo.
+  try {
+    if (existsSync(path) && statSync(path).size > 1_000_000) writeFileSync(path, "");
+  } catch {
+    // se non si può ruotare, si continua ad appendere
+  }
+  logTarget = path;
+}
+
+function log(message: string): void {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  if (logTarget) {
+    try {
+      appendFileSync(logTarget, line);
+      return;
+    } catch {
+      // se il log non è scrivibile si finisce su stderr
+    }
+  }
+  process.stderr.write(line);
+}
 
 interface CliOptions {
   port: number;
@@ -99,29 +127,38 @@ function openInterface(url: string, mode: CliOptions["window"]): void {
 
 function main(): void {
   const options = parseArgs(Bun.argv.slice(2));
-  const app = startApp({ port: options.port, dataDir: options.dataDir });
 
-  const logDir = options.dataDir ?? appDataDir();
+  // Il log va aperto **prima** di costruire l'app: un errore d'avvio (cartella
+  // dati non scrivibile, database corrotto, porta occupata) spariva su stderr
+  // e, con la finestra senza console, non lo vedeva nessuno.
+  const logPath = join(appDataDir(options.dataDir), "backend.log");
   try {
-    mkdirSync(logDir, { recursive: true });
-    appendFileSync(join(logDir, "backend.log"), `[${new Date().toISOString()}] ice listening on ${app.url}\n`);
+    mkdirSync(dirname(logPath), { recursive: true });
+    openLog(logPath);
   } catch {
-    // il log non è critico: se la cartella non è scrivibile si prosegue
+    // Se nemmeno il log è scrivibile, resta la console.
   }
 
-  console.log(`Italian Renewable Capacity Explorer in ascolto su ${app.url}`);
-  console.log(`Dati in ${app.settings.load().dataDir}`);
+  let app: ReturnType<typeof startApp>;
+  try {
+    app = startApp({ port: options.port, dataDir: options.dataDir });
+  } catch (error) {
+    const message = (error as Error)?.message ?? String(error);
+    log(`avvio fallito: ${message}`);
+    console.error(`Impossibile avviare l'applicazione: ${message}`);
+    console.error(`Dettagli in ${logPath}`);
+    process.exit(1);
+  }
+
+  log(`Italian Renewable Capacity Explorer in ascolto su ${app.url}`);
+  log(`Dati in ${appDataDir()}`);
   if (app.portFallback) {
-    console.warn(`Porta preferita occupata: uso ${app.port}. La PWA installata punta alla porta stabile.`);
+    // Con la console nascosta l'avviso su stderr non lo vede nessuno: finisce
+    // anche nel log.
+    log(`porta ${options.port} occupata: uso ${app.port}`);
   }
   openInterface(app.url, options.window);
-
-  const shutdown = () => {
-    app.stop();
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
 }
+
 
 if (import.meta.main) main();
