@@ -4,10 +4,18 @@
  */
 import { Hono } from "hono";
 
-import { DATASET_SOURCES, DEFAULT_CAPACITY_TYPE, INSTALLED_CAPACITY_TYPES, INSTALLED_CAPACITY_YEAR_WINDOW } from "./constants.ts";
+import {
+  DATA_FIRST_YEAR,
+  DEFAULT_CAPACITY_TYPE,
+  DATASET_SOURCES,
+  INSTALLED_CAPACITY_FIRST_YEAR,
+  INSTALLED_CAPACITY_TYPES,
+  clampYears,
+  currentYear,
+} from "./constants.ts";
+import { createTernaClient } from "./client.ts";
 import { parseGroupBy, type CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
-import { TernaApiError, TernaClient, MIN_REQUEST_INTERVAL } from "./terna.ts";
 import type { SyncManager } from "./sync.ts";
 import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type RecordFilters } from "../shared/types.ts";
 
@@ -56,13 +64,6 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     };
   };
 
-  async function createClient(): Promise<TernaClient> {
-    const current = settings.load();
-    const secret = await settings.getClientSecret(current.clientId ?? undefined);
-    if (!current.clientId || !secret) throw new TernaApiError("Terna credentials are not configured");
-    return new TernaClient(current.clientId, secret, MIN_REQUEST_INTERVAL);
-  }
-
   app.get("/health", (c) => c.json({ status: "ok" }));
 
   app.get("/settings/credentials/status", async (c) => c.json(await credentialStatus()));
@@ -83,7 +84,7 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
 
   app.post("/settings/credentials/test", async (c) => {
     try {
-      const client = await createClient();
+      const client = await createTernaClient(settings);
       await client.testCredentials();
       return c.json({ ok: true });
     } catch (error) {
@@ -92,16 +93,20 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
   });
 
   app.post("/sync/jobs", async (c) => {
-    const body = (await c.req.json()) as { years?: number[] };
+    const body = (await c.req.json()) as { years?: number[]; datasets?: DatasetName[] };
     if (!Array.isArray(body.years) || body.years.length === 0) {
       return c.json({ detail: "years must be a non-empty array" }, 422);
     }
-    const jobId = sync.start({
-      years: body.years.map(Number).filter(Number.isFinite),
-      datasets: (body as { datasets?: DatasetName[] }).datasets,
-      sources: (body as { sources?: string[] }).sources,
-      capacity_types: (body as { capacity_types?: string[] }).capacity_types,
-    });
+    // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
+    // trasformarsi in centinaia di richieste e bruciare la quota Terna.
+    const { years } = clampYears(body.years.map(Number).filter(Number.isFinite));
+    if (years.length === 0) {
+      return c.json(
+        { detail: `no year between ${DATA_FIRST_YEAR} and ${currentYear()} was requested` },
+        422,
+      );
+    }
+    const jobId = sync.start({ years, datasets: body.datasets });
     return c.json({ job_id: jobId, status: "queued" });
   });
 
@@ -119,7 +124,9 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
       known_capacity_types: CAPACITY_TYPES,
       dataset_sources: DATASET_SOURCES,
       default_capacity_type: DEFAULT_CAPACITY_TYPE,
-      installed_capacity_year_window: INSTALLED_CAPACITY_YEAR_WINDOW,
+      first_year: DATA_FIRST_YEAR,
+      installed_capacity_first_year: INSTALLED_CAPACITY_FIRST_YEAR,
+      current_year: currentYear(),
       database: store.options(),
     }),
   );

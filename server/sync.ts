@@ -11,6 +11,7 @@ import {
   thermoelectricCapacityRows,
   type CapacityRow,
 } from "./normalize.ts";
+import { firstYearFor } from "./constants.ts";
 import type { CapacityStore } from "./db.ts";
 import { TernaClient } from "./terna.ts";
 import type { DatasetName, SyncJobStatus, SyncRequestPayload, SyncStatus } from "../shared/types.ts";
@@ -45,6 +46,9 @@ interface JobState {
  * 2023 senza filtri torna 1.160 righe, `thermoelectric-capacity` 1.192). Il
  * vecchio piano chiedeva anno × fonte × indice, cioè 27 richieste per anno, ed
  * è così che si finiva contro il limite di richieste dell'API.
+ *
+ * Gli anni che un dataset non può servire vengono saltati e contati in
+ * `dropped`: `/installed-capacity` rifiuta tutto ciò che precede il 2021.
  */
 export function buildPlan(request: SyncRequestPayload): { steps: SyncStep[]; dropped: number } {
   const steps: SyncStep[] = [];
@@ -57,14 +61,19 @@ export function buildPlan(request: SyncRequestPayload): { steps: SyncStep[]; dro
     installed_capacity: "Installed capacity (national)",
     thermoelectric_capacity: "Thermoelectric capacity",
   };
+  let dropped = 0;
 
   for (const year of request.years) {
     for (const dataset of datasets) {
+      if (year < firstYearFor(dataset)) {
+        dropped += 1;
+        continue;
+      }
       steps.push({ label: `${labels[dataset]} ${year}`, dataset, year });
     }
   }
 
-  return { steps, dropped: 0 };
+  return { steps, dropped };
 }
 
 export class SyncManager {

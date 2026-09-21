@@ -1,49 +1,54 @@
 import { expect, test } from "bun:test";
 
+import { DATA_FIRST_YEAR, INSTALLED_CAPACITY_FIRST_YEAR, clampYears, currentYear } from "../server/constants.ts";
 import { buildPlan } from "../server/sync.ts";
 
 test("una richiesta per dataset e anno", () => {
   const { steps, dropped } = buildPlan({
     years: [2023, 2024],
     datasets: ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"],
-    sources: [],
-    capacity_types: [],
   });
 
+  // `installed_capacity` non serve il 2023 né il 2024: quei passi non esistono.
   expect(dropped).toBe(0);
   expect(steps).toHaveLength(2 * 4);
   expect(steps.map((step) => step.label)).toContain("Renewable capacity 2023");
 });
 
-test("il piano copre gli anni richiesti e ignora i dataset non sincronizzabili", () => {
-  const years = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
-  const { steps } = buildPlan({
-    years,
-    datasets: ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"],
-    sources: [],
-    capacity_types: [],
+test("gli anni che un dataset non pubblica vengono saltati, non richiesti", () => {
+  const { steps, dropped } = buildPlan({
+    years: [2010, 2022],
+    datasets: ["renewable_source_capacity", "installed_capacity"],
   });
 
-  // Sette anni per dataset, non sette anni × fonti × indici: è la riduzione che
-  // tiene il sync lontano dal limite di richieste di Terna.
-  expect(steps).toHaveLength(years.length * 4);
-  expect(steps.every((step) => years.includes(step.year))).toBe(true);
-  expect(steps.some((step) => step.dataset === "renewable_source_capacity")).toBe(true);
+  // 2010: solo le rinnovabili; 2022: entrambi. Il 2010 di installed_capacity
+  // sarebbe un 406 (verificato sull'API), quindi non entra nel piano.
+  expect(steps.map((step) => `${step.dataset} ${step.year}`)).toEqual([
+    "renewable_source_capacity 2010",
+    "renewable_source_capacity 2022",
+    "installed_capacity 2022",
+  ]);
+  expect(dropped).toBe(1);
 });
 
-test("la richiesta non dipende più da fonti e indici scelti dall'utente", () => {
-  const withFilters = buildPlan({
-    years: [2023],
-    datasets: ["renewable_source_capacity"],
-    sources: ["Fotovoltaico"],
-    capacity_types: ["Lorda"],
-  });
-  const withoutFilters = buildPlan({
-    years: [2023],
-    datasets: ["renewable_source_capacity"],
-    sources: [],
-    capacity_types: [],
+test("il piano completo parte dal primo anno pubblicato", () => {
+  const years = Array.from({ length: currentYear() - DATA_FIRST_YEAR + 1 }, (_, i) => DATA_FIRST_YEAR + i);
+  const { steps, dropped } = buildPlan({
+    years,
+    datasets: ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"],
   });
 
-  expect(withFilters.steps).toEqual(withoutFilters.steps);
+  const installedYears = steps.filter((step) => step.dataset === "installed_capacity").map((step) => step.year);
+  expect(installedYears[0]).toBe(INSTALLED_CAPACITY_FIRST_YEAR);
+  // Tre dataset coprono tutti gli anni, il quarto parte dal 2021.
+  expect(steps).toHaveLength(years.length * 3 + installedYears.length);
+  expect(dropped).toBe(INSTALLED_CAPACITY_FIRST_YEAR - DATA_FIRST_YEAR);
+});
+
+test("clampYears tiene solo gli anni che Terna può servire", () => {
+  const { years, skipped } = clampYears([1899, 2000, 2024, 2024, 2100]);
+
+  expect(years).toEqual([2000, 2024]);
+  expect(skipped).toBe(3); // 1899, il duplicato 2024 e il 2100
+  expect(clampYears([]).years).toEqual([]);
 });

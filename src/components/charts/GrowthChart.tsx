@@ -8,72 +8,26 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { colorFor, formatMw } from "@/lib/utils";
+import { additionsCsv } from "@/lib/chart-csv";
+import { yearlyAdditions } from "@/lib/chart-data";
+import { useYearlySplit } from "@/hooks/useTimeseries";
 import type { RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
-import { colorFor } from "@/lib/utils";
-import { csvNumber, type CsvTable } from "@/lib/csv";
-import { useYearlySplit } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
 
-export interface GrowthData {
-  rows: Record<string, number>[];
-  names: string[];
-  measure: { isGw: boolean; valueKey: string; unit: string };
-}
-
-/** CSV of the additions chart: the year-on-year change of each series. */
-export function additionsCsv(growth: GrowthData, splitKey: string): CsvTable {
-  const valueKey = growth.measure.isGw ? "added_gw" : "added_mw";
-  const rows: Record<string, unknown>[] = [];
-  for (const entry of growth.rows) {
-    for (const name of growth.names) {
-      const value = entry[name];
-      if (typeof value !== "number") continue;
-      rows.push({
-        year: entry.year,
-        [splitKey]: name,
-        [valueKey]: csvNumber(value),
-      });
-    }
-  }
-  return {
-    columns: [
-      { key: "year", label: "year" },
-      { key: splitKey, label: splitKey },
-      { key: valueKey, label: valueKey },
-    ],
-    rows,
-  };
-}
-
 /**
- * Year-on-year additions per source: the annual change of installed stock.
- * Answers "how much did each source grow?" — the closest proxy for new
- * installations the yearly stock data allows (net of decommissioning).
+ * Variazione annua dello stock per fonte: la differenza fra anni consecutivi.
+ * È la migliore approssimazione delle nuove installazioni che il dato annuale
+ * consenta (al netto delle dismissioni). Gli anni mancanti si saltano.
  */
 export function GrowthChart({ filters }: { filters: RecordFilters }) {
   const series = useYearlySplit(filters);
   const { data, isLoading, isError, error } = series;
-
-  const growth = (() => {
-    if (!data || data.data.length < 2) return null;
-    const rows = data.data;
-    const out = [];
-    for (let i = 1; i < rows.length; i++) {
-      const prev = rows[i - 1];
-      const cur = rows[i];
-      const entry: Record<string, number> = { year: cur.year as number };
-      for (const name of data.names) {
-        entry[name] = ((cur[name] as number | undefined) ?? 0) - ((prev[name] as number | undefined) ?? 0);
-      }
-      out.push(entry);
-    }
-    return { rows: out, names: data.names, measure: data.measure };
-  })();
-
-  const fmt = growth?.measure.format;
+  const growth = data ? yearlyAdditions(data) : null;
+  const fmt = growth?.measure.format ?? formatMw;
   const unit = growth?.measure.unit ?? "MW";
 
   return (
@@ -81,13 +35,13 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
       title={filters.dataset === "installed_capacity" ? "Annual additions by type" : "Annual additions by source"}
       description="Year-on-year change of installed stock — new capacity net of decommissioning"
       filename="annual-additions"
-      csv={() => (growth && series.data ? additionsCsv(growth, series.data.splitKey) : null)}
+      csv={() => (growth && data ? additionsCsv(growth, data.splitKey) : null)}
     >
       {isLoading ? (
         <LoadingOverlay label="Loading growth" />
       ) : isError ? (
         <ErrorState message={(error as Error).message} />
-      ) : growth && growth.rows.length > 0 && fmt ? (
+      ) : growth && growth.rows.length > 0 ? (
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={growth.rows} margin={{ top: 8, right: 16, bottom: 4, left: 4 }} barCategoryGap="24%">
             <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" vertical={false} />
@@ -96,25 +50,25 @@ export function GrowthChart({ filters }: { filters: RecordFilters }) {
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 11 }}
-              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               width={88}
               axisLine={false}
               tickLine={false}
             />
             <Tooltip
               formatter={(value: number) => [`${fmt(value)} ${unit}`, undefined]}
-              labelFormatter={(l) => `Additions ${l}`}
+              labelFormatter={(label) => `Additions ${label}`}
               cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
             />
             <Legend iconType="circle" iconSize={8} />
-            {growth.names.map((s, i) => (
-              <Bar key={s} dataKey={s} stackId="growth" fill={colorFor(s, i, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+            {growth.names.map((source, index) => (
+              <Bar key={source} dataKey={source} stackId="growth" fill={colorFor(source, index, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>
       ) : data && data.data.length > 0 ? (
         <div className="grid h-[200px] place-items-center text-center text-sm text-ink-500 dark:text-ink-400">
-          Select at least two years to see annual additions
+          Select at least two consecutive years to see annual additions
         </div>
       ) : <ChartEmptyState dataset={filters.dataset} />}
     </ChartCard>

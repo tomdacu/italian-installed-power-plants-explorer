@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
@@ -9,54 +8,29 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api } from "@/api/client";
-import { colorFor, formatGw, formatMw } from "@/lib/utils";
-import { csvNumber, type CsvTable } from "@/lib/csv";
-import type { AggregatePoint, GroupBy, RecordFilters } from "@/types";
+import { colorFor } from "@/lib/utils";
+import { capacityBySplitCsv } from "@/lib/chart-csv";
+import { measureFor } from "@/lib/chart-data";
+import { useTimeseries } from "@/hooks/useTimeseries";
+import type { GroupBy, RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
-import { measureCsvKey } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
 
-/** CSV of the by-source bars: latest-year stock of every series, not just the drawn ones. */
-export function capacityBySplitCsv(
-  records: AggregatePoint[],
-  splitKey: string,
-  isGw: boolean,
-): CsvTable {
-  const rawKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
-  const valueKey = measureCsvKey(isGw);
-  return {
-    columns: [
-      { key: splitKey, label: splitKey },
-      { key: valueKey, label: valueKey },
-    ],
-    rows: records.map((record) => ({
-      [splitKey]: record[splitKey as keyof AggregatePoint] ?? "",
-      [valueKey]: csvNumber(record[rawKey]),
-    })),
-  };
-}
-
+/** Stock dell'ultimo anno per fonte (o per tipo sul dataset nazionale). */
 export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
-  // installed_capacity rows carry `type` instead of `source`.
-  const splitKey: Exclude<GroupBy, "year"> = filters.dataset === "installed_capacity" ? "type" : "source";
-  const isGw = filters.dataset === "installed_capacity";
-  const valueKey = isGw ? "installed_capacity_gw" : "efficient_power_mw";
-  const fmt = isGw ? formatGw : formatMw;
-  const unit = isGw ? "GW" : "MW";
-  const data = useQuery({
-    // latest_only: stock of the latest year — summing stocks of several
-    // years would count the same plants multiple times.
-    queryKey: ["timeseries", splitKey, "latest", valueKey, filters],
-    queryFn: () => api.timeseries(splitKey, filters, { latest_only: true }),
-  });
+  const { isGw, valueKey, unit, format: fmt } = measureFor(filters);
+  // Le righe del dataset nazionale portano `type` al posto di `source`.
+  const splitKey: Exclude<GroupBy, "year"> = isGw ? "type" : "source";
+  const isInstalled = isGw;
 
-  const records = (data.data ?? []).slice().sort(
-    (a, b) => ((b[valueKey] as number | null) ?? 0) - ((a[valueKey] as number | null) ?? 0),
-  );
-  const isInstalled = filters.dataset === "installed_capacity";
+  // latest_only: lo stock di un solo anno — sommare più anni conterebbe più
+  // volte gli stessi impianti.
+  const query = useTimeseries(splitKey, filters, { latestOnly: true });
+  const records = (query.data ?? [])
+    .slice()
+    .sort((a, b) => ((b[valueKey] as number | null) ?? 0) - ((a[valueKey] as number | null) ?? 0));
 
   return (
     <ChartCard
@@ -65,10 +39,10 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
       filename={isInstalled ? "capacity-by-type" : "capacity-by-source"}
       csv={() => capacityBySplitCsv(records, splitKey, isGw)}
     >
-      {data.isLoading ? (
+      {query.isLoading ? (
         <LoadingOverlay label="Loading sources" />
-      ) : data.isError ? (
-        <ErrorState message={(data.error as Error).message} />
+      ) : query.isError ? (
+        <ErrorState message={(query.error as Error).message} />
       ) : records.length > 0 ? (
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={records} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="28%">
@@ -77,7 +51,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
               type="number"
               stroke="currentColor"
               className="text-ink-400"
-              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -96,9 +70,9 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
               formatter={(value: number) => [`${fmt(value)} ${unit}`, isInstalled ? "Installed capacity" : "Efficient power"]}
               cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
             />
-            <Bar dataKey={valueKey} name={isInstalled ? "Installed capacity GW" : "Efficient power MW"} radius={[0, 8, 8, 0]} maxBarSize={26}>
-              {records.map((r, i) => (
-                <Cell key={r[splitKey] ?? i} fill={colorFor(String(r[splitKey] ?? ""), i, filters.dataset)} />
+            <Bar dataKey={valueKey} name={isInstalled ? `Installed capacity ${unit}` : `Efficient power ${unit}`} radius={[0, 8, 8, 0]} maxBarSize={26}>
+              {records.map((record, index) => (
+                <Cell key={record[splitKey] ?? index} fill={colorFor(String(record[splitKey] ?? ""), index, filters.dataset)} />
               ))}
             </Bar>
           </BarChart>

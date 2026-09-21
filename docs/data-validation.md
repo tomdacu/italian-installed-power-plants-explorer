@@ -7,7 +7,7 @@ official statistics. Reproduce it with your own credentials at any time.
 
 | Level | Method | Result |
 | --- | --- | --- |
-| Raw payload → cache | Full sync of 2021–2024 × 4 datasets (108 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
+| Raw payload → cache | Full sync of 2000–2024 × 3 datasets plus 2021–2024 of the national one (87 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
 | Cache → API | Automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | all green |
 | Cache → official statistics | National per-source totals (Tab. 8), thermoelectric per region (Tab. 18) and per category (Tab. 20) from Terna's yearbook *Dati statistici sull'energia elettrica in Italia* | see below |
 | Province level | The two independent endpoints that publish the same sources (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
@@ -167,9 +167,9 @@ national statistics, where Terna's yearbook (or GSE) is the reference.
 # local server on the fixed dev port
 bun run serve --no-window --port 8731
 
-# full sync of four years (needs credentials; 16 requests, about half a minute)
+# full sync of every published year (needs credentials; ~87 requests, ~2 minutes)
 curl -X POST http://127.0.0.1:8731/sync/jobs -H "Content-Type: application/json" `
-  -d '{\"years\":[2021,2022,2023,2024],\"datasets\":[\"renewable_source_capacity\",\"generation_plants\",\"installed_capacity\",\"thermoelectric_capacity\"]}'
+  -d '{\"years\":[2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024],\"datasets\":[\"renewable_source_capacity\",\"generation_plants\",\"installed_capacity\",\"thermoelectric_capacity\"]}'
 
 # per-source totals for one year
 curl "http://127.0.0.1:8731/analytics/timeseries?dataset=renewable_source_capacity&capacity_type=Lorda&year_from=2024&year_to=2024&group_by=source"

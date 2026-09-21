@@ -32,39 +32,36 @@ export function compactMw(value: number | null | undefined): string {
   return `${formatMw(value)} MW`;
 }
 
-/**
- * Colore per grafici in cui la categoria non è un tipo di impianto (regioni,
- * province): i colori restano riservati alle fonti, così non suggeriscono
- * differenze che non esistono.
- */
-export const SINGLE_SERIES_COLOR = "#14b07f";
-
 export const SOURCE_COLORS: Record<string, string> = {
   Fotovoltaico: "#f59e0b",
-  Eolico: "#0ea5e9",
-  Idrico: "#06b6d4",
-  Idroelettrico: "#06b6d4",
-  Bioenergie: "#84cc16",
-  // Distinct from Termoelettrico: both appear in the generation-plants dataset.
+  // Blu pieno per l'idrico e verde-azzurro per l'eolico: prima erano due ciano
+  // quasi identici, e nelle barre impilate non si distinguevano.
+  Idrico: "#2563eb",
+  Idroelettrico: "#2563eb",
+  Eolico: "#14b8a6",
+  // Oliva: sta fra il verde e il marrone, e non si confonde né con il verde
+  // dell'idrico né con l'ambra del fotovoltaico.
+  Bioenergie: "#a3ac39",
+  // Distinto da Termoelettrico: entrambi compaiono nel dataset generation-plants.
   Geotermoelettrico: "#a855f7",
   Termoelettrico: "#ef4444",
 };
 
+/** Tinte per le dimensioni che non sono fonti (categoria, sottocategoria). */
 export const DEFAULT_PALETTE = [
-  "#16b07f",
-  "#0ea5e9",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ef4444",
-  "#84cc16",
-  "#06b6d4",
+  "#6366f1",
   "#ec4899",
-  "#14b8a6",
   "#f97316",
+  "#64748b",
+  "#22d3ee",
+  "#d946ef",
+  "#0d9488",
+  "#facc15",
+  "#94a3b8",
+  "#fb7185",
 ];
 
-// National installed-capacity data is a different measure (GW, not MW). Keep
-// its series in a dedicated evergreen family instead of reusing source colors.
+// Il dataset nazionale è un'altra misura (GW invece di MW): famiglia a parte.
 export const INSTALLED_CAPACITY_PALETTE = [
   "#0a8f66",
   "#14b07f",

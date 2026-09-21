@@ -108,7 +108,9 @@ export function KpiCards({
               : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
           }
           hint={
-            summary?.latest_year ? `Latest data: ${summary.latest_year} · ${formatNumber(summary.row_count)} rows` : "Earliest to latest year in stored data"
+            summary?.latest_year
+              ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
+              : "Earliest to latest year in stored data"
           }
           icon={CalendarDays}
           accent="bg-gradient-to-br from-violet-400 to-violet-700"
@@ -162,7 +164,9 @@ export function KpiCards({
             : `${summary.year_min} – ${summary.year_max ?? summary.year_min}`
         }
         hint={
-          summary?.latest_year ? `Latest data: ${summary.latest_year} · ${formatNumber(summary.row_count)} rows` : "Earliest to latest year in stored data"
+          summary?.latest_year
+            ? `${formatNumber(summary.row_count)} rows in the selection · latest ${summary.latest_year}`
+            : "Earliest to latest year in stored data"
         }
         icon={CalendarDays}
         accent="bg-gradient-to-br from-violet-400 to-violet-700"

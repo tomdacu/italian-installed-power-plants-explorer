@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "dev": "vite --port 1420 --strictPort",
-    "build": "vite build",
+    "build": "bun run scripts/clean.ts && vite build",
     "serve": "bun run server/cli.ts",
     "serve:browser": "bun run server/cli.ts --browser",
     "test": "bun test",

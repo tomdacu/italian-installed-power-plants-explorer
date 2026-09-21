@@ -42,8 +42,9 @@ Then, inside the app:
 
 1. create a free application on [developer.terna.it](https://developer.terna.it)
    and paste Client ID and secret in **Credentials**;
-2. open **Data sync**, pick the years, press *Download everything* (one request
-   per dataset and year, paced at ~1/second to stay inside Terna's limits);
+2. open **Data sync**, press *Download everything* — the range defaults to every
+   year Terna publishes (2000 → today), one request per dataset and year, paced
+   at ~1/second to stay inside the API limits;
 3. explore the **Dashboard**, where every chart can be copied or exported.
 
 ### From source

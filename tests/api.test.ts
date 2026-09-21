@@ -83,19 +83,52 @@ test("GET /analytics/timeseries valida group_by", async () => {
   expect(rows[0].source).toBe("Fotovoltaico");
 });
 
-test("GET /metadata/options espone le liste canoniche", async () => {
+test("GET /metadata/options espone le liste canoniche e i limiti degli anni", async () => {
   const { app } = buildApp();
   const options = (await (await app.request("/metadata/options")).json()) as {
     known_sources: string[];
     default_capacity_type: string;
-    installed_capacity_year_window: number;
+    first_year: number;
+    installed_capacity_first_year: number;
+    current_year: number;
     database: { years: number[] };
   };
 
   expect(options.known_sources).toContain("Fotovoltaico");
   expect(options.default_capacity_type).toBe("Lorda");
-  expect(options.installed_capacity_year_window).toBe(7);
+  // La UI prende da qui il range di default: dal primo anno pubblicato a oggi.
+  expect(options.first_year).toBe(2000);
+  expect(options.installed_capacity_first_year).toBe(2021);
+  expect(options.current_year).toBe(new Date().getFullYear());
   expect(options.database.years).toEqual([2024]);
+});
+
+test("un job di sync fuori dagli anni pubblicati viene rifiutato", async () => {
+  const { app } = buildApp();
+  const response = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [1899, 1900] }),
+  });
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toMatchObject({ detail: expect.stringContaining("2000") });
+});
+
+test("gli anni fuori intervallo vengono limati, non richiesti a Terna", async () => {
+  const { app } = buildApp();
+  const response = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [1999, 2023, 2023, 2999], datasets: ["renewable_source_capacity"] }),
+  });
+
+  expect(response.status).toBe(200);
+  const job = (await response.json()) as { job_id: string };
+  const status = (await (await app.request(`/sync/jobs/${job.job_id}`)).json()) as { total_steps: number };
+
+  // Resta solo il 2023 (una volta sola): né il 1999 né il 2999 generano richieste.
+  expect(status.total_steps).toBe(1);
 });
 
 test("GET /export/csv risponde con nome file e contenuto", async () => {

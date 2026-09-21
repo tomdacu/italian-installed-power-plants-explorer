@@ -9,41 +9,15 @@ import {
   YAxis,
 } from "recharts";
 import { colorFor, formatMw } from "@/lib/utils";
-import { csvNumber, type CsvTable } from "@/lib/csv";
+import { sourceMixCsv } from "@/lib/chart-csv";
+import { useYearlySplit } from "@/hooks/useTimeseries";
 import type { RecordFilters } from "@/types";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
-import { measureCsvKey, useYearlySplit, yearlySplitCells, type YearlySplit } from "./CapacityOverTimeChart";
 import { ChartEmptyState } from "./ChartEmptyState";
 
-/** CSV of the mix chart: the same cells plus each series' share of that year. */
-export function sourceMixCsv(split: YearlySplit): CsvTable {
-  const cells = yearlySplitCells(split);
-  const totals = new Map<number, number>();
-  for (const cell of cells) totals.set(cell.year, (totals.get(cell.year) ?? 0) + cell.value);
-  const valueKey = measureCsvKey(split.measure.isGw);
-  return {
-    columns: [
-      { key: "year", label: "year" },
-      { key: split.splitKey, label: split.splitKey },
-      { key: valueKey, label: valueKey },
-      { key: "share_percent", label: "share_percent" },
-    ],
-    rows: cells.map((cell) => {
-      const total = totals.get(cell.year) ?? 0;
-      return {
-        year: cell.year,
-        [split.splitKey]: cell.name,
-        [valueKey]: csvNumber(cell.value),
-        share_percent: total > 0 ? csvNumber((cell.value / total) * 100) : null,
-      };
-    }),
-  };
-}
-
-/** Stacked bars of the same yearly breakdown — shares the query (and cache
- * entry) with the capacity-over-time chart, so no extra request is made. */
+/** Barre impilate: stessa serie del grafico nel tempo, qui per leggere le quote. */
 export function SourceMixChart({ filters }: { filters: RecordFilters }) {
   const series = useYearlySplit(filters);
   const { data, isLoading, isError, error } = series;
@@ -74,19 +48,19 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
               stroke="currentColor"
               className="text-ink-400"
               tick={{ fontSize: 11 }}
-              tickFormatter={(v) => `${fmt(v as number)} ${unit}`}
+              tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               width={88}
               axisLine={false}
               tickLine={false}
             />
             <Tooltip
               formatter={(value: number) => [`${fmt(value)} ${unit}`, undefined]}
-              labelFormatter={(l) => `Year ${l}`}
+              labelFormatter={(label) => `Year ${label}`}
               cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
             />
             <Legend iconType="circle" iconSize={8} />
-            {data.names.map((s, i) => (
-              <Bar key={s} dataKey={s} stackId="mix" fill={colorFor(s, i, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
+            {data.names.map((source, index) => (
+              <Bar key={source} dataKey={source} stackId="mix" fill={colorFor(source, index, filters.dataset)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}
           </BarChart>
         </ResponsiveContainer>

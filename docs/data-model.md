@@ -71,6 +71,12 @@ Rules of thumb:
   `generation_plants` includes pure pumped storage;
 - the API serves data up to 2024 (2025 is still empty at the source).
 
+The generation endpoints publish from **2000** onwards (verified: 2000 answers
+with 832 rows, 1999 is rejected) while `/installed-capacity` starts at **2021**.
+The sync requests one year per dataset, so a year a dataset cannot serve is
+skipped instead of failing, and the API clamps every requested range to
+2000 → the current year.
+
 The API limits a client to about one request per second (`403 Developer Over
 Qps`, with `retry-after: 1`) and enforces a broader quota (`403 Developer Over
 Rate`) that the client waits out instead of retrying into it.

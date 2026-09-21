@@ -25,9 +25,7 @@ import { cn } from "@/lib/utils";
 import { formatNumber } from "@/lib/utils";
 import type { DatasetName, SyncJobStatus, SyncStatus } from "@/types";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const DEFAULT_FROM = CURRENT_YEAR - 6;
-const DEFAULT_TO = CURRENT_YEAR;
+const FALLBACK_FIRST_YEAR = 2000;
 
 const MAX_POLL_ERRORS = 5;
 
@@ -44,17 +42,6 @@ const STATUS_ICON: Record<SyncStatus, React.ReactNode> = {
   completed: <CircleCheck className="h-3.5 w-3.5" />,
   failed: <XCircle className="h-3.5 w-3.5" />,
 };
-
-// Fallback when the backend metadata is unreachable: the backend intersects
-// these per dataset anyway, so sending the union is always safe.
-const FALLBACK_SOURCES = [
-  "Bioenergie",
-  "Eolico",
-  "Fotovoltaico",
-  "Geotermoelettrico",
-  "Idrico",
-  "Termoelettrico",
-];
 
 const ALL_DATASETS: DatasetName[] = [
   "renewable_source_capacity",
@@ -97,8 +84,19 @@ export function SyncPage() {
   const meta = useMetadata();
   const availability = useAvailability();
 
-  const [yearFrom, setYearFrom] = useState<string>(String(DEFAULT_FROM));
-  const [yearTo, setYearTo] = useState<string>(String(DEFAULT_TO));
+  // Il range di default è quello che Terna può servire davvero: dal primo anno
+  // pubblicato (2000) all'anno corrente. Gli stessi limiti arrivano dal server,
+  // così UI e API non possono divergere; qui c'è solo un valore di riserva.
+  const firstYear = meta.data?.first_year ?? FALLBACK_FIRST_YEAR;
+  const currentYear = meta.data?.current_year ?? new Date().getFullYear();
+  const [yearFrom, setYearFrom] = useState<string>("");
+  const [yearTo, setYearTo] = useState<string>("");
+
+  useEffect(() => {
+    const years = availability.data?.datasets.renewable_source_capacity?.year_min;
+    setYearFrom((current) => current || String(years ?? firstYear));
+    setYearTo((current) => current || String(currentYear));
+  }, [availability.data, firstYear, currentYear]);
 
   const [job, setJob] = useState<SyncJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
@@ -144,34 +142,22 @@ export function SyncPage() {
       toast.warning("Invalid years", "Enter valid start and end years.");
       return;
     }
-    from = Math.max(1900, Math.min(CURRENT_YEAR, from));
-    to = Math.max(1900, Math.min(CURRENT_YEAR, to));
+    // Stessi limiti del server (`clampYears`): sotto il 2000 Terna non pubblica,
+    // sopra l'anno corrente non esiste ancora nulla.
+    from = Math.max(firstYear, Math.min(currentYear, from));
+    to = Math.max(firstYear, Math.min(currentYear, to));
     const [safeFrom, safeTo] = from <= to ? [from, to] : [to, from];
     setYearFrom(String(safeFrom));
     setYearTo(String(safeTo));
     const years = Array.from({ length: safeTo - safeFrom + 1 }, (_, i) => safeFrom + i);
 
-    // Download everything: the backend maps sources per dataset (e.g.
-    // Bioenergie is skipped for generation plants) and both capacity types,
-    // so the dashboard can switch between Lorda and Netta freely.
-    const unionSources = Array.from(
-      new Set([
-        ...(meta.data?.known_sources ?? []),
-        ...(meta.data?.known_generation_plant_sources ?? []),
-        ...FALLBACK_SOURCES,
-      ]),
-    );
-
     setStarting(true);
     setJob(null);
     pollErrors.current = 0;
     try {
-      const res = await api.startSync({
-        years,
-        datasets: ALL_DATASETS,
-        sources: unionSources,
-        capacity_types: ["Lorda", "Netta"],
-      });
+      // Un passo per dataset e anno: le fonti e gli indici arrivano tutti
+      // insieme nella stessa risposta, quindi non c'è nulla da scegliere qui.
+      const res = await api.startSync({ years, datasets: ALL_DATASETS });
       toast.info("Sync started", `Job ${res.job_id.slice(0, 8)} queued`);
       // Cancel any previous poll loop, then track the new job id so stale
       // responses can never drive the UI.
@@ -271,10 +257,10 @@ export function SyncPage() {
               <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  All four datasets, all sources and both capacity types (Lorda/Netta) are always
-                  downloaded — a full multi-year sync is only a few MB. You pick what to look at on
-                  the dashboard. Note: national installed capacity is only served for the current
-                  year and the previous six.
+                  One request per dataset and year brings back every source and both capacity
+                  types (Lorda/Netta) — a full multi-year sync is only a few MB. You pick what to
+                  look at on the dashboard. Note: national installed capacity is only published from
+                  2021 onwards, so those earlier years are skipped for that dataset.
                 </span>
               </p>
             </FieldSection>

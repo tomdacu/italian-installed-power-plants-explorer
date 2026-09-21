@@ -99,8 +99,6 @@ export type SyncStatus = "queued" | "running" | "completed" | "failed";
 export interface SyncRequestPayload {
   years: number[];
   datasets?: DatasetName[];
-  sources?: string[];
-  capacity_types?: string[];
 }
 
 export interface SyncJobResponse {
@@ -152,7 +150,10 @@ export interface MetadataOptions {
   known_capacity_types: string[];
   dataset_sources: Partial<Record<DatasetName, string[]>>;
   default_capacity_type: CapacityType;
-  installed_capacity_year_window: number;
+  /** Primo anno pubblicato (2000) e limiti per dataset, condivisi con la UI. */
+  first_year: number;
+  installed_capacity_first_year: number;
+  current_year: number;
   database: {
     datasets?: string[];
     years?: number[];

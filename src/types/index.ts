@@ -121,8 +121,6 @@ export interface SyncJobStatus {
 export interface SyncRequest {
   years: number[];
   datasets: DatasetName[];
-  sources: string[];
-  capacity_types: CapacityType[];
 }
 
 export interface AvailabilityYear {
@@ -162,7 +160,10 @@ export interface MetadataOptions {
   known_capacity_types: string[];
   dataset_sources: Partial<Record<DatasetName, string[]>>;
   default_capacity_type: CapacityType;
-  installed_capacity_year_window: number;
+  /** Primo anno pubblicato, limiti per dataset e anno corrente: una sola verità. */
+  first_year: number;
+  installed_capacity_first_year: number;
+  current_year: number;
   database: {
     datasets?: string[];
     years?: number[];

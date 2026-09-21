@@ -4,8 +4,10 @@
  *
  *   bun run scripts/copy-static.ts
  */
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync } from "node:fs";
 import { join } from "node:path";
+
+import { emptyDir } from "./clean.ts";
 
 const root = join(import.meta.dir, "..");
 const dist = join(root, "dist");
@@ -16,6 +18,8 @@ if (!existsSync(join(dist, "index.html"))) {
   process.exit(1);
 }
 
-rmSync(target, { recursive: true, force: true });
+// Svuotare davvero: `rmSync(target, { force: true })` falliva in silenzio su
+// OneDrive e i bundle vecchi restavano nel pacchetto.
+const removed = emptyDir(target);
 cpSync(dist, target, { recursive: true });
-console.log(`static/ aggiornata da dist/ (${target})`);
+console.log(`static/ aggiornata da dist/ (${target}, ${removed} voci rimosse)`);

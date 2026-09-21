@@ -271,28 +271,39 @@ export class CapacityStore {
    * every year is a source that does not exist there, and a zero elsewhere is a
    * zero — neither is a gap. Counted on the rows the filters select, so the
    * dashboard can warn about exactly what it is showing.
+   *
+   * Le due CTE servono a non fare un EXISTS correlato su ogni riga: con la
+   * storia completa (68.000 righe) quella versione impiegava 48 secondi e,
+   * essendo SQLite sincrono, bloccava tutto il server.
    */
   dataQuality(filters: RecordFilters): DataQualityYear[] {
     const { clause, params } = this.where(filters);
-    const base = clause ? `${clause} AND ` : "WHERE ";
+    const filtered = clause ? `${clause} ` : "";
+    const value = (prefix: string) =>
+      `(CASE WHEN ${prefix}dataset = 'installed_capacity' THEN ${prefix}installed_capacity_gw ELSE ${prefix}efficient_power_mw END)`;
     const rows = this.db
       .prepare(
-        `SELECT year, COUNT(*) AS missing_values
-         FROM capacity_records
-         ${base}(CASE WHEN dataset = 'installed_capacity' THEN installed_capacity_gw ELSE efficient_power_mw END) IS NULL
-           AND EXISTS (
-             SELECT 1 FROM capacity_records o
-             WHERE o.dataset = capacity_records.dataset
-               AND o.year <> capacity_records.year
-               AND o.province IS capacity_records.province
-               AND o.source IS capacity_records.source
-               AND o.capacity_type IS capacity_records.capacity_type
-               AND o.category IS capacity_records.category
-               AND o.subcategory IS capacity_records.subcategory
-               AND o.type IS capacity_records.type
-               AND (CASE WHEN o.dataset = 'installed_capacity' THEN o.installed_capacity_gw ELSE o.efficient_power_mw END) > 0
-           )
-         GROUP BY year ORDER BY year`,
+        `WITH cells AS (
+           SELECT dataset, province, source, capacity_type, category, subcategory, type, year,
+                  MIN(CASE WHEN ${value("")} IS NULL THEN 1 ELSE 0 END) AS all_null,
+                  MAX(CASE WHEN ${value("")} > 0 THEN 1 ELSE 0 END) AS is_positive
+           FROM capacity_records
+           ${filtered}GROUP BY dataset, province, source, capacity_type, category, subcategory, type, year
+         ),
+         keys AS (
+           SELECT dataset, province, source, capacity_type, category, subcategory, type,
+                  MAX(is_positive) AS ever_positive
+           FROM cells
+           GROUP BY dataset, province, source, capacity_type, category, subcategory, type
+         )
+         SELECT c.year, COUNT(*) AS missing_values
+         FROM cells c
+         JOIN keys k
+           ON k.dataset = c.dataset AND k.province IS c.province AND k.source IS c.source
+          AND k.capacity_type IS c.capacity_type AND k.category IS c.category
+          AND k.subcategory IS c.subcategory AND k.type IS c.type
+         WHERE c.all_null = 1 AND k.ever_positive = 1
+         GROUP BY c.year ORDER BY c.year`,
       )
       .all(params) as DataQualityYear[];
     return rows;

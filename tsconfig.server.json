@@ -13,7 +13,13 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    // I test del server importano anche moduli condivisi dell'interfaccia
+    // (l'export CSV dei grafici): stesso alias del tsconfig del client.
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["server", "shared", "tests"]
 }

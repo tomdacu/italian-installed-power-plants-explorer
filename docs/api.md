@@ -13,7 +13,7 @@ used the same routes, so anything written against it keeps working.
 | `POST /settings/credentials/test` | OAuth2 round-trip against Terna → `{ok: true}` |
 | `POST /sync/jobs` | start a sync job → `{job_id, status}` |
 | `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, message, error}` |
-| `GET /metadata/options` | canonical sources/types per dataset, stored options, year window |
+| `GET /metadata/options` | canonical sources/types per dataset, stored options, `first_year` (2000), `installed_capacity_first_year` (2021) and `current_year` |
 | `GET /metadata/availability` | row counts per dataset and year actually cached |
 | `GET /metadata/data-quality` | per year, cells Terna left empty even though the same key has a value another year (filters: `dataset`, `capacity_type`, `source`) |
 | `GET /records` | paged rows (`limit` ≤ 100000, `offset`) |
@@ -35,7 +35,7 @@ first 5000 rows of everything stored.
 
 ```json
 {
-  "years": [2021, 2022, 2023, 2024],
+  "years": [2000, 2001, "…", 2024],
   "datasets": ["renewable_source_capacity", "generation_plants",
                "installed_capacity", "thermoelectric_capacity"],
   "sources": ["Bioenergie", "Eolico", "Fotovoltaico",

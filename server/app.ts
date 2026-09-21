@@ -5,11 +5,11 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+import { createTernaClient } from "./client.ts";
 import { CapacityStore } from "./db.ts";
 import { SettingsStore } from "./settings.ts";
 import { startServer, type LocalServer } from "./http.ts";
 import { SyncManager } from "./sync.ts";
-import { MIN_REQUEST_INTERVAL, TernaApiError, TernaClient } from "./terna.ts";
 
 /**
  * Dove sta la SPA compilata.
@@ -47,12 +47,7 @@ export function startApp(options: StartOptions = {}) {
   const appSettings = settings.load();
   const store = new CapacityStore(appSettings.databasePath);
 
-  const sync = new SyncManager(store, async () => {
-    const current = settings.load();
-    const secret = await settings.getClientSecret(current.clientId ?? undefined);
-    if (!current.clientId || !secret) throw new TernaApiError("Terna credentials are not configured");
-    return new TernaClient(current.clientId, secret, MIN_REQUEST_INTERVAL);
-  });
+  const sync = new SyncManager(store, () => createTernaClient(settings));
 
   const serve = (port: number) =>
     startServer({ store, settings, sync, staticDir: options.staticDir ?? resolveStaticDir(), port });
