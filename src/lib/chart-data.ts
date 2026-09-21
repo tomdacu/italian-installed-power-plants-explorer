@@ -34,25 +34,6 @@ export interface YearlySplit {
   names: string[];
 }
 
-export interface YearlySplitCell {
-  year: number;
-  name: string;
-  value: number;
-}
-
-/** Una cella per anno e serie: gli stessi numeri da cui nasce la pila. */
-export function yearlySplitCells(split: YearlySplit): YearlySplitCell[] {
-  const cells: YearlySplitCell[] = [];
-  for (const entry of split.data) {
-    for (const name of split.names) {
-      const value = entry[name];
-      if (typeof value !== "number") continue;
-      cells.push({ year: Number(entry.year), name, value });
-    }
-  }
-  return cells;
-}
-
 export interface GrowthData {
   rows: Record<string, number>[];
   names: string[];

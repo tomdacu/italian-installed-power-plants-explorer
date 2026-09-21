@@ -26,7 +26,7 @@ export function csvNumber(value: number | null | undefined): number | null {
   return Math.round(value * 1000) / 1000;
 }
 
-export function csvField(value: unknown): string {
+function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;

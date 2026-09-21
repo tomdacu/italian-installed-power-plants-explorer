@@ -8,7 +8,7 @@ import type { AreaSeries, GrowthData, YearlySplit } from "@/lib/chart-data";
 import type { AggregatePoint } from "@/types";
 
 /** Nome della colonna dei valori: l'unità fa parte del nome, come negli altri export. */
-export function measureCsvKey(isGw: boolean): string {
+function measureCsvKey(isGw: boolean): string {
   return isGw ? "installed_capacity_gw" : "installed_capacity_mw";
 }
 
