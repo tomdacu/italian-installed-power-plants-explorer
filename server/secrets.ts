@@ -96,9 +96,12 @@ async function run(command: string[]): Promise<{ code: number; stdout: string }>
 }
 
 export interface SecretStore {
-  /** Rimuove il segreto; `false` se il portachiavi non ha potuto (non fatale). */
   save(clientId: string, secret: string): Promise<void>;
   load(clientId: string): Promise<string | null>;
+  /**
+   * Rimuove il segreto. Solleva se non ci è riuscito: cancellare il client id
+   * lasciando il segreto nel portachiavi è peggio di un errore visibile.
+   */
   remove(clientId: string): Promise<void>;
 }
 
@@ -119,6 +122,11 @@ export function createSecretStore(filePath: string): SecretStore {
       },
       async remove() {
         await run(["cmd", "/c", "del", "/f", "/q", filePath]);
+        // `del` su un file inesistente non è un errore, ma un file ancora lì
+        // significa che il segreto è rimasto: meglio saperlo subito.
+        if (await Bun.file(filePath).exists()) {
+          throw new Error("Could not remove the stored secret from the credential file");
+        }
       },
     };
   }
@@ -133,7 +141,11 @@ export function createSecretStore(filePath: string): SecretStore {
         return code === 0 && stdout ? stdout : null;
       },
       async remove(clientId) {
-        await run(["security", "delete-generic-password", "-a", clientId, "-s", SERVICE]);
+        const { code, stdout } = await run(["security", "delete-generic-password", "-a", clientId, "-s", SERVICE]);
+        // 44 = voce non trovata: niente da rimuovere, non è un fallimento.
+        if (code !== 0 && code !== 44 && !/could not be found/i.test(stdout)) {
+          throw new Error("Could not remove the stored secret from the keychain");
+        }
       },
     };
   }
@@ -171,8 +183,13 @@ export function createSecretStore(filePath: string): SecretStore {
       return (await file.exists()) ? (await file.text()).trim() || null : null;
     },
     async remove(clientId) {
+      // `secret-tool` può mancare del tutto: in quel caso resta il file, e se
+      // nemmeno quello si cancella l'errore deve arrivare al chiamante.
       await run(["secret-tool", "clear", "service", SERVICE, "account", clientId]);
       await run(["rm", "-f", fallbackPath]);
+      if (await Bun.file(fallbackPath).exists()) {
+        throw new Error("Could not remove the stored secret from the fallback file");
+      }
     },
   };
 }

@@ -72,6 +72,18 @@ interface SummaryBaseRow {
   year_max: number | null;
 }
 
+/** Colonne ordinabili di `/records`: whitelist, mai interpolazione libera. */
+export const RECORD_SORT_FIELDS = [
+  "dataset",
+  "year",
+  "region",
+  "province",
+  "source",
+  "capacity_type",
+  "efficient_power_mw",
+  "installed_capacity_gw",
+] as const;
+
 export function parseGroupBy(raw: string): string[] {
   const parts = (raw || "")
     .split(/[,+;\s]+/)
@@ -206,14 +218,24 @@ export class CapacityStore {
     return row?.n ?? 0;
   }
 
-  records(filters: RecordFilters, limit = 5000, offset = 0): CapacityRecord[] {
+  records(
+    filters: RecordFilters,
+    limit = 5000,
+    offset = 0,
+    sort: { column: string; direction: "asc" | "desc" } = { column: "year", direction: "asc" },
+  ): CapacityRecord[] {
     const { clause, params } = this.where(filters);
+    const column = (RECORD_SORT_FIELDS as readonly string[]).includes(sort.column) ? sort.column : "year";
+    const direction = sort.direction === "desc" ? "DESC" : "ASC";
     const rows = this.db
       .prepare(
         `SELECT dataset, year, capacity_type, region, province, source, category,
                 subcategory, type, efficient_power_mw, installed_capacity_gw, fetched_at
          FROM capacity_records ${clause}
-         ORDER BY dataset, year, region, province, source, capacity_type, category, subcategory, type
+         -- Le colonne di spareggio rendono l'ordine totale: senza, due pagine
+         -- consecutive potevano ripetere o saltare righe.
+         ORDER BY ${column} ${direction}, dataset, year, region, province, source,
+                  capacity_type, category, subcategory, type
          LIMIT $limit OFFSET $offset`,
       )
       .all({ ...params, $limit: limit, $offset: offset });

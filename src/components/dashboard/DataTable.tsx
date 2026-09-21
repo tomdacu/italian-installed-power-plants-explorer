@@ -69,11 +69,14 @@ export function DataTable({ filters }: { filters: RecordFilters }) {
 const RECORD_PAGE_LIMIT = 20000;
 
   const recordsQuery = useQuery({
-    queryKey: ["records", filters],
+    queryKey: ["records", filters, sortKey, order],
     // 20.000 righe: oltre, l'ordinamento e la ricerca lato client diventano
     // pesanti. Il totale vero arriva insieme alla pagina, così la tabella può
     // dire quante righe restano fuori invece di far credere di averle tutte.
-    queryFn: () => api.recordsPage(filters, RECORD_PAGE_LIMIT),
+    // L'ordine va chiesto al server: se la selezione supera il limite, la
+    // tabella deve mostrare le righe secondo il proprio ordinamento, non le
+    // prime che il database restituisce.
+    queryFn: () => api.recordsPage(filters, RECORD_PAGE_LIMIT, { column: sortKey, direction: order }),
   });
 
   const rows = recordsQuery.data?.rows ?? [];

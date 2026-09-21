@@ -178,10 +178,12 @@ export const api = {
   recordsPage(
     filters: Partial<RecordFilters> = {},
     limit = 20000,
+    sort: { column: string; direction: "asc" | "desc" } = { column: "year", direction: "desc" },
   ): Promise<{ rows: CapacityRecord[]; total: number }> {
     const query = buildQuery(filters);
     const separator = query ? "&" : "?";
-    return requestWithMeta<CapacityRecord[]>(`/records${query}${separator}limit=${limit}`).then(
+    const order = `limit=${limit}&sort=${encodeURIComponent(sort.column)}&order=${sort.direction}`;
+    return requestWithMeta<CapacityRecord[]>(`/records${query}${separator}${order}`).then(
       (response) => ({
         rows: response.data,
         total: Number(response.headers.get("x-total-count") ?? response.data.length),

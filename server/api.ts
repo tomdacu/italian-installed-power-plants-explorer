@@ -15,7 +15,7 @@ import {
   currentYear,
 } from "./constants.ts";
 import { createTernaClient } from "./client.ts";
-import { parseGroupBy, type CapacityStore } from "./db.ts";
+import { parseGroupBy, RECORD_SORT_FIELDS, type CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
 import type { SyncManager } from "./sync.ts";
 import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type RecordFilters } from "../shared/types.ts";
@@ -217,7 +217,14 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
     if (limit === null || offset === null) {
       return c.json({ detail: "limit and offset must be numbers" }, 400);
     }
-    const rows = store.records(filters, limit, offset);
+    // Ordinamento esplicito: con un limite, l'ordine deciso dal database
+    // significava che una selezione grande mostrava sempre le righe più vecchie.
+    const sort = query.get("sort") ?? "year";
+    const direction = (query.get("order") ?? "asc").toLowerCase() === "desc" ? "desc" : "asc";
+    if (!RECORD_SORT_FIELDS.includes(sort as (typeof RECORD_SORT_FIELDS)[number])) {
+      return c.json({ detail: `sort must be one of: ${RECORD_SORT_FIELDS.join(", ")}` }, 400);
+    }
+    const rows = store.records(filters, limit, offset, { column: sort, direction });
     return c.json(rows, 200, {
       // Il conteggio vero, così l'interfaccia può dire "50 di 12.330 righe"
       // invece di far credere che la selezione finisca dove finisce la pagina.
