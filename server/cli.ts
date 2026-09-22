@@ -46,15 +46,16 @@ function openLog(path: string): void {
 
 function log(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`;
+  // Su file **e** su console: il file serve a chi usa la finestra senza console,
+  // la console a chi lancia il comando da terminale o da uno script.
   if (logTarget) {
     try {
       appendFileSync(logTarget, line);
-      return;
     } catch {
-      // se il log non è scrivibile si finisce su stderr
+      // se il log non è scrivibile resta la console
     }
   }
-  process.stderr.write(line);
+  process.stderr.write(`${message}\n`);
 }
 
 interface CliOptions {

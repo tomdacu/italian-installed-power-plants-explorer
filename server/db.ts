@@ -208,15 +208,28 @@ export class CapacityStore {
     }
     // Ricerca libera: la fa il database, così la tabella non deve tenere in
     // memoria migliaia di righe solo per filtrarle nel browser.
-    const search = filters.q?.trim();
+    //
+    // `instr(lower(...), lower($q))` invece di `LIKE`: nessun carattere jolly da
+    // proteggere e niente `ESCAPE` da dichiarare nove volte. (Con `LIKE` e
+    // l'escape era comunque corretto: una ricerca di "_" torna tutto perché
+    // `renewable_source_capacity` contiene davvero degli underscore.)
+    const search = filters.q?.trim().toLowerCase();
     if (search) {
-      const pattern = `%${search.replace(/[%_]/g, (char) => `\\${char}`)}%`;
+      const columns = [
+        "region",
+        "province",
+        "source",
+        "category",
+        "subcategory",
+        "type",
+        "capacity_type",
+        "dataset",
+        "CAST(year AS TEXT)",
+      ];
       clauses.push(
-        `(region LIKE $q ESCAPE '\\' OR province LIKE $q ESCAPE '\\' OR source LIKE $q ESCAPE '\\'
-          OR category LIKE $q ESCAPE '\\' OR subcategory LIKE $q ESCAPE '\\' OR type LIKE $q ESCAPE '\\'
-          OR capacity_type LIKE $q ESCAPE '\\' OR dataset LIKE $q ESCAPE '\\' OR CAST(year AS TEXT) LIKE $q ESCAPE '\\')`,
+        `(${columns.map((column) => `instr(lower(coalesce(${column}, '')), $q) > 0`).join(" OR ")})`,
       );
-      params.$q = pattern;
+      params.$q = search;
     }
     if (filters.year_to !== null && filters.year_to !== undefined) {
       clauses.push("year <= $year_to");
