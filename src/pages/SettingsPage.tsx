@@ -155,7 +155,7 @@ export function SettingsPage() {
             </p>
           </div>
           <div className="mt-5 flex items-center justify-between border-t border-ink-100 pt-4 dark:border-white/[0.06]">
-            <p className="font-mono text-xs text-ink-400">Version {APP_VERSION}</p>
+            <p className="font-mono text-xs text-ink-500 dark:text-ink-400">Version {APP_VERSION}</p>
             <Button
               variant="ghost"
               size="sm"

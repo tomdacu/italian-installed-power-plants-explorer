@@ -46,6 +46,34 @@ row instead is what used to lose photovoltaic capacity for 2021–2023.
   sits between two years where the same province/source/index does carry a value.
   Empty cells before a series starts (photovoltaic in 2000) or after it ends are
   not gaps — `/metadata/data-quality` counts only the first kind.
+- **The implicit index does not reach every route, and neither does the scope.**
+  `summary` and `timeseries` apply `Lorda` when no `capacity_type` is given (and
+  report it as `capacity_type_applied`); `/metadata/data-quality` does not, so it
+  counts the gaps of both indexes unless one is passed explicitly (64 cells
+  against 22 on the full cache). And without a `dataset` filter the totals cover
+  every MW dataset at once while the national GW rows are left out:
+  `GET /analytics/summary` with no filters answers
+  `latest_total_installed_capacity_gw: null`, which the interface's formatters
+  render as "—" (`formatMw`/`formatGw` return `—` for `null`). A total is only
+  meaningful with a `dataset`.
+
+## Precision and rounding
+
+Three layers, three precisions — no value is ever wrong, but they are not
+interchangeable:
+
+| Layer | Precision | Example |
+| --- | --- | --- |
+| SQLite / JSON API | the raw double as received and stored | `7683.684599999993`, `22594.259` |
+| CSV export | the same raw value, no rounding | `22594.259` |
+| Interface | MW with 1 decimal (min 0), GW with exactly 2, counts plain, YoY deltas 1 decimal (2 for GW), percentages `toFixed(1)` | `22,594.3 MW` · `118.40 GW` · `+7,683.7 MW` · `+11.5%` |
+
+The last row is `Intl.NumberFormat` (locale `en-US`) in `src/lib/utils.ts`
+(`formatMw`, `formatGw`) and in the KPI cards, which is why its examples are
+punctuated the English way. So an export compared automatically against the API
+matches cell by cell; a number **read off the screen** is rounded, and a
+difference in the last digits against the API or the yearbook is that rounding
+plus the usual IEEE-754 noise, never a different measurement.
 
 ## Units and upstream quirks
 
@@ -53,8 +81,15 @@ row instead is what used to lose photovoltaic capacity for 2021–2023.
   values (`"59.7902"` = 59.7902 GW). The parser follows the value, not the name.
 - Numbers arrive as JSON numbers or as strings: most endpoints use a dot decimal
   (`"59.7902"`), older ones used a comma (`"14,243"`). Both are parsed correctly.
-- Region names differ in casing between endpoints (`Valle D'Aosta` vs
-  `Valle d'Aosta`), which shows up as two entries in the region filter.
+- Region names used to differ in casing between endpoints (`Valle D'Aosta` vs
+  `Valle d'Aosta`), which showed up as two entries in the region filter. The sync
+  now canonicalises every place name before storing it (`canonicalPlace`) and
+  repairs the rows already in the cache at startup (`repairPlaceNames`), so the
+  filter has **one** entry per region: `SELECT COUNT(*) FROM capacity_records
+  WHERE region LIKE 'Valle%'` returns 542 rows, all of them `Valle D'Aosta`. The
+  same repair covers the two provinces Terna spells with a zero
+  (`Olbia0tempio` → `Olbia-Tempio`, `Verbano0cusio0ossola` →
+  `Verbano-Cusio-Ossola`). The divergent spellings are history, not state.
 
 ## Which dataset to trust
 

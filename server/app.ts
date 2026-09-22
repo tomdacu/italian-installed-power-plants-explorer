@@ -41,12 +41,37 @@ export interface StartOptions {
   port?: number;
   dataDir?: string;
   staticDir?: string;
+  /**
+   * Dove finiscono gli errori a runtime: la CLI le passa la funzione che scrive
+   * `backend.log`, così un 500 non resta solo sulla console.
+   */
+  logger?: (message: string) => void;
 }
 
-export function startApp(options: StartOptions = {}) {
+/** Istanza avviata: server, cache, impostazioni e sync, più il modo di fermarla. */
+export interface LocalApp {
+  server: LocalServer;
+  store: CapacityStore;
+  settings: SettingsStore;
+  sync: SyncManager;
+  port: number;
+  portFallback: boolean;
+  url: string;
+  stop(): void;
+}
+
+export function startApp(options: StartOptions = {}): LocalApp {
   const settings = new SettingsStore(options.dataDir);
   const appSettings = settings.load();
-  const store = new CapacityStore(appSettings.databasePath);
+  // Un fallimento d'avvio deve nominare il file: il messaggio di SQLite da solo
+  // ("unable to open database file") non dice quale cartella guardare.
+  let store: CapacityStore;
+  try {
+    store = new CapacityStore(appSettings.databasePath);
+  } catch (error) {
+    const detail = (error as Error)?.message ?? String(error);
+    throw new Error(`cache database unusable (${appSettings.databasePath}): ${detail}`);
+  }
   // Una volta sola: i nomi che Terna scrive in modo incoerente (due province con
   // uno zero al posto del trattino, due grafie per la Valle d'Aosta) dividono le
   // serie e fanno comparire due voci identiche nei menu.
@@ -56,7 +81,14 @@ export function startApp(options: StartOptions = {}) {
   const sync = new SyncManager(store, () => createTernaClient(settings));
 
   const serve = (port: number) =>
-    startServer({ store, settings, sync, staticDir: options.staticDir ?? resolveStaticDir(), port });
+    startServer({
+      store,
+      settings,
+      sync,
+      staticDir: options.staticDir ?? resolveStaticDir(),
+      port,
+      logger: options.logger,
+    });
 
   // La porta preferita resta stabile (serve alla PWA installata); se è occupata
   // si ripiega su una porta libera scelta dal sistema operativo.

@@ -7,7 +7,7 @@ import { createApi } from "../server/api.ts";
 import { CapacityStore } from "../server/db.ts";
 import type { CapacityRow } from "../server/normalize.ts";
 import { SettingsStore } from "../server/settings.ts";
-import { SyncManager } from "../server/sync.ts";
+import { SyncManager, type SyncPlan } from "../server/sync.ts";
 import type { RecordFilters } from "../shared/types.ts";
 
 const STORES: CapacityStore[] = [];
@@ -53,7 +53,7 @@ function buildApp() {
   ];
   store.upsertRecords(rows);
 
-  return { app: createApi({ store, settings, sync }), store };
+  return { app: createApi({ store, settings, sync }), store, sync };
 }
 
 test("GET /health risponde come la versione Python", async () => {
@@ -164,6 +164,66 @@ test("le credenziali non configurate danno configured:false", async () => {
 test("un job di sync inesistente risponde 404", async () => {
   const { app } = buildApp();
   expect((await app.request("/sync/jobs/inesistente")).status).toBe(404);
+});
+
+test("GET /records ordina per la colonna della tabella e rifiuta i campi ignoti", async () => {
+  const { app } = buildApp();
+
+  // La colonna "Type" della tabella manda `sort=type`: senza `type` nella
+  // whitelist la tabella veniva sostituita dall'errore (R2, regressione).
+  const byType = await app.request("/records?limit=3&sort=type&order=desc");
+  expect(byType.status).toBe(200);
+
+  const bogus = await app.request("/records?sort=bogus");
+  expect(bogus.status).toBe(400);
+  expect(await bogus.json()).toMatchObject({ detail: expect.stringContaining("sort must be one of") });
+});
+
+test("GET /records rifiuta limit e offset fuori intervallo invece di limarli in silenzio", async () => {
+  const { app } = buildApp();
+
+  // `limit=0` tornava una riga e `offset=-1` diventava 0: entrambi indistinguibili
+  // da un filtro rispettato.
+  for (const query of ["limit=0", "limit=-1", "offset=-1", "limit=abc", "offset=abc"]) {
+    const response = await app.request(`/records?${query}`);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ detail: expect.stringContaining("limit") });
+  }
+
+  // Il caso normale non cambia.
+  expect((await app.request("/records?limit=1&offset=0")).status).toBe(200);
+});
+
+test("un job senza passi eseguibili non arriva mai a sync.start", async () => {
+  const { app, sync } = buildApp();
+  // L'ordine è il punto: pre-fix il job entrava nella mappa e la risposta era
+  // comunque 422, lasciando un job che nessuno avrebbe mai eseguito.
+  let started = 0;
+  const start = sync.start.bind(sync);
+  sync.start = (plan: SyncPlan) => {
+    started += 1;
+    return start(plan);
+  };
+
+  const rejected = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // `/installed-capacity` rifiuta tutto ciò che precede il 2021: nessun passo.
+    body: JSON.stringify({ years: [2000], datasets: ["installed_capacity"] }),
+  });
+
+  expect(rejected.status).toBe(422);
+  expect(await rejected.json()).toMatchObject({ detail: expect.stringContaining("no step") });
+  expect(started).toBe(0);
+
+  // Controllo: una richiesta con passi veri arriva a `start` (il contatore non è muto).
+  const accepted = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [2023], datasets: ["renewable_source_capacity"] }),
+  });
+  expect(accepted.status).toBe(200);
+  expect(started).toBe(1);
 });
 
 test("filtri tipizzati accettano dataset noti e ignorano quelli ignoti", async () => {

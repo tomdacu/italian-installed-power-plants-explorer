@@ -11,8 +11,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const VARIANTS: Record<Variant, string> = {
+  // Dark ink on the brand gradient: white sat at 2,78:1 (brand-500) – 4,09:1
+  // (brand-600), below WCAG AA. ink-950 reaches 6,80:1 and 4,62:1 on the same
+  // stops, so the whole button — hover state included — stays above 4,5:1.
   primary:
-    "bg-gradient-to-b from-brand-500 to-brand-600 text-white shadow-sm ring-1 ring-inset ring-white/20 hover:from-brand-400 hover:to-brand-600 hover:shadow-glow focus-visible:ring-brand-500/50 disabled:from-brand-600/70 disabled:to-brand-600/70",
+    "bg-gradient-to-b from-brand-500 to-brand-600 text-ink-950 shadow-sm ring-1 ring-inset ring-white/20 hover:from-brand-400 hover:to-brand-600 hover:shadow-glow focus-visible:ring-brand-500/50 disabled:from-brand-600/70 disabled:to-brand-600/70",
   secondary:
     "bg-ink-900 text-white hover:bg-ink-800 focus-visible:ring-ink-500/40 dark:bg-ink-100 dark:text-ink-900 dark:hover:bg-white",
   outline:

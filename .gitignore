@@ -10,6 +10,7 @@ dist-ssr
 # dist-exe/ holds the compiled single-file executable. Both are reproducible.
 static/
 dist-exe/
+*.tsbuildinfo
 
 
 # --- Release artifacts ---

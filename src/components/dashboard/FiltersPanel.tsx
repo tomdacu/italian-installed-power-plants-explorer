@@ -2,7 +2,7 @@ import { Filter, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select, toOptions } from "@/components/ui/Select";
 import { DATASET_LABELS } from "@/api/client";
-import { useMetadata } from "@/hooks/useMetadata";
+import { useAvailability, useMetadata } from "@/hooks/useMetadata";
 import type { CapacityType, DatasetName, RecordFilters } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,7 @@ export function FiltersPanel({
   className?: string;
 }) {
   const meta = useMetadata();
+  const availability = useAvailability();
   const db = meta.data?.database ?? {};
   const isNational = filters.dataset === "installed_capacity";
   // Il dataset nazionale non ha geografia: offrire regione e provincia
@@ -48,13 +49,28 @@ export function FiltersPanel({
   const showRegionFilter = !isNational && filters.geoLevel !== "national";
   const showProvinceFilter = !isNational && filters.geoLevel === "province";
 
-  // Il dataset nazionale parte dal 2021: gli anni precedenti non esistono.
-  const minYear = isNational ? (meta.data?.installed_capacity_first_year ?? 2021) : (meta.data?.first_year ?? 2000);
-  // I menu si fermano all'ultimo anno che c'è davvero in cache: offrire il 2025
-  // o il 2026, che Terna non ha ancora pubblicato, produceva solo dashboard
-  // vuote. L'anno corrente resta disponibile quando è sincronizzato.
-  const storedYears = (db.years ?? []).filter((year) => year >= minYear);
-  const maxYear = Math.max(...(storedYears.length ? storedYears : [meta.data?.current_year ?? new Date().getFullYear()]));
+  // The year menus offer the years the chosen dataset actually holds: the
+  // database-wide `years` list mixed every dataset, so with the national
+  // dataset (2021-2022) the menus still offered 2000-2024 and each selection
+  // came back empty. `database.years` remains the fallback while the
+  // availability cache is empty, and the menus stop at the last stored year:
+  // proposing one Terna has not published yet only empties the dashboard.
+  const yearBounds = (dataset: DatasetName): { minYear: number; maxYear: number } => {
+    const stored = availability.data?.datasets[dataset];
+    const minYear =
+      stored?.year_min ??
+      (dataset === "installed_capacity"
+        ? (meta.data?.installed_capacity_first_year ?? 2021)
+        : (meta.data?.first_year ?? 2000));
+    const cached = (db.years ?? []).filter((year) => year >= minYear);
+    return {
+      minYear,
+      maxYear:
+        stored?.year_max ??
+        Math.max(...(cached.length ? cached : [meta.data?.current_year ?? new Date().getFullYear()])),
+    };
+  };
+  const { minYear, maxYear } = yearBounds(filters.dataset);
 
   const regionOptions = toOptions(db.regions ?? []);
   // Solo le province della regione scelta: offrire Roma mentre è selezionata la
@@ -93,7 +109,7 @@ export function FiltersPanel({
             <Filter className="h-3.5 w-3.5" />
           </span>
           <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Filters</h2>
-          {meta.isLoading && <span className="text-xs text-ink-400">loading options…</span>}
+          {meta.isLoading && <span className="text-xs text-ink-500 dark:text-ink-400">loading options…</span>}
         </div>
         <Button variant="ghost" size="sm" onClick={onReset}>
           <RotateCcw className="h-3.5 w-3.5" /> Reset
@@ -108,6 +124,10 @@ export function FiltersPanel({
           onChange={(e) => {
             const dataset = e.target.value as DatasetName;
             const national = dataset === "installed_capacity";
+            // The new dataset may not hold the years picked for the previous
+            // one (the national series starts in 2021 and ends in 2022): keep
+            // only the ends it has, or the dashboard comes back empty.
+            const bounds = yearBounds(dataset);
             set({
               dataset,
               source: "",
@@ -119,8 +139,17 @@ export function FiltersPanel({
               region: "",
               province: "",
               year_from:
-                national && (filters.year_from ?? 0) > 0 && (filters.year_from ?? 0) < 2021 ? null : filters.year_from,
-              year_to: national && (filters.year_to ?? 0) > 0 && (filters.year_to ?? 0) < 2021 ? null : filters.year_to,
+                filters.year_from != null &&
+                filters.year_from >= bounds.minYear &&
+                filters.year_from <= bounds.maxYear
+                  ? filters.year_from
+                  : null,
+              year_to:
+                filters.year_to != null &&
+                filters.year_to >= bounds.minYear &&
+                filters.year_to <= bounds.maxYear
+                  ? filters.year_to
+                  : null,
             });
           }}
         />

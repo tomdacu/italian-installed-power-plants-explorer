@@ -76,13 +76,13 @@ export function OnboardingPage() {
                       <span className="mr-2 font-mono text-xs text-brand-400/80">0{i + 1}</span>
                       {s.title}
                     </p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-ink-400">{s.text}</p>
+                    <p className="mt-0.5 text-sm leading-relaxed text-ink-300">{s.text}</p>
                   </div>
                 </div>
               ))}
             </div>
 
-            <p className="mt-8 border-t border-white/[0.06] pt-5 text-xs text-ink-500">
+            <p className="mt-8 border-t border-white/[0.06] pt-5 text-xs text-ink-300">
               Data provided by the{" "}
               <a
                 className="font-medium text-brand-300 hover:underline"
@@ -124,7 +124,7 @@ export function OnboardingPage() {
               Enter the dashboard <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <p className="mt-3 flex items-center justify-end gap-1.5 text-xs text-ink-400">
+          <p className="mt-3 flex items-center justify-end gap-1.5 text-xs text-ink-500 dark:text-ink-400">
             You can change credentials anytime <ArrowRight className="h-3 w-3" /> Settings
           </p>
         </div>

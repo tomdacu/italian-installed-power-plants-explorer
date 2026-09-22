@@ -43,10 +43,10 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data.data} margin={{ top: 8, right: 16, bottom: 4, left: 4 }} barCategoryGap="24%">
             <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" vertical={false} />
-            <XAxis dataKey="year" stroke="currentColor" className="text-ink-400" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="year" stroke="currentColor" className="text-ink-500 dark:text-ink-400" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis
               stroke="currentColor"
-              className="text-ink-400"
+              className="text-ink-500 dark:text-ink-400"
               tick={{ fontSize: 11 }}
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               width={88}

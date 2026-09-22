@@ -64,7 +64,7 @@ export function CapacityByRegionChart({
             <XAxis
               type="number"
               stroke="currentColor"
-              className="text-ink-400"
+              className="text-ink-500 dark:text-ink-400"
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               tick={{ fontSize: 11 }}
               axisLine={false}
@@ -74,7 +74,7 @@ export function CapacityByRegionChart({
               type="category"
               dataKey="area"
               stroke="currentColor"
-              className="text-ink-400"
+              className="text-ink-500 dark:text-ink-400"
               tick={{ fontSize: 10.5 }}
               width={150}
               axisLine={false}

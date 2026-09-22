@@ -8,9 +8,9 @@
  *   ice --no-window    → solo server (script, test, uso da remoto)
  */
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { startApp } from "./app.ts";
+import { startApp, type LocalApp } from "./app.ts";
 import { appDataDir } from "./settings.ts";
 
 const BROWSER_CANDIDATES = [
@@ -62,6 +62,8 @@ interface CliOptions {
   port: number;
   window: "app" | "browser" | "none";
   dataDir?: string;
+  /** `--port` was given without a usable number: the OS picks and the log says so. */
+  portInvalid?: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -80,6 +82,7 @@ function parseArgs(argv: string[]): CliOptions {
         index += 1;
       } else {
         options.port = 0;
+        options.portInvalid = true;
       }
     } else if (arg === "--data-dir") {
       const next = argv[index + 1];
@@ -129,30 +132,42 @@ function openInterface(url: string, mode: CliOptions["window"]): void {
 function main(): void {
   const options = parseArgs(Bun.argv.slice(2));
 
+  // Una sola cartella dati per tutta l'istanza: con `--data-dir D` il log sta in
+  // D come il database e le credenziali, non in una sottocartella che nessuno
+  // andrebbe a cercare.
+  const dataDir = options.dataDir ?? appDataDir();
+
   // Il log va aperto **prima** di costruire l'app: un errore d'avvio (cartella
   // dati non scrivibile, database corrotto, porta occupata) spariva su stderr
   // e, con la finestra senza console, non lo vedeva nessuno.
-  const logPath = join(appDataDir(options.dataDir), "backend.log");
+  const logPath = join(dataDir, "backend.log");
   try {
-    mkdirSync(dirname(logPath), { recursive: true });
+    mkdirSync(dataDir, { recursive: true });
     openLog(logPath);
   } catch {
     // Se nemmeno il log è scrivibile, resta la console.
   }
 
-  let app: ReturnType<typeof startApp>;
+  let app: LocalApp;
   try {
-    app = startApp({ port: options.port, dataDir: options.dataDir });
+    // `logger` porta la stessa funzione nel server: gli errori a runtime
+    // finiscono nel log dell'istanza, non solo nella console.
+    app = startApp({ port: options.port, dataDir, logger: log });
   } catch (error) {
     const message = (error as Error)?.message ?? String(error);
-    log(`avvio fallito: ${message}`);
+    log(`avvio fallito (dati in ${dataDir}): ${message}`);
     console.error(`Impossibile avviare l'applicazione: ${message}`);
     console.error(`Dettagli in ${logPath}`);
     process.exit(1);
   }
 
   log(`Italian Renewable Capacity Explorer in ascolto su ${app.url}`);
-  log(`Dati in ${appDataDir()}`);
+  log(`Dati in ${dataDir}`);
+  if (options.portInvalid) {
+    // Il ripiego sulla porta scelta dal sistema non deve essere silenzioso:
+    // `--port abc` rispondeva 200 su una porta che nessuno aveva chiesto.
+    log(`invalid --port value: using port ${app.port}`);
+  }
   if (app.portFallback) {
     // Con la console nascosta l'avviso su stderr non lo vede nessuno: finisce
     // anche nel log.

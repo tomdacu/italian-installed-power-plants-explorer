@@ -59,6 +59,13 @@ In development the Vite server proxies `/health`, `/records`, `/analytics`,
 `/metadata`, `/settings`, `/sync` and `/export` to `http://127.0.0.1:8799`
 (override with `VITE_API_PROXY`), so the interface always uses relative URLs.
 
+Where the server looks for the built interface, in order: `ICE_STATIC_DIR`, then
+`static/` next to the executable, then `static/` next to `server/`, then `dist/`.
+In a checkout that order matters — `bun run prepack` leaves a `static/` folder
+(and `bun run build` alone does not touch it), so an old `static/` keeps being
+served after a plain `bun run build` and the page shows the previous bundle.
+Delete `static/` or rebuild with `bun run prepack` whenever the interface changes.
+
 A standalone executable for your own machine, if you want one:
 
 ```bash
@@ -71,7 +78,7 @@ bun run compile          # dist-exe/ice.exe plus static/ — needs both to run
 | --- | --- |
 | “Interfaccia non trovata: manca la cartella static/” | the executable was copied without `static/`; keep them together or set `ICE_STATIC_DIR` |
 | The window is a plain browser tab | the browser was not detected for app mode: use your browser's *Install app*, or run with `--browser` |
-| “Porta preferita occupata: uso <port>” | another instance holds 8731; close it and restart |
+| `porta 8731 occupata: uso 64335` (the digits vary) | another instance holds 8731: the server picked a free port and wrote it to `backend.log`. Close the other instance and restart to get 8731 back; an installed app would need reinstalling on the new origin |
 | Sync reports skipped steps | Those years are not published for the selected datasets (the national series starts in 2021): nothing to download, `skipped_steps` counts them |
 | Sync reports failed steps | Terna refused the calls (quota: `403 Developer Over Rate`, or the network). They are retried with backoff; re-run the sync later, stored rows are upserted and nothing is duplicated |
 | Sync reports many empty steps | years or combinations the API does not publish |

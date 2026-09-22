@@ -18,7 +18,7 @@ export function TitleBar() {
         <span className="truncate font-display text-xs font-semibold tracking-wide text-ink-700 dark:text-ink-200">
           Italian Renewable Capacity Explorer
         </span>
-        <span className="hidden rounded-full border border-ink-200 px-1.5 py-px font-mono text-[9px] text-ink-500 sm:inline dark:border-white/10 dark:text-ink-500">
+        <span className="hidden rounded-full border border-ink-200 px-1.5 py-px font-mono text-[9px] text-ink-500 sm:inline dark:border-white/10 dark:text-ink-400">
           v{APP_VERSION}
         </span>
       </div>

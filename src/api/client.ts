@@ -69,13 +69,19 @@ async function fetchJson<T>(
   init: RequestInit,
   withMeta: boolean,
 ): Promise<unknown> {
+  // Ogni metodo che cambia qualcosa va annunciato come JSON anche quando non
+  // ha corpo (`DELETE /settings/credentials`, `POST /settings/credentials/test`):
+  // il server pretende `Content-Type: application/json` per costringere il
+  // browser al preflight, quindi senza questo header le due chiamate erano 403.
+  const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase());
+
   let response: Response;
   try {
     response = await fetch(`${apiBase()}${path}`, {
       ...init,
       headers: {
         Accept: "application/json",
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.body || mutating ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
       },
     });
@@ -165,10 +171,6 @@ export const api = {
 
   dataQuality(filters: Partial<RecordFilters> = {}): Promise<DataQuality> {
     return request<DataQuality>(`/metadata/data-quality${buildQuery(filters)}`);
-  },
-
-  records(filters: Partial<RecordFilters> = {}): Promise<CapacityRecord[]> {
-    return request<CapacityRecord[]>(`/records${buildQuery(filters)}`);
   },
 
   /**

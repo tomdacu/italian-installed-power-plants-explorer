@@ -51,12 +51,24 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
   const [sortKey, setSortKey] = useState<SortKey>("year");
   const [order, setOrder] = useState<Order>("desc");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
   const toast = useToast();
 
-  // La ricerca parte dopo che l'utente smette di scrivere: `useDeferredValue`
-  // tiene l'input reattivo mentre la query viaggia.
+  // Search only fires once the user stops typing: `useDeferredValue` keeps the
+  // input responsive while the query travels.
   const search = useDeferredValue(query).trim();
+
+  // A page belongs to one selection. When the filters or the (deferred) search
+  // change, go back to the first page in the same render: doing it in an effect
+  // let the render that changed the selection send one request with the
+  // previous offset first — an offset past the end of the new, smaller result.
+  const selection = `${JSON.stringify(filters)}|${search}`;
+  const [page, setPage] = useState(0);
+  const [pageSelection, setPageSelection] = useState(selection);
+  if (pageSelection !== selection) {
+    setPageSelection(selection);
+    setPage(0);
+  }
+
   const recordsQuery = useQuery({
     queryKey: ["records", filters, search, sortKey, order, page],
     queryFn: () =>
@@ -75,10 +87,15 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
   const firstRow = totalRows === 0 ? 0 : safePage * PAGE_SIZE + 1;
   const lastRow = Math.min((safePage + 1) * PAGE_SIZE, totalRows);
   const searching = search.length > 0;
+  // While the previous selection is still on screen its total is not the one
+  // the current filters match: never label it "matching".
+  const stale = recordsQuery.isPlaceholderData;
 
+  // If the result set shrank under the current page, ask for the last page that
+  // exists instead of an offset past the end.
   useEffect(() => {
-    setPage(0);
-  }, [search, filters]);
+    if (safePage !== page) setPage(safePage);
+  }, [safePage, page]);
 
   // Il Reset della dashboard azzera anche ricerca e ordinamento: sono stato
   // locale della tabella, ma l'utente se li aspetta azzerati.
@@ -129,12 +146,12 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
             Capacity records
           </h3>
           <span className="chip border-ink-200/80 text-ink-500 dark:border-white/10 dark:text-ink-400">
-            {formatNumber(totalRows)} {searching ? "matching" : ""} rows
+            {formatNumber(totalRows)} {searching && !stale ? "matching" : ""} rows
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-500 dark:text-ink-400" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -230,7 +247,7 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-4 py-2.5 text-xs text-ink-500 dark:border-white/[0.06] dark:text-ink-400">
             <span>
               {formatNumber(firstRow)}–{formatNumber(lastRow)} of {formatNumber(totalRows)}
-              {searching ? " matching rows" : " rows"}
+              {searching && !stale ? " matching rows" : " rows"}
             </span>
             <div className="flex items-center gap-1">
               <Button

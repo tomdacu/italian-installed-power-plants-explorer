@@ -24,7 +24,7 @@ browser, or install it as an app with its own window and Start-menu entry.
   machine.
 - **One-click sync** of any year range: every dataset, source and capacity type,
   paced to respect the API limits, resumable, with per-step progress.
-- **Dashboard** with KPI cards (latest-year stock, year-on-year additions), five
+- **Dashboard** with KPI cards (latest-year stock, year-on-year additions), four
   charts and a searchable, sortable, paginated table.
 - **Exports**: any chart as PNG or SVG, the filtered data as CSV.
 - **Offline after sync**, light and dark themes, no telemetry.
@@ -44,10 +44,14 @@ Then, inside the app:
 
 1. create a free application on [developer.terna.it](https://developer.terna.it)
    and paste Client ID and secret in **Credentials**;
-2. open **Data sync**, press *Download everything* — the range defaults to every
-   year Terna publishes (2000 → today), one request per dataset and year, paced
-   at ~1/second to stay inside the API limits;
+2. open **Data sync**, press *Download everything* — the range defaults to
+   2000 → the latest year already in your cache, one request per dataset and
+   year, paced at ~1/second to stay inside the API limits. Any year the API
+   accepts can be typed in by hand, including one Terna has not published yet:
+   those steps come back empty and are reported as such, they are not failures;
 3. explore the **Dashboard**, where every chart can be copied or exported.
+
+![Data sync](docs/screenshot-sync.png)
 
 ### From source
 
@@ -113,8 +117,10 @@ year, because the API does not revise older years the way the yearbook does.
 
 - Outbound traffic goes only to `api.terna.it`; no telemetry, no analytics, no
   third-party services.
-- The server binds `127.0.0.1` and sends a strict `Content-Security-Policy`; no
-  CORS headers, so other pages cannot read local responses.
+- The server binds `127.0.0.1` and sends a strict `Content-Security-Policy`. It
+  sends no `Access-Control-Allow-Origin`, so a page on another origin cannot read
+  the responses; the one header it does expose, `x-total-count` on `/records`, is
+  readable only by a reader that could already call the API.
 - The API has no authentication: any local process can read the cache and
   overwrite the stored credentials, but can never read the secret back.
 

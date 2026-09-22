@@ -42,6 +42,12 @@ interface JobState {
   skippedSteps: number;
 }
 
+/** Il piano di un job: i passi da eseguire e gli anni che nessun dataset pubblica. */
+export interface SyncPlan {
+  steps: SyncStep[];
+  dropped: number;
+}
+
 /**
  * Un solo passo per dataset e anno: Terna restituisce in una risposta tutte le
  * fonti e tutti gli indici (verificato sul payload reale — `renewable-source-capacity`
@@ -52,7 +58,7 @@ interface JobState {
  * Gli anni che un dataset non può servire vengono saltati e contati in
  * `dropped`: `/installed-capacity` rifiuta tutto ciò che precede il 2021.
  */
-export function buildPlan(request: SyncRequestPayload): { steps: SyncStep[]; dropped: number } {
+export function buildPlan(request: SyncRequestPayload): SyncPlan {
   const steps: SyncStep[] = [];
   const datasets = (request.datasets ?? [...SYNCABLE_DATASETS]).filter((dataset) =>
     SYNCABLE_DATASETS.includes(dataset),
@@ -87,9 +93,14 @@ export class SyncManager {
     private readonly clientFactory: () => Promise<TernaClient>,
   ) {}
 
-  start(request: SyncRequestPayload): string {
+  /**
+   * Il piano arriva già costruito: chi deve rifiutare una richiesta (nessun
+   * passo eseguibile) lo scopre **prima** che il job esista nella mappa, così
+   * un 422 non lascia dietro di sé un job mai eseguito.
+   */
+  start(plan: SyncPlan): string {
     const jobId = crypto.randomUUID();
-    const { steps, dropped } = buildPlan(request);
+    const { steps, dropped } = plan;
     // Un job completato serve solo a rispondere al polling dell'interfaccia:
     // oltre venti, i più vecchi non servono più a nessuno.
     if (this.jobs.size >= 20) {

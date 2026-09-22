@@ -7,7 +7,7 @@ official statistics. Reproduce it with your own credentials at any time.
 
 | Level | Method | Result |
 | --- | --- | --- |
-| Raw payload → cache | Full sync of 2000–2024 × 3 datasets plus 2021–2024 of the national one (87 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
+| Raw payload → cache | Full sync of 2000–2024 × 3 datasets plus 2021–2024 of the national one (79 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
 | Cache → API | Automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | all green |
 | Cache → official statistics | National per-source totals (Tab. 8), thermoelectric per region (Tab. 18) and per category (Tab. 20) from Terna's yearbook *Dati statistici sull'energia elettrica in Italia* | see below |
 | Province level | The two independent endpoints that publish the same sources (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
@@ -37,9 +37,12 @@ registry series it publishes monthly and independent re-analyses:
 What to do with it:
 
 - **Quoting 2024?** Any dataset works.
-- **Quoting earlier years?** Use `generation_plants` for photovoltaic and hydro:
-  it reproduces the yearbook for every year. The dashboard shows an amber
-  *Partial data* note whenever the selected year range contains an empty cell.
+- **Quoting earlier years?** For photovoltaic, wind, bioenergy and geothermal
+  either dataset reproduces the yearbook; for hydro use `generation_plants`,
+  which counts pumped storage the way the yearbook does. The dashboard shows an
+  amber *Partial data* note only for years whose files leave at least three cells
+  empty: it names 2004–2006 (13 values) with the default filters, and **no year
+  after 2014 can trigger it**, together with no photovoltaic year at all.
 - **Quoting thermoelectric?** Use `thermoelectric_capacity`, never the
   `Termoelettrico` series of `generation_plants`.
 - **Comparing with a newspaper?** Check the perimeter first — see
@@ -79,18 +82,23 @@ efficient power (+5.7%) and 74.5 GW of renewable capacity.
 
 - **Exact matches on wind, geothermal and thermoelectric** confirm that the
   sync, the unit parsing and the aggregation are correct.
-- **Hydro**: the API series is lower than the yearbook. In 2024 the gap equals
-  the pure pumped-storage capacity that GSE removes when it reconciles Terna's
-  hydro figure (3 986.3 MW); in 2021–2023 the gap is larger and not explained by
-  pumping alone, so the endpoint's perimeter (producers vs self-producers, plant
-  size, date of the snapshot) is narrower than the yearbook's.
-- **Photovoltaic 2021–2023**: the API reports less than the yearbook, while 2024
-  matches to the decimal. The difference is **not** a revision of older figures:
-  in those year files Terna leaves a handful of provinces empty (6 in 2021, 5 in
-  2022, 7 in 2023) and the app stores them as NULL. Every province that *does*
-  carry a value is identical to `generation_plants` and to the yearbook to the
-  decimal, and the sum of the empty cells is exactly the gap
-  (−2 464,1 / −1 772,9 / −3 339,6 MW). The dashboard flags those years as partial.
+- **Hydro**: the API series is lower than the yearbook, and the difference is
+  exactly the pure pumped-storage capacity the yearbook lists under `di cui
+  pompaggio puro`: **3 975,0 MW in 2021, 3 944,3 in 2022, 3 986,301 in 2023 and 3
+  986,301 in 2024** (cache sums: 19 172,3 / 19 265,3 / 19 274,2 / 19 637,2 MW
+  against 23 147,3 / 23 209,6 / 23 260,5 / 23 623,5 MW). The four gaps coincide
+  with the same seven provinces — Cuneo, Varese, Caserta, Siracusa, Bologna,
+  Palermo and Bolzano — so the two series differ by perimeter and by nothing
+  else. `renewable_source_capacity` excludes pumped storage, `generation_plants`
+  includes it.
+- **Photovoltaic**: complete in both datasets for every year 2021–2024, cell by
+  cell identical to each other and to the yearbook (the 2021–2023 deficit narrated
+  by the earlier editions of this document was the duplicate-row bug, fixed in
+  1.0.0 — see below). A query over the cache returns 428 of 428 cells with a
+  value in `renewable_source_capacity` and exactly the same 428 in
+  `generation_plants`, with 0 NULL and the same yearly sums:
+  22 594,259 / 25 063,919 / 30 319,417 / 37 002,140 MW. The dashboard flags no
+  photovoltaic year.
 - **National installed capacity dataset**: the `/installed-capacity` endpoint
   returns rounded GW values on its own perimeter (2022: thermal 58.8 GW, hydro
   22.8, PV 24.2, wind 11.7, geothermal 0.9) that do **not** coincide with the
@@ -152,14 +160,22 @@ cell (428 of 428) is identical to `generation_plants` and to the yearbook, and
 
 - **Hydro perimeter**: `renewable_source_capacity` excludes pure pumped storage
   (−3.986,3 MW in 2024), `generation_plants` includes it.
-- **A handful of empty cells inside a series**: the dashboard's amber note counts
-  them (22 cells across 2001–2010 with the default filters). Empty cells *before*
-  a series starts — photovoltaic in 2000, when it did not exist in most provinces
-  — are not gaps and are not counted.
+- **A handful of empty cells inside a series**: the endpoint counts them, the
+  dashboard shows only the material ones. `/metadata/data-quality` with
+  `dataset=renewable_source_capacity&capacity_type=Lorda` returns **22 cells
+  across 9 years (2001–2006, 2008–2010)**; the amber note appears only for years
+  with **at least three** empty cells — below that the yearly total is not
+  materially affected — so with the dashboard's default filters it names three
+  years (2004–2006) and **13** empty values. Both numbers are correct, they
+  answer two different questions. Empty cells *before* a series starts —
+  photovoltaic in 2000, when it did not exist in most provinces — are not gaps
+  and are not counted, and no year after 2014 has one.
+- **Region spelling**: thermoelectric rows used to say `Valle d'Aosta` where the
+  other datasets said `Valle D'Aosta`. Both are canonicalised on ingest and the
+  stored rows are repaired at startup, so the cache holds a single spelling
+  (`Valle D'Aosta`, 542 rows) and the region filter lists one entry.
 - **`Accumulo stand alone`** (standalone storage) appears in `generation_plants`
   from 2023 and is synced like every other source.
-- **Region spelling**: thermoelectric rows say `Valle d'Aosta`, the other
-  datasets `Valle D'Aosta`; the two are the same region.
 
 Practical rule: this app reports the **Terna Developer API**, so it is the right
 tool for trends, regional comparisons and export — not for quoting official
@@ -171,7 +187,7 @@ national statistics, where Terna's yearbook (or GSE) is the reference.
 # local server on the fixed dev port
 bun run serve --no-window --port 8731
 
-# full sync of every published year (needs credentials; ~87 requests, ~2 minutes)
+# full sync of every published year (needs credentials; 79 requests, ~2 minutes)
 curl -X POST http://127.0.0.1:8731/sync/jobs -H "Content-Type: application/json" `
   -d '{\"years\":[2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024],\"datasets\":[\"renewable_source_capacity\",\"generation_plants\",\"installed_capacity\",\"thermoelectric_capacity\"]}'
 
@@ -212,7 +228,7 @@ equality, but to see whether the magnitudes and the trends are the same story.
 | Wind | 12,99 GW | **12,99 GW** | DataCivicLab (same series) |
 | Hydro (excl. pumping) | 19,64 GW | **19,64 GW** | DataCivicLab (same series) |
 | Total installed, gross efficient | 137,60 GW (+5,7 %) | **137,6 GW, +5,7 % vs 2023** | Terna, *Pubblicazioni statistiche* |
-| New renewable capacity in 2024 | +7.700 MW (our deltas, net index) · +7.683,7 MW (gross, the dashboard default) | **+7.480 MW** | Terna, *Rapporto mensile dicembre 2024* |
+| New renewable capacity in 2024 | +7.702,0 MW (our deltas, net index) · +7.683,7 MW (gross, the dashboard default) | **+7.480 MW** | Terna, *Rapporto mensile dicembre 2024* |
 | New photovoltaic in 2024 | +6.683 MW (our deltas) | **+6.795 MW** | Terna, *Rapporto mensile dicembre 2024* |
 | Trend into 2025 | not in the API yet | **145,9 GW, +6 % vs 2024** | Terna, *Pubblicazioni statistiche* |
 
@@ -229,12 +245,18 @@ the yearbook does:
 | Source | 2021 | 2022 | 2023 | 2024 |
 | --- | --- | --- | --- | --- |
 | Photovoltaic — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
-| Photovoltaic — *Renewable source capacity* | −2.464 | −1.773 | −3.340 | ✅ |
+| Photovoltaic — *Renewable source capacity* | ✅ | ✅ | ✅ | ✅ |
 | Wind — both datasets | ✅ | ✅ | ✅ | ✅ |
 | Bioenergy — both datasets | ✅ | ✅ | ✅ | ✅ |
 | Geothermal — both datasets | ✅ (≈) | ✅ | ✅ | ✅ |
 | Hydro incl. pumping — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
-| Hydro excl. pumping — *Renewable source capacity* | −2.762 | −5.103 | −2.465 | ✅ |
+| Hydro excl. pumping — *Renewable source capacity* | ⚠️ −3 975,0 | ⚠️ −3 944,3 | ⚠️ −3 986,3 | ⚠️ −3 986,3 |
+
+The ⚠️ cells are not an alignment failure: they are the pure pumped-storage
+capacity *Renewable source capacity* leaves out, measured in the cache as the
+difference between the two datasets (MW, 2021 → 2024). Every other cell of the
+table is an exact match, photovoltaic included — the 2021–2023 deficit this table
+used to report was the duplicate-row bug.
 
 ### Why newspapers quote different numbers
 
@@ -245,7 +267,7 @@ difference is always a perimeter, not an error. Reading them side by side:
 | --- | --- | --- |
 | Renewable capacity | **76,6 GW** (Terna press release, 16 Jan 2025) · **74,5 GW** (yearbook, via SISTAN) · **73,52 GW** (ANIE) · **74,3 GW** (Legambiente) | the press release counts provisional data and a wider basket; ANIE counts only plants in its registry; the yearbook is the consolidated figure (74.433 MW by our datasets, 74,5 GW rounded) |
 | Hydro | **18,99 GW** (ANIE) · **19,64 GW** (no pumped storage) · **22,9 GW** (TEHA/Enel) · **23,62 GW** efficient gross incl. pumping · **24,98 GW** nominal (Terna) | pumping in or out, and *nominal* vs *efficient* power — the same plant can legitimately appear as two different numbers |
-| New capacity in 2024 | **7.480 MW** (Terna, net of repowering and decommissioning) · **6.664 MW** (ANIE, new installations only) · our deltas +7.700 MW (renewables) / +6.683 MW (photovoltaic) | gross additions vs net variation |
+| New capacity in 2024 | **7.480 MW** (Terna, net of repowering and decommissioning) · **6.664 MW** (ANIE, new installations only) · our deltas +7.702,0 MW (renewables, net index) / +6.683 MW (photovoltaic) | gross additions vs net variation |
 | Photovoltaic | **37,08 GW** (Terna, provisional Gaudì data) · **37.002 MW** (yearbook) · **36,68 GW** (ANIE) | provisional vs consolidated, registry coverage |
 
 Terna itself states it in the monthly report: the 2024 figures are *provisional*
@@ -257,10 +279,10 @@ Practical consequences:
 
 - **For 2024 everything lines up** with the official publications, whichever
   dataset you pick.
-- **For 2021–2023 prefer *Generation plants***: its photovoltaic and hydro series
-  match the yearbook, while *Renewable source capacity* still carries the figures
-  as they were published at the time (before later revisions).
-- Wind, bioenergy and geothermal are consistent across datasets and years.
+- **For any year, photovoltaic, wind, bioenergy and geothermal agree cell by cell
+  across datasets**; the two datasets differ only on hydro, where *Generation
+  plants* includes pure pumped storage and *Renewable source capacity* excludes it
+  (the yearbook includes it).
 - Treat the API as a **current** source: re-sync before quoting a year, and fall
   back to the yearbook for historical series.
 
@@ -269,8 +291,10 @@ Practical consequences:
 The 2025 edition of the yearbook is published, but **the Developer API returns no
 2025 rows at all** (checked on all four generation endpoints with valid
 credentials: empty responses, `empty_steps` in the sync). The app therefore shows
-2021–2024. When Terna publishes 2025, re-run the sync and check it against these
-values (gross efficient power, national):
+**2000–2024 for the three generation datasets** and **2021–2022 for the national
+installed capacity**, the only national years the endpoint returned (2023 and 2024
+came back empty too). When Terna publishes 2025, re-run the sync and check it
+against these values (gross efficient power, national):
 
 | Source | 2025 (yearbook) |
 | --- | --- |

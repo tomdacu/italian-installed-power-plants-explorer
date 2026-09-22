@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./temp.ts";
 
 import { CapacityStore, parseGroupBy } from "../server/db.ts";
+import { PLACE_FIXES } from "../server/normalize.ts";
 import type { CapacityRow } from "../server/normalize.ts";
 import type { RecordFilters } from "../shared/types.ts";
 
@@ -204,5 +205,52 @@ describe("CapacityStore", () => {
     expect(lines[0]).toContain("dataset,year,capacity_type");
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('"Idrico ""special"""');
+  });
+
+  test("repairPlaceNames refreshes the cached options", () => {
+    store.upsertRecords([row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 1, province: "Olbia0tempio" })]);
+    // The option lists are cached: before the repair they answer with the
+    // spelling that is on disk.
+    expect(store.options().provinces).toEqual(["Olbia0tempio"]);
+
+    store.repairPlaceNames(PLACE_FIXES);
+
+    // A repair on a running instance must not leave the repaired name out of
+    // the menus that were already built.
+    expect(store.options().provinces).toEqual(["Olbia-Tempio"]);
+  });
+
+  test("busy_timeout waits for the write lock instead of failing straight away", async () => {
+    // Cross-process lock contention: SQLite's busy handler waits on a real OS
+    // lock, so the one delay below cannot be driven by fake timers (the child
+    // must still hold the lock while this process is blocked inside it).
+    const script = `
+      import { Database } from "bun:sqlite";
+      const db = new Database(process.env.ICE_LOCK_DB);
+      db.exec("BEGIN IMMEDIATE");
+      console.log("locked");
+      await Bun.sleep(500);
+      db.exec("COMMIT");
+      db.close();
+    `;
+    const holder = Bun.spawn([process.execPath, "-e", script], {
+      env: { ...process.env, ICE_LOCK_DB: store.databasePath },
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      // The child says when the lock is held: no polling, no guessed wait.
+      const { value } = await holder.stdout.getReader().read();
+      expect(new TextDecoder().decode(value)).toContain("locked");
+
+      // With the SQLite default (busy_timeout = 0) this upsert fails at once
+      // with SQLITE_BUSY, which is how a sync step dies when a second instance
+      // is open on the same folder.
+      store.upsertRecords([row({ year: 2025, source: "Eolico", efficient_power_mw: 7 })]);
+      expect(store.countRecords({ year_from: 2025, year_to: 2025 })).toBe(1);
+    } finally {
+      holder.kill();
+      await holder.exited;
+    }
   });
 });

@@ -4,16 +4,32 @@ import type { RecordFilters } from "@/types";
 
 /** Under this many empty cells a year total is not meaningfully affected. */
 const NOISE_FLOOR = 3;
-/** Beyond this many affected years, list a range instead of every year. */
-const LIST_LIMIT = 4;
 
-/** "2000-2005" quando sono tanti e consecutivi, altrimenti l'elenco. */
+function describeRun(from: number, to: number): string {
+  return from === to ? String(from) : `${from}–${to}`;
+}
+
+/**
+ * "2003–2006, 2008–2010": every run of consecutive years is kept separate, so a
+ * range never reads as if it covered a year that is missing from the list.
+ */
 function describeYears(years: number[]): string {
-  if (years.length <= LIST_LIMIT) return years.join(", ");
-  const first = years[0];
-  const last = years[years.length - 1];
-  const consecutive = years.length === last - first + 1;
-  return consecutive ? `${first}–${last}` : `${first}–${last} (${years.length} years)`;
+  const sorted = [...years].sort((a, b) => a - b);
+  const runs: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+  for (const year of sorted.slice(1)) {
+    if (year === previous + 1) {
+      previous = year;
+      continue;
+    }
+    runs.push(describeRun(start, previous));
+    start = year;
+    previous = year;
+  }
+  runs.push(describeRun(start, previous));
+  if (runs.length === 1) return runs[0];
+  return `${runs.slice(0, -1).join(", ")} and ${runs[runs.length - 1]}`;
 }
 
 /**
@@ -42,7 +58,8 @@ export function DataQualityNote({ filters }: { filters: RecordFilters }) {
         </span>{" "}
         Terna&apos;s files for {single ? "that year" : "those years"} leave {cells} value
         {cells === 1 ? "" : "s"} empty, so the stock is understated — and any year-on-year change
-        across {single ? "it" : "them"} is overstated. The{" "}
+        across {single ? "it" : "them"} is overstated. Only years with at least {NOISE_FLOOR} empty
+        cells are flagged: below that the yearly total is not materially affected. The{" "}
         <span className="font-medium">Generation plants</span> dataset carries the complete series
         (it counts pumped-storage hydro, so its hydro total is higher). Year-by-year check against
         Terna&apos;s yearbook: <span className="font-mono text-xs">docs/data-validation.md</span>.

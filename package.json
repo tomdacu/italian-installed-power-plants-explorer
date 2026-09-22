@@ -14,7 +14,8 @@
     "README.md",
     "LICENSE",
     "docs/*.md",
-    "docs/assets/readme-banner.png",
+    "docs/assets/README.md",
+    "docs/readme-banner.png",
     "docs/screenshot-dashboard.png",
     "docs/screenshot-sync.png"
   ],

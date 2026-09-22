@@ -14,7 +14,7 @@ import type { Server } from "bun";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 
-import { createApi } from "./api.ts";
+import { createApi, logInternalError } from "./api.ts";
 import type { CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
 import type { SyncManager } from "./sync.ts";
@@ -46,6 +46,12 @@ export interface ServerOptions {
   staticDir: string;
   port: number;
   hostname?: string;
+  /**
+   * Dove finiscono gli errori a runtime. Il chiamante (`cli.ts`) passa la
+   * funzione che scrive su `backend.log`: senza di essa un 500 restava solo nel
+   * terminale e il log che i documenti indicano non lo conteneva mai.
+   */
+  logger?: (message: string) => void;
 }
 
 function withSecurityHeaders(response: Response): Response {
@@ -59,12 +65,38 @@ function withSecurityHeaders(response: Response): Response {
   return response;
 }
 
+/** Il loopback è l'unico host che può parlare con questo server. */
+const LOOPBACK_HOSTS: Record<string, true> = {
+  "127.0.0.1": true,
+  localhost: true,
+  "::1": true,
+  "[::1]": true,
+};
+
 /** L'host accettato è il loopback: qualunque altro nome è un rebinding. */
 function hostAllowed(host: string | null, port: number): boolean {
   if (!host) return false;
   const withoutPort = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
   const portOk = host.endsWith(`:${port}`) || !host.includes(":");
-  return portOk && (withoutPort === "127.0.0.1" || withoutPort === "localhost" || withoutPort === "::1");
+  return portOk && LOOPBACK_HOSTS[withoutPort] === true;
+}
+
+/**
+ * L'origine extra del dev server. Vite gira su un'altra porta (`:1420`) e il
+ * proxy con `changeOrigin` la sostituisce con quella del server, ma senza proxy
+ * l'origine resta diversa: l'eccezione è **opt-in** (`ICE_DEV_ORIGIN`), vale per
+ * una sola origine e solo se è loopback. Variabile assente = comportamento
+ * stretto di sempre.
+ */
+function isDevOrigin(origin: URL): boolean {
+  const configured = process.env.ICE_DEV_ORIGIN?.trim();
+  if (!configured) return false;
+  try {
+    const allowed = new URL(configured);
+    return LOOPBACK_HOSTS[allowed.hostname] === true && allowed.origin === origin.origin;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -87,9 +119,10 @@ function mutationAllowed(request: Request, port: number): { ok: true } | { ok: f
   if (origin) {
     try {
       const parsed = new URL(origin);
-      const allowedHosts = ["127.0.0.1", "localhost", "::1", "[::1]"];
-      const portOk = parsed.port === String(port) || parsed.port === "";
-      if (!allowedHosts.includes(parsed.hostname) || !portOk) {
+      // La porta conta: `Origin: http://127.0.0.1` (senza porta) punta alla 80,
+      // non a questo server, quindi non è la stessa origine.
+      const sameServer = LOOPBACK_HOSTS[parsed.hostname] === true && parsed.port === String(port);
+      if (!sameServer && !isDevOrigin(parsed)) {
         return { ok: false, reason: `cross-origin request rejected (origin: ${origin})` };
       }
     } catch {
@@ -100,11 +133,15 @@ function mutationAllowed(request: Request, port: number): { ok: true } | { ok: f
   return { ok: true };
 }
 
-/** Server HTTP locale (nessun websocket: il parametro generico resta undefined). */
-export type LocalServer = Server<undefined>;
+/**
+ * Server HTTP locale (nessun websocket: il parametro generico resta undefined).
+ * `port` è sempre presente dopo `Bun.serve` — con `port: 0` è quella scelta dal
+ * sistema — mentre il tipo di Bun la dichiara opzionale.
+ */
+export type LocalServer = Server<undefined> & { port: number };
 
 export function startServer(options: ServerOptions): LocalServer {
-  const api = createApi({ store: options.store, settings: options.settings, sync: options.sync });
+  const api = createApi({ store: options.store, settings: options.settings, sync: options.sync, logger: options.logger });
   const staticRoot = normalize(options.staticDir);
   const indexPath = join(staticRoot, "index.html");
   // La porta effettiva: con `port: 0` la sceglie il sistema, e i controlli su
@@ -115,8 +152,9 @@ export function startServer(options: ServerOptions): LocalServer {
     hostname: options.hostname ?? "127.0.0.1",
     port: options.port,
     async fetch(request) {
-      const url = new URL(request.url);
-
+      // Il controllo dell'host precede qualunque parse dell'URL: una richiesta
+      // HTTP/1.0 senza `Host` faceva fallire `new URL(request.url)` con un 500
+      // "Invalid URL" (senza header di sicurezza) invece del 403 previsto.
       if (!hostAllowed(request.headers.get("host"), bound.port)) {
         return withSecurityHeaders(
           new Response(JSON.stringify({ detail: "unexpected host header" }), {
@@ -125,6 +163,8 @@ export function startServer(options: ServerOptions): LocalServer {
           }),
         );
       }
+
+      const url = new URL(request.url);
 
       if (MUTATING_METHODS.has(request.method)) {
         const allowed = mutationAllowed(request, bound.port);
@@ -179,19 +219,25 @@ export function startServer(options: ServerOptions): LocalServer {
         response.headers.set("cache-control", "no-cache");
         return response;
       }
-      return new Response("Interfaccia non trovata: manca la cartella static/ (esegui `bun run build`).", {
-        status: 500,
-      });
+      return withSecurityHeaders(
+        new Response("Interfaccia non trovata: manca la cartella static/ (esegui `bun run build`).", {
+          status: 500,
+        }),
+      );
     },
     error(error) {
-      console.error(error);
-      return new Response(JSON.stringify({ detail: "internal error" }), {
-        status: 500,
-        headers: { "content-type": "application/json" },
-      });
+      // Un guasto fuori dagli handler finiva solo nel terminale: il log indicato
+      // dai documenti non lo vedeva mai. `logger` è la funzione di `cli.ts`.
+      logInternalError(error, options.logger);
+      return withSecurityHeaders(
+        new Response(JSON.stringify({ detail: "internal error" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      );
     },
   });
 
   bound.port = server.port ?? options.port;
-  return server;
+  return server as LocalServer;
 }

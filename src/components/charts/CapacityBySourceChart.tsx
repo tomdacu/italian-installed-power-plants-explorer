@@ -53,7 +53,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
             <XAxis
               type="number"
               stroke="currentColor"
-              className="text-ink-400"
+              className="text-ink-500 dark:text-ink-400"
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               tick={{ fontSize: 11 }}
               axisLine={false}
@@ -63,7 +63,7 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
               type="category"
               dataKey={splitKey}
               stroke="currentColor"
-              className="text-ink-400"
+              className="text-ink-500 dark:text-ink-400"
               tick={{ fontSize: 11 }}
               width={120}
               axisLine={false}

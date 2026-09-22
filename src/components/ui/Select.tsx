@@ -40,7 +40,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute inset-y-0 right-3 my-auto h-4 w-4 text-ink-400" />
+          <ChevronDown className="pointer-events-none absolute inset-y-0 right-3 my-auto h-4 w-4 text-ink-500 dark:text-ink-400" />
         </div>
         {hint && <p className="text-xs text-ink-500 dark:text-ink-400">{hint}</p>}
       </div>

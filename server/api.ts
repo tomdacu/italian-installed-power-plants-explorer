@@ -17,16 +17,30 @@ import {
 import { createTernaClient } from "./client.ts";
 import { parseGroupBy, RECORD_SORT_FIELDS, type CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
-import type { SyncManager } from "./sync.ts";
+import { buildPlan, type SyncManager } from "./sync.ts";
 import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type RecordFilters } from "../shared/types.ts";
 
 interface Dependencies {
   store: CapacityStore;
   settings: SettingsStore;
   sync: SyncManager;
+  /** Dove finiscono i guasti interni: lo stesso `logger` del server. */
+  logger?: (message: string) => void;
 }
 
-/** Corpo JSON non valido = 400, non un 500 con stack trace. */
+/**
+ * La riga di un guasto interno, scritta **una volta sola**: la usano il gestore
+ * `error` di `Bun.serve` (`server/http.ts`, per gli errori fuori dagli handler)
+ * e `app.onError` qui sotto, perché Hono intercetta da sé gli errori degli
+ * handler e senza `onError` non passerebbero mai né dal logger né da Bun.
+ */
+export function logInternalError(error: unknown, logger?: (message: string) => void): void {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  if (logger) logger(`internal error: ${detail}`);
+  else console.error(error);
+}
+
+/** Corpo JSON non valido = 422 (il 400 è per i filtri di query), non un 500 con stack trace. */
 async function readJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<Record<string, unknown> | null> {
   try {
     const body = await c.req.json();
@@ -81,6 +95,15 @@ function filtersFromQuery(query: URLSearchParams): RecordFilters {
   };
 }
 
+/**
+ * Maschera un client id: restano solo le ultime quattro cifre, e un id che ne ha
+ * quattro o meno viene coperto per intero (prima tornava in chiaro).
+ */
+function maskClientId(clientId: string): string {
+  if (clientId.length <= 4) return "*".repeat(clientId.length);
+  return `${"*".repeat(clientId.length - 4)}${clientId.slice(-4)}`;
+}
+
 /** Context Hono ridotto a ciò che serve: il wrapper resta indipendente dai tipi del router. */
 interface FilterContext {
   req: { url: string };
@@ -100,15 +123,24 @@ function withFilters(handler: (filters: RecordFilters, c: FilterContext) => Resp
   };
 }
 
-export function createApi({ store, settings, sync }: Dependencies): Hono {
+export function createApi({ store, settings, sync, logger }: Dependencies): Hono {
   const app = new Hono();
+
+  // Un handler che fallisce (per esempio il database che non risponde) è un
+  // guasto interno come gli altri: stessa risposta JSON e stessa riga di log.
+  app.onError((error, c) => {
+    logInternalError(error, logger);
+    return c.json({ detail: "internal error" }, 500);
+  });
 
   const credentialStatus = async (): Promise<CredentialStatus> => {
     const current = settings.load();
     const clientId = current.clientId;
     return {
       configured: await settings.hasCredentials(),
-      client_id_suffix: clientId ? clientId.slice(-4).padStart(clientId.length, "*") : null,
+      // Un id di 4 caratteri (o meno) non ha "ultime quattro cifre" da
+      // mostrare: la maschera copre tutto l'id invece di restituirlo intero.
+      client_id_suffix: clientId ? maskClientId(clientId) : null,
     };
   };
 
@@ -169,14 +201,16 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
         422,
       );
     }
-    const jobId = sync.start({ years, datasets: body.datasets });
-    const status = sync.status(jobId);
+    // Il piano si costruisce **prima** di accodare il job: un rifiuto non deve
+    // lasciare nella mappa un job che non è mai stato eseguito.
+    const plan = buildPlan({ years, datasets: body.datasets });
     // Un piano che non contiene nemmeno un passo (tutti gli anni sotto la soglia
     // del dataset scelto) non è un job: meglio dirlo subito che restituire un
     // "completed" che non ha scaricato niente.
-    if (!status || status.total_steps === 0) {
+    if (plan.steps.length === 0) {
       return c.json({ detail: "no step to run for the requested years and datasets" }, 422);
     }
+    const jobId = sync.start(plan);
     return c.json({ job_id: jobId, status: "queued" });
   });
 
@@ -218,18 +252,20 @@ export function createApi({ store, settings, sync }: Dependencies): Hono {
       throw error;
     }
     // `limit=abc` faceva arrivare un NaN fino a SQLite: 500 invece di una
-    // risposta sensata. Qui si valida, si lima e si risponde sempre qualcosa.
-    const numeric = (key: string, fallback: number, min: number, max: number): number | null => {
+    // risposta sensata. Qui si valida e si risponde sempre qualcosa. `limit=0`
+    // e `offset=-1` erano limati in silenzio (una riga, zero): l'utente non
+    // poteva distinguere un filtro rispettato da uno aggiustato a mano.
+    const integer = (key: string, fallback: number, min: number, max: number): number | null => {
       const raw = query.get(key);
       if (raw === null || raw === "") return fallback;
-      const value = Number(raw);
-      if (!Number.isFinite(value)) return null;
-      return Math.min(max, Math.max(min, Math.trunc(value)));
+      const value = Math.trunc(Number(raw));
+      if (!Number.isFinite(value) || value < min) return null;
+      return Math.min(max, value);
     };
-    const limit = numeric("limit", DEFAULT_RECORD_LIMIT, 1, 100_000);
-    const offset = numeric("offset", 0, 0, Number.MAX_SAFE_INTEGER);
+    const limit = integer("limit", DEFAULT_RECORD_LIMIT, 1, 100_000);
+    const offset = integer("offset", 0, 0, Number.MAX_SAFE_INTEGER);
     if (limit === null || offset === null) {
-      return c.json({ detail: "limit and offset must be numbers" }, 400);
+      return c.json({ detail: "limit must be a positive integer and offset a non-negative integer" }, 400);
     }
     // Ordinamento esplicito: con un limite, l'ordine deciso dal database
     // significava che una selezione grande mostrava sempre le righe più vecchie.

@@ -84,18 +84,31 @@ export function SyncPage() {
   const meta = useMetadata();
   const availability = useAvailability();
 
-  // Il range di default è quello che Terna può servire davvero: dal primo anno
-  // pubblicato (2000) all'anno corrente. Gli stessi limiti arrivano dal server,
-  // così UI e API non possono divergere; qui c'è solo un valore di riserva.
+  // The default range is what Terna can actually serve: from the first
+  // published year (2000) to the last year present in the local cache. The
+  // server publishes the same limits, so UI and API cannot drift apart; the
+  // current year is only a fallback while the availability cache is empty.
   const firstYear = meta.data?.first_year ?? FALLBACK_FIRST_YEAR;
   const currentYear = meta.data?.current_year ?? new Date().getFullYear();
   const [yearFrom, setYearFrom] = useState<string>("");
   const [yearTo, setYearTo] = useState<string>("");
+  // Once a field is edited the defaults must not overwrite it; before that the
+  // effect re-seeds both ends as soon as the availability cache answers.
+  const yearsEdited = useRef(false);
 
   useEffect(() => {
-    const years = availability.data?.datasets.renewable_source_capacity?.year_min;
-    setYearFrom((current) => current || String(years ?? firstYear));
-    setYearTo((current) => current || String(currentYear));
+    const datasets = Object.values(availability.data?.datasets ?? {});
+    const firstStored = availability.data?.datasets.renewable_source_capacity?.year_min ?? null;
+    // The latest year Terna has published for any dataset: proposing 2025 or
+    // 2026 would only queue steps with nothing to download.
+    const lastPublished = datasets.reduce<number | null>(
+      (max, dataset) =>
+        dataset?.year_max != null && (max === null || dataset.year_max > max) ? dataset.year_max : max,
+      null,
+    );
+    if (yearsEdited.current) return;
+    setYearFrom(String(firstStored ?? firstYear));
+    setYearTo(String(lastPublished ?? currentYear));
   }, [availability.data, firstYear, currentYear]);
 
   const [job, setJob] = useState<SyncJobStatus | null>(null);
@@ -148,6 +161,7 @@ export function SyncPage() {
     from = Math.max(firstYear, Math.min(currentYear, from));
     to = Math.max(firstYear, Math.min(currentYear, to));
     const [safeFrom, safeTo] = from <= to ? [from, to] : [to, from];
+    yearsEdited.current = true;
     setYearFrom(String(safeFrom));
     setYearTo(String(safeTo));
     const years = Array.from({ length: safeTo - safeFrom + 1 }, (_, i) => safeFrom + i);
@@ -240,14 +254,20 @@ export function SyncPage() {
                   label="From"
                   type="number"
                   value={yearFrom}
-                  onChange={(e) => setYearFrom(e.target.value)}
+                  onChange={(e) => {
+                    yearsEdited.current = true;
+                    setYearFrom(e.target.value);
+                  }}
                   className="h-9 max-w-[140px]"
                 />
                 <Input
                   label="To"
                   type="number"
                   value={yearTo}
-                  onChange={(e) => setYearTo(e.target.value)}
+                  onChange={(e) => {
+                    yearsEdited.current = true;
+                    setYearTo(e.target.value);
+                  }}
                   className="h-9 max-w-[140px]"
                 />
                 <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={starting} disabled={!!running || polling}>
@@ -271,13 +291,13 @@ export function SyncPage() {
               description="Per dataset and year, from your local database."
             >
               {availability.isLoading ? (
-                <p className="text-sm text-ink-400">Loading…</p>
+                <p className="text-sm text-ink-500 dark:text-ink-400">Loading…</p>
               ) : availability.isError ? (
-                <p className="text-sm text-ink-400">
+                <p className="text-sm text-ink-500 dark:text-ink-400">
                   Could not reach the local data service. Start a download to populate the database.
                 </p>
               ) : !availability.data || availability.data.total_rows === 0 ? (
-                <p className="text-sm text-ink-400">
+                <p className="text-sm text-ink-500 dark:text-ink-400">
                   Nothing stored yet. Press “Download everything” to fetch the data from Terna.
                 </p>
               ) : (
@@ -336,7 +356,7 @@ export function SyncPage() {
               {!job ? (
                 <div className="surface grid h-48 place-items-center text-center">
                   <div className="flex max-w-xs flex-col items-center gap-3">
-                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-ink-100 text-ink-400 dark:bg-white/[0.05]">
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-ink-100 text-ink-600 dark:bg-white/[0.05] dark:text-ink-400">
                       <Gauge className="h-5 w-5" />
                     </span>
                     <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
@@ -396,11 +416,14 @@ export function SyncPage() {
                       </span>
                     </p>
                   )}
-                  {job.status === "completed" && (job.failed_steps ?? 0) === 0 && (job.empty_steps ?? 0) === 0 && (
-                    <p className="flex items-center gap-2 rounded-xl border border-brand-500/20 bg-brand-500/[0.07] p-3.5 text-sm text-brand-700 dark:text-brand-300">
-                      <CircleCheck className="h-4 w-4 shrink-0" /> All done — every chart and table now includes the new data.
-                    </p>
-                  )}
+                  {job.status === "completed" &&
+                    (job.failed_steps ?? 0) === 0 &&
+                    (job.empty_steps ?? 0) === 0 &&
+                    (job.skipped_steps ?? 0) === 0 && (
+                      <p className="flex items-center gap-2 rounded-xl border border-brand-500/20 bg-brand-500/[0.07] p-3.5 text-sm text-brand-700 dark:text-brand-300">
+                        <CircleCheck className="h-4 w-4 shrink-0" /> All done — every chart and table now includes the new data.
+                      </p>
+                    )}
                 </div>
               )}
             </section>

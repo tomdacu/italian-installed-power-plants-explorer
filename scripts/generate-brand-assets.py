@@ -5,7 +5,7 @@ The master is ``app-icon.svg`` (vector, hand-authored) rendered to
 browser and screenshotting it at exactly 1024x1024. This script only resizes and
 composes that master; it never redraws the mark. The hero/social images use the abstract
 background plate in ``docs/assets/hero-background.png`` and the real capture in
-``docs/screenshot-dashboard.png`` (1440x900 viewport, deviceScaleFactor 1.25,
+``docs/screenshot-dashboard.png`` (1500x1000 viewport, deviceScaleFactor 1.25,
 themes dark and light — capture them from the running app, do not synthesise).
 
 Run from the repository root with the machine's global Python + Pillow:

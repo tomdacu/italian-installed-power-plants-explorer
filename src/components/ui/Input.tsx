@@ -21,7 +21,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative">
           {leading && (
-            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-ink-400">
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-ink-500 dark:text-ink-400">
               {leading}
             </span>
           )}
@@ -32,7 +32,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {trailing && (
-            <span className="absolute inset-y-0 right-2.5 flex items-center text-ink-400">{trailing}</span>
+            <span className="absolute inset-y-0 right-2.5 flex items-center text-ink-500 dark:text-ink-400">{trailing}</span>
           )}
         </div>
         {hint && <p className="text-xs text-ink-500 dark:text-ink-400">{hint}</p>}

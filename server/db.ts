@@ -80,6 +80,7 @@ export const RECORD_SORT_FIELDS = [
   "province",
   "source",
   "capacity_type",
+  "type",
   "efficient_power_mw",
   "installed_capacity_gw",
 ] as const;
@@ -119,6 +120,10 @@ export class CapacityStore {
     mkdirSync(dirname(databasePath), { recursive: true });
     this.db = new Database(databasePath);
     this.db.exec("PRAGMA journal_mode = WAL");
+    // Two processes on the same folder (a second instance, or a `bun test` run
+    // next to the app) must wait for the write lock instead of failing a step
+    // straight away with SQLITE_BUSY.
+    this.db.exec("PRAGMA busy_timeout = 5000");
     this.createSchema();
   }
 
@@ -543,8 +548,19 @@ export class CapacityStore {
       "fetched_at",
     ];
     const lines = [fields.join(",")];
-    for (const row of this.records(filters, 100_000)) {
-      lines.push(fields.map((field) => csvField(row[field])).join(","));
+    // The export promises "every row matching the filters": a single 100 000-row
+    // page silently cut anything larger. Page over the counted total instead, so
+    // the only limit left is the size of the selection.
+    const total = this.countRecords(filters);
+    const pageSize = 50_000;
+    for (let offset = 0; offset < total; offset += pageSize) {
+      // `records` breaks ties on every column, so consecutive pages cannot
+      // repeat or skip a row.
+      const page = this.records(filters, pageSize, offset);
+      if (page.length === 0) break;
+      for (const row of page) {
+        lines.push(fields.map((field) => csvField(row[field])).join(","));
+      }
     }
     // UTF-8 BOM: without it Excel on Windows reads the accented place names
     // ("Forlì-Cesena", "Vallée d'Aoste") as mojibake.
@@ -612,6 +628,10 @@ export class CapacityStore {
       }
     });
     run(stale);
+    // A repair renames rows: the option lists (province, region, type…) built
+    // before it are stale, and a repair at runtime must not answer with the
+    // old names.
+    this.optionsCache = null;
     return repaired;
   }
 

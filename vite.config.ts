@@ -19,10 +19,16 @@ export default defineConfig({
     // In sviluppo il server locale (`bun run serve`) espone API e dati: il dev
     // server gli gira davanti, così il frontend usa percorsi relativi in ogni
     // modalità e non serve nessuna variabile d'ambiente per la base URL.
+    //
+    // `changeOrigin` rewrites the `Host` header to the target, so the local
+    // server's host guard sees its own address instead of `localhost:1420`.
+    // Mutating requests still carry `Origin: http://localhost:1420` from the
+    // browser: run the API with `ICE_DEV_ORIGIN=http://localhost:1420` to have
+    // that single loopback origin accepted (see `server/http.ts`).
     proxy: Object.fromEntries(
       ["/health", "/records", "/analytics", "/metadata", "/settings", "/sync", "/export"].map((path) => [
         path,
-        { target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:8799", changeOrigin: false },
+        { target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:8799", changeOrigin: true },
       ]),
     ),
   },

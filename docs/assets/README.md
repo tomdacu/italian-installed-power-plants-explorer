@@ -10,7 +10,7 @@ evergreen gradient plate, legible down to 16 px.
 | In-app mark | [`BrandMark.tsx`](../../src/components/ui/BrandMark.tsx) | inline SVG with the same geometry |
 | Favicon | [`public/favicon.svg`](../../public/favicon.svg) | same drawing, browser tab |
 | BrandMark PNG | [`public/brandmark.png`](../../public/brandmark.png) | raster mark for third-party surfaces |
-| Repository banner | `readme-banner.png` | shown at the top of the README; designed outside the script (hand-made raster, kept as delivered) |
+| Repository banner | [`docs/readme-banner.png`](../readme-banner.png) | shown at the top of the README; designed outside the script (hand-made raster, kept as delivered) |
 | GitHub preview | `github-social-preview.png` | upload in GitHub repository settings |
 | Website hero | `hero-site.png` | real dashboard screenshot + abstract plate |
 | Hero background plate | `hero-background.png` | background source for the hero composition |
@@ -28,9 +28,9 @@ python scripts/generate-brand-assets.py
 ```
 
 The dashboard screenshots (`docs/screenshot-dashboard.png` and
-`docs/screenshot-sync.png`) are **captured from the running app** — 1440 × 900
-viewport, `deviceScaleFactor` 1.25 — never synthesised: the mark in the sidebar
-has to be the real one.
+`docs/screenshot-sync.png`) are **captured from the running app** — 1500 × 1000
+viewport, `deviceScaleFactor` 1.25 (1875 × 1250 pixels) — never synthesised: the
+mark in the sidebar has to be the real one.
 
 The image-generation concepts that led to the final mark, and the legibility
 comparisons behind it, are kept outside the repository in `notes/`.
