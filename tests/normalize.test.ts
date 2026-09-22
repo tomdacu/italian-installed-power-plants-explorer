@@ -15,6 +15,9 @@ describe("parseDecimal", () => {
 
   test("migliaia con entrambi i separatori", () => {
     expect(parseDecimal("1.234,50")).toBe(1234.5);
+    expect(parseDecimal("1.234.567,89")).toBe(1234567.89);
+    expect(parseDecimal("1,234,567.89")).toBe(1234567.89);
+    expect(parseDecimal("1,234,567")).toBe(1234567);
   });
 
   test("punto singolo = decimale (payload /installed-capacity)", () => {

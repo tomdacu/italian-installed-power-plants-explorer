@@ -117,7 +117,7 @@ export class CapacityStore {
 
   constructor(databasePath: string) {
     this.databasePath = databasePath;
-    mkdirSync(dirname(databasePath), { recursive: true });
+    if (databasePath !== ":memory:") mkdirSync(dirname(databasePath), { recursive: true });
     this.db = new Database(databasePath);
     this.db.exec("PRAGMA journal_mode = WAL");
     // Two processes on the same folder (a second instance, or a `bun test` run
@@ -155,8 +155,7 @@ export class CapacityStore {
   private optionsCache: Record<string, unknown[]> | null = null;
 
   /** Inserisce o aggiorna per `record_key`: risincronizzare non duplica righe. */
-  upsertRecords(rows: CapacityRow[]): number {
-    if (rows.length === 0) return 0;
+  private writeRecords(rows: CapacityRow[]): void {
     const statement = this.db.prepare(`
       INSERT INTO capacity_records (
         record_key, dataset, year, capacity_type, region, province, source,
@@ -172,27 +171,51 @@ export class CapacityStore {
         installed_capacity_gw = COALESCE(excluded.installed_capacity_gw, capacity_records.installed_capacity_gw),
         fetched_at = excluded.fetched_at
     `);
-    const write = this.db.transaction((batch: CapacityRow[]) => {
-      for (const row of batch) {
-        // bun:sqlite vuole le chiavi dei parametri nominati con il prefisso `$`.
-        statement.run({
-          $record_key: recordKey(row),
-          $dataset: row.dataset,
-          $year: row.year,
-          $capacity_type: row.capacity_type,
-          $region: row.region,
-          $province: row.province,
-          $source: row.source,
-          $category: row.category,
-          $subcategory: row.subcategory,
-          $type: row.type,
-          $efficient_power_mw: row.efficient_power_mw,
-          $installed_capacity_gw: row.installed_capacity_gw,
-          $fetched_at: row.fetched_at,
-        } as Bindings);
+    for (const row of rows) {
+      // bun:sqlite vuole le chiavi dei parametri nominati con il prefisso `$`.
+      statement.run({
+        $record_key: recordKey(row),
+        $dataset: row.dataset,
+        $year: row.year,
+        $capacity_type: row.capacity_type,
+        $region: row.region,
+        $province: row.province,
+        $source: row.source,
+        $category: row.category,
+        $subcategory: row.subcategory,
+        $type: row.type,
+        $efficient_power_mw: row.efficient_power_mw,
+        $installed_capacity_gw: row.installed_capacity_gw,
+        $fetched_at: row.fetched_at,
+      } as Bindings);
+    }
+  }
+
+  upsertRecords(rows: CapacityRow[]): number {
+    if (rows.length === 0) return 0;
+    this.db.transaction(() => this.writeRecords(rows))();
+    this.optionsCache = null;
+    return rows.length;
+  }
+
+  /** Una risposta completa sostituisce le chiavi del suo dataset/anno. Un
+   * payload vuoto non prova che Terna abbia ritirato un anno pubblicato. */
+  replaceSnapshot(dataset: DatasetName, year: number, rows: CapacityRow[]): number {
+    if (rows.length === 0) return 0;
+    if (rows.some((row) => row.dataset !== dataset || row.year !== year)) {
+      throw new Error(`Invalid ${dataset} snapshot for ${year}`);
+    }
+    const keys = new Set(rows.map(recordKey));
+    this.db.transaction(() => {
+      this.writeRecords(rows);
+      const existing = this.db
+        .prepare("SELECT record_key FROM capacity_records WHERE dataset = ? AND year = ?")
+        .all(dataset, year) as { record_key: string }[];
+      const remove = this.db.prepare("DELETE FROM capacity_records WHERE record_key = ?");
+      for (const row of existing) {
+        if (!keys.has(row.record_key)) remove.run(row.record_key);
       }
-    });
-    write(rows);
+    })();
     this.optionsCache = null;
     return rows.length;
   }
@@ -466,7 +489,9 @@ export class CapacityStore {
       const latest = this.stockTotals(filters, applied, latestYear);
       latestMw = latest.mw;
       latestGw = latest.gw;
-      previousYear = this.previousYear(filters, latestYear);
+      previousYear = this.previousYear(scoped, latestYear);
+      // A year-over-year figure requires adjacent years in the same index.
+      if (previousYear !== latestYear - 1) previousYear = null;
       if (previousYear !== null) {
         const previous = this.stockTotals(filters, applied, previousYear);
         previousMw = previous.mw;

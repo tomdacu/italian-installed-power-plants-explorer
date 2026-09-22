@@ -107,15 +107,19 @@ function maskClientId(clientId: string): string {
 /** Context Hono ridotto a ciò che serve: il wrapper resta indipendente dai tipi del router. */
 interface FilterContext {
   req: { url: string };
-  json: (body: unknown, status?: number) => Response;
+  json: (body: unknown, status?: number, headers?: Record<string, string>) => Response;
 }
 
 /** Avvolge un handler: i filtri non validi diventano 400, non 500. */
-function withFilters(handler: (filters: RecordFilters, c: FilterContext) => Response | Promise<Response>) {
+function withFilters(handler: (
+  filters: RecordFilters,
+  c: FilterContext,
+  query: URLSearchParams,
+) => Response | Promise<Response>) {
   return async (c: FilterContext) => {
     const query = new URL(c.req.url).searchParams;
     try {
-      return await handler(filtersFromQuery(query), c);
+      return await handler(filtersFromQuery(query), c, query);
     } catch (error) {
       if (error instanceof FilterError) return c.json({ detail: error.message }, 400);
       throw error;
@@ -214,6 +218,12 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     return c.json({ job_id: jobId, status: "queued" });
   });
 
+  app.get("/sync/jobs/latest", (c) => {
+    const status = sync.latestStatus();
+    if (!status) return c.json({ detail: "Sync job not found" }, 404);
+    return c.json(status);
+  });
+
   app.get("/sync/jobs/:jobId", (c) => {
     const status = sync.status(c.req.param("jobId"));
     if (!status) return c.json({ detail: "Sync job not found" }, 404);
@@ -242,15 +252,7 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     withFilters((filters, c) => c.json({ years: store.dataQuality(filters) })),
   );
 
-  app.get("/records", async (c) => {
-    const query = new URL(c.req.url).searchParams;
-    let filters;
-    try {
-      filters = filtersFromQuery(query);
-    } catch (error) {
-      if (error instanceof FilterError) return c.json({ detail: error.message }, 400);
-      throw error;
-    }
+  app.get("/records", withFilters((filters, c, query) => {
     // `limit=abc` faceva arrivare un NaN fino a SQLite: 500 invece di una
     // risposta sensata. Qui si valida e si risponde sempre qualcosa. `limit=0`
     // e `offset=-1` erano limati in silenzio (una riga, zero): l'utente non
@@ -258,8 +260,8 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     const integer = (key: string, fallback: number, min: number, max: number): number | null => {
       const raw = query.get(key);
       if (raw === null || raw === "") return fallback;
-      const value = Math.trunc(Number(raw));
-      if (!Number.isFinite(value) || value < min) return null;
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value < min) return null;
       return Math.min(max, value);
     };
     const limit = integer("limit", DEFAULT_RECORD_LIMIT, 1, 100_000);
@@ -281,42 +283,32 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
       "x-total-count": String(store.countRecords(filters)),
       "access-control-expose-headers": "x-total-count",
     });
-  });
+  }));
 
   app.get(
     "/analytics/summary",
     withFilters((filters, c) => c.json(store.summary(filters))),
   );
 
-  app.get("/analytics/timeseries", async (c) => {
-    const url = new URL(c.req.url);
-    const groupBy = url.searchParams.get("group_by") ?? "year";
-    let filters;
+  app.get("/analytics/timeseries", withFilters((filters, c, query) => {
+    const groupBy = query.get("group_by") ?? "year";
     try {
       parseGroupBy(groupBy);
-      filters = filtersFromQuery(url.searchParams);
     } catch (error) {
-      return c.json({ detail: (error as Error).message }, 400);
+      throw new FilterError((error as Error).message);
     }
-    const latestOnly = ["true", "1"].includes((url.searchParams.get("latest_only") ?? "").toLowerCase());
+    const latestOnly = ["true", "1"].includes((query.get("latest_only") ?? "").toLowerCase());
     return c.json(store.aggregate(filters, groupBy, latestOnly));
-  });
+  }));
 
-  app.get("/export/csv", async (c) => {
-    const query = new URL(c.req.url).searchParams;
-    let filters;
-    try {
-      filters = filtersFromQuery(query);
-    } catch (error) {
-      return c.json({ detail: (error as Error).message }, 400);
-    }
+  app.get("/export/csv", withFilters((filters) => {
     return new Response(store.toCsv(filters), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": 'attachment; filename="italian-renewable-capacity-records.csv"',
       },
     });
-  });
+  }));
 
   return app;
 }

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw,
   XCircle,
@@ -19,15 +18,14 @@ import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { api, DATASET_LABELS } from "@/api/client";
+import { DATASET_LABELS } from "@/api/client";
 import { useAvailability, useCredentialStatus, useMetadata } from "@/hooks/useMetadata";
+import { useSyncJob } from "@/hooks/useSyncJob";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/lib/utils";
-import type { DatasetName, SyncJobStatus, SyncStatus } from "@/types";
+import type { DatasetName, SyncStatus } from "@/types";
 
 const FALLBACK_FIRST_YEAR = 2000;
-
-const MAX_POLL_ERRORS = 5;
 
 const STATUS_VARIANT: Record<SyncStatus, "neutral" | "brand" | "success" | "rose"> = {
   queued: "neutral",
@@ -78,11 +76,11 @@ function FieldSection({
 }
 
 export function SyncPage() {
-  const qc = useQueryClient();
   const toast = useToast();
   const creds = useCredentialStatus();
   const meta = useMetadata();
   const availability = useAvailability();
+  const sync = useSyncJob();
 
   // The default range is what Terna can actually serve: from the first
   // published year (2000) to the last year present in the local cache. The
@@ -111,41 +109,8 @@ export function SyncPage() {
     setYearTo(String(lastPublished ?? currentYear));
   }, [availability.data, firstYear, currentYear]);
 
-  const [job, setJob] = useState<SyncJobStatus | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [polling, setPolling] = useState(false);
-
-  // Polling bookkeeping — the timer must not survive unmounts, repeated
-  // errors must stop the loop, and a new sync must invalidate the old one.
-  const pollTimer = useRef<number | null>(null);
-  const pollErrors = useRef(0);
-  const pollJobId = useRef<string | null>(null);
-  const aliveRef = useRef(true);
-
-  useEffect(() => {
-    // Re-arm on every mount: React StrictMode mounts, unmounts and remounts
-    // the component in development, and a ref never reset here would keep the
-    // poll loop permanently disabled.
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-      if (pollTimer.current !== null) {
-        window.clearTimeout(pollTimer.current);
-        pollTimer.current = null;
-      }
-    };
-  }, []);
-
-  const invalidateDataQueries = () => {
-    qc.invalidateQueries({ queryKey: ["metadata"] });
-    qc.invalidateQueries({ queryKey: ["availability"] });
-    qc.invalidateQueries({ queryKey: ["summary"] });
-    qc.invalidateQueries({ queryKey: ["records"] });
-    qc.invalidateQueries({ queryKey: ["timeseries"] });
-    qc.invalidateQueries({ queryKey: ["data-quality"] });
-  };
-
   const startSync = async () => {
+    if (sync.loadingExistingJob || sync.starting || sync.running) return;
     if (!creds.data?.configured) {
       toast.error("Configure credentials first", "Add your Terna keys in the Credentials page.");
       return;
@@ -166,68 +131,11 @@ export function SyncPage() {
     setYearTo(String(safeTo));
     const years = Array.from({ length: safeTo - safeFrom + 1 }, (_, i) => safeFrom + i);
 
-    setStarting(true);
-    setJob(null);
-    pollErrors.current = 0;
-    try {
-      // Un passo per dataset e anno: le fonti e gli indici arrivano tutti
-      // insieme nella stessa risposta, quindi non c'è nulla da scegliere qui.
-      const res = await api.startSync({ years, datasets: ALL_DATASETS });
-      toast.info("Sync started", `Job ${res.job_id.slice(0, 8)} queued`);
-      // Cancel any previous poll loop, then track the new job id so stale
-      // responses can never drive the UI.
-      pollJobId.current = res.job_id;
-      if (pollTimer.current !== null) {
-        window.clearTimeout(pollTimer.current);
-        pollTimer.current = null;
-      }
-      poll(res.job_id);
-    } catch (e) {
-      toast.error("Sync failed to start", (e as Error).message);
-    } finally {
-      setStarting(false);
-    }
+    await sync.start({ years, datasets: ALL_DATASETS });
   };
 
-  const poll = (jobId: string) => {
-    setPolling(true);
-    const tick = async () => {
-      if (!aliveRef.current || pollJobId.current !== jobId) return;
-      try {
-        const next = await api.syncStatus(jobId);
-        if (!aliveRef.current || pollJobId.current !== jobId) return;
-        pollErrors.current = 0;
-        setJob(next);
-        if (next.status === "running" || next.status === "queued") {
-          pollTimer.current = window.setTimeout(tick, 1500);
-        } else {
-          setPolling(false);
-          if (next.status === "completed") {
-            toast.success("Sync completed", "The dashboard is up to date.");
-            invalidateDataQueries();
-          } else {
-            toast.error("Sync failed", next.error ?? next.message);
-          }
-        }
-      } catch {
-        if (!aliveRef.current || pollJobId.current !== jobId) return;
-        pollErrors.current += 1;
-        if (pollErrors.current <= MAX_POLL_ERRORS) {
-          pollTimer.current = window.setTimeout(tick, 2500);
-        } else {
-          setPolling(false);
-          toast.error(
-            "Connection lost",
-            "Could not reach the sync service. The job may still be running — try starting a new sync.",
-          );
-        }
-      }
-    };
-    void tick();
-  };
-
-  const running = job && (job.status === "running" || job.status === "queued");
-  const startingUp = starting && !job;
+  const job = sync.job;
+  const startingUp = sync.starting && !job;
   const pct = job ? Math.round((job.completed_steps / Math.max(1, job.total_steps)) * 100) : 0;
 
   return (
@@ -236,8 +144,8 @@ export function SyncPage() {
         title="Data sync"
         subtitle="Download all Terna capacity data, then explore it on the dashboard"
         actions={
-          <Button variant="primary" className="h-9" onClick={startSync} loading={starting} disabled={!!running || polling}>
-            <RefreshCw className={cn("h-4 w-4", polling && "animate-spin")} /> Download everything
+          <Button variant="primary" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.loadingExistingJob || sync.running}>
+            <RefreshCw className={cn("h-4 w-4", sync.polling && "animate-spin")} /> Download everything
           </Button>
         }
       />
@@ -270,7 +178,7 @@ export function SyncPage() {
                   }}
                   className="h-9 max-w-[140px]"
                 />
-                <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={starting} disabled={!!running || polling}>
+                <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.loadingExistingJob || sync.running}>
                   <DownloadCloud className="h-3.5 w-3.5" /> Download
                 </Button>
               </div>
@@ -347,9 +255,14 @@ export function SyncPage() {
                   </div>
                 </div>
                 {job && (
-                  <Badge variant={STATUS_VARIANT[job.status]}>
-                    {STATUS_ICON[job.status]} {job.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {sync.connectionLost && (
+                      <Button variant="outline" size="sm" onClick={sync.reconnect}>Reconnect</Button>
+                    )}
+                    <Badge variant={STATUS_VARIANT[job.status]}>
+                      {STATUS_ICON[job.status]} {job.status}
+                    </Badge>
+                  </div>
                 )}
               </div>
 

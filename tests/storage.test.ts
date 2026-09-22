@@ -84,6 +84,12 @@ describe("CapacityStore", () => {
     store = freshStore();
   });
 
+  test("supporta anche un database SQLite in memoria", () => {
+    const memory = new CapacityStore(":memory:");
+    expect(memory.countRecords({})).toBe(0);
+    memory.close();
+  });
+
   test("upsert idempotente e aggregazione per regione", () => {
     store.upsertRecords([
       row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 10, province: "Milano" }),
@@ -148,6 +154,48 @@ describe("CapacityStore", () => {
     const netta = store.summary({ capacity_type: "Netta" } satisfies RecordFilters);
     expect(netta.capacity_type_applied).toBe("Netta");
     expect(netta.latest_total_efficient_power_mw).toBe(40);
+  });
+
+  test("il riepilogo non presenta un salto pluriennale come variazione annua", () => {
+    store.upsertRecords([
+      row({ year: 2022, source: "Eolico", efficient_power_mw: 100 }),
+      row({ year: 2024, source: "Eolico", efficient_power_mw: 130 }),
+    ]);
+    const summary = store.summary({ dataset: "renewable_source_capacity" });
+    expect(summary.latest_year).toBe(2024);
+    expect(summary.previous_year).toBeNull();
+    expect(summary.yoy_new_mw).toBeNull();
+  });
+
+  test("l'anno precedente deve avere lo stesso indice di capacità", () => {
+    store.upsertRecords([
+      row({ year: 2023, source: "Eolico", capacity_type: "Netta", efficient_power_mw: 90 }),
+      row({ year: 2024, source: "Eolico", capacity_type: "Lorda", efficient_power_mw: 120 }),
+    ]);
+    const summary = store.summary({ dataset: "renewable_source_capacity" });
+    expect(summary.previous_year).toBeNull();
+    expect(summary.yoy_new_mw).toBeNull();
+  });
+
+  test("una risposta completa elimina le righe ritirate senza toccare altri anni", () => {
+    const keep = row({ year: 2024, source: "Eolico", efficient_power_mw: 10 });
+    const withdrawn = row({ year: 2024, source: "Fotovoltaico", efficient_power_mw: 20 });
+    const otherYear = row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 15 });
+    store.upsertRecords([keep, withdrawn, otherYear]);
+    store.replaceSnapshot("renewable_source_capacity", 2024, [
+      { ...keep, efficient_power_mw: 12 },
+    ]);
+    expect(store.records({ year_from: 2024, year_to: 2024 }).map((r) => r.source)).toEqual(["Eolico"]);
+    expect(store.records({ year_from: 2023, year_to: 2023 })).toHaveLength(1);
+    expect(store.summary({ dataset: "renewable_source_capacity" }).latest_total_efficient_power_mw).toBe(12);
+  });
+
+  test("una risposta vuota o fuori anno non cancella il dato in cache", () => {
+    const existing = row({ year: 2024, source: "Eolico", efficient_power_mw: 10 });
+    store.upsertRecords([existing]);
+    expect(store.replaceSnapshot("renewable_source_capacity", 2024, [])).toBe(0);
+    expect(() => store.replaceSnapshot("renewable_source_capacity", 2024, [{ ...existing, year: 2023 }])).toThrow();
+    expect(store.countRecords({ dataset: "renewable_source_capacity" })).toBe(1);
   });
 
   test("availability riporta righe per anno", () => {

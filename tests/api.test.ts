@@ -164,6 +164,34 @@ test("le credenziali non configurate danno configured:false", async () => {
 test("un job di sync inesistente risponde 404", async () => {
   const { app } = buildApp();
   expect((await app.request("/sync/jobs/inesistente")).status).toBe(404);
+  expect((await app.request("/sync/jobs/latest")).status).toBe(404);
+});
+
+test("tutte le route filtrate rispondono 400 a un dataset sconosciuto", async () => {
+  const { app } = buildApp();
+  for (const path of [
+    "/records",
+    "/metadata/data-quality",
+    "/analytics/summary",
+    "/analytics/timeseries",
+    "/export/csv",
+  ]) {
+    const response = await app.request(`${path}?dataset=unknown`);
+    expect(response.status).toBe(400);
+  }
+});
+
+test("il job più recente resta recuperabile dopo aver lasciato la pagina", async () => {
+  const { app } = buildApp();
+  const created = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [2024], datasets: ["renewable_source_capacity"] }),
+  });
+  const { job_id } = await created.json() as { job_id: string };
+  const latest = await app.request("/sync/jobs/latest");
+  expect(latest.status).toBe(200);
+  expect(await latest.json()).toMatchObject({ job_id });
 });
 
 test("GET /records ordina per la colonna della tabella e rifiuta i campi ignoti", async () => {
@@ -184,7 +212,7 @@ test("GET /records rifiuta limit e offset fuori intervallo invece di limarli in 
 
   // `limit=0` tornava una riga e `offset=-1` diventava 0: entrambi indistinguibili
   // da un filtro rispettato.
-  for (const query of ["limit=0", "limit=-1", "offset=-1", "limit=abc", "offset=abc"]) {
+  for (const query of ["limit=0", "limit=-1", "offset=-1", "limit=abc", "offset=abc", "limit=1.9", "offset=0.9"]) {
     const response = await app.request(`/records?${query}`);
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ detail: expect.stringContaining("limit") });

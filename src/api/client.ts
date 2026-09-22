@@ -161,6 +161,13 @@ export const api = {
     return request<SyncJobStatus>(`/sync/jobs/${encodeURIComponent(jobId)}`);
   },
 
+  latestSyncStatus(): Promise<SyncJobStatus | null> {
+    return request<SyncJobStatus>("/sync/jobs/latest").catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    });
+  },
+
   metadataOptions(): Promise<MetadataOptions> {
     return request<MetadataOptions>("/metadata/options");
   },

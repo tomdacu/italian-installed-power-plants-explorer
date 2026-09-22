@@ -12,6 +12,7 @@ used the same routes, so anything written against it keeps working.
 | `DELETE /settings/credentials` | remove both |
 | `POST /settings/credentials/test` | OAuth2 round-trip against Terna → `{ok: true}` |
 | `POST /sync/jobs` | start a sync job → `{job_id, status}` |
+| `GET /sync/jobs/latest` | most recent active job, or the last finished job; 404 before any job starts |
 | `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, skipped_steps, message, error}` — `skipped_steps` is always present |
 | `GET /metadata/options` | canonical sources/types per dataset, stored options, `first_year` (2000), `installed_capacity_first_year` (2021) and `current_year` |
 | `GET /metadata/availability` | row counts per dataset and year actually cached |

@@ -20,6 +20,9 @@ merged depends on the endpoint, and the yearbook decides which rule is right:
 
 The upsert also never overwrites a stored value with a `NULL`. Keeping the last
 row instead is what used to lose photovoltaic capacity for 2021–2023.
+When a sync receives a non-empty dataset/year response, it also removes cached
+keys absent from that response. An empty response leaves the old year untouched:
+Terna uses it for years that are not yet published.
 
 | Column | Unit | Notes |
 | --- | --- | --- |
@@ -37,8 +40,9 @@ row instead is what used to lose photovoltaic capacity for 2021–2023.
 - **One capacity index at a time.** `Lorda` (gross) and `Netta` (net) are never
   added together; `summary` defaults to `Lorda` and reports
   `capacity_type_applied`.
-- **Year-on-year additions** are the delta of that stock between the last two
+- **Year-on-year additions** are the delta of that stock between consecutive
   years in the selection — a proxy for new capacity, net of decommissioning.
+  If the year immediately before the latest one is absent, the KPI is empty.
 - **Missing values are `NULL`, upstream zeros are kept as `0`.** Terna answers
   unpublished years and combinations with an empty body; the sync counts those as
   `empty_steps`, never as failures.

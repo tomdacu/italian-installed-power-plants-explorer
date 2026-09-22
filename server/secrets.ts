@@ -86,9 +86,19 @@ function dpapiUnprotect(sealed: Uint8Array): string {
  * portachiavi (`secret-tool`) può mancare — CI, desktop minimali — e in quel
  * caso il chiamante deve poter degradare invece di far fallire l'app.
  */
-async function run(command: string[]): Promise<{ code: number; stdout: string }> {
+async function run(command: string[], input?: string): Promise<{ code: number; stdout: string }> {
   try {
-    const process_ = Bun.spawn(command, { stdout: "pipe", stderr: "ignore" });
+    const process_ = Bun.spawn(command, {
+      stdin: input === undefined ? "ignore" : "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    if (input !== undefined) {
+      const sink = process_.stdin;
+      if (!sink) throw new Error("Could not open secret-tool stdin");
+      await sink.write(input);
+      await sink.end();
+    }
     const stdout = await new Response(process_.stdout).text();
     return { code: await process_.exited, stdout: stdout.trim() };
   } catch {
@@ -135,7 +145,10 @@ export function createSecretStore(filePath: string): SecretStore {
   if (process.platform === "darwin") {
     return {
       async save(clientId, secret) {
-        await run(["security", "add-generic-password", "-a", clientId, "-s", SERVICE, "-w", secret, "-U"]);
+        const { code } = await run([
+          "security", "add-generic-password", "-a", clientId, "-s", SERVICE, "-w", secret, "-U",
+        ]);
+        if (code !== 0) throw new Error("Could not save the secret in the keychain");
       },
       async load(clientId) {
         const { code, stdout } = await run(["security", "find-generic-password", "-a", clientId, "-s", SERVICE, "-w"]);
@@ -172,7 +185,7 @@ export function createSecretStore(filePath: string): SecretStore {
         SERVICE,
         "account",
         clientId,
-      ]);
+      ], secret);
       if (code === 0) return;
       unavailable();
       await Bun.write(fallbackPath, secret, { mode: 0o600 });

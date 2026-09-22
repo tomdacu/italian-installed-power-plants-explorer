@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 
 import { DATA_FIRST_YEAR, INSTALLED_CAPACITY_FIRST_YEAR, clampYears, currentYear } from "../server/constants.ts";
-import { buildPlan } from "../server/sync.ts";
+import { buildPlan, SyncManager } from "../server/sync.ts";
+import type { CapacityStore } from "../server/db.ts";
+import type { TernaClient } from "../server/terna.ts";
 
 test("una richiesta per dataset e anno", () => {
   const { steps, dropped } = buildPlan({
@@ -51,4 +53,20 @@ test("clampYears tiene solo gli anni che Terna può servire", () => {
   expect(years).toEqual([2000, 2024]);
   expect(skipped).toBe(3); // 1899, il duplicato 2024 e il 2100
   expect(clampYears([]).years).toEqual([]);
+});
+
+test("un payload Terna inatteso fallisce il passo invece di apparire vuoto", async () => {
+  let writes = 0;
+  const store = {
+    replaceSnapshot() { writes += 1; return 0; },
+  } as unknown as CapacityStore;
+  const client = {
+    renewableSourceCapacity: async () => ({ error: "unexpected response" }),
+  } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
+  expect(sync.latestStatus()?.job_id).toBe(id);
+  await Bun.sleep(10);
+  expect(sync.status(id)).toMatchObject({ status: "completed", failed_steps: 1, empty_steps: 0 });
+  expect(writes).toBe(0);
 });

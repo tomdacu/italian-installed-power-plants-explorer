@@ -42,9 +42,14 @@ export function parseDecimal(value: unknown): number | null {
 
   if (lastDot >= 0 && lastComma >= 0) {
     decimalSeparator = lastDot > lastComma ? "." : ",";
-    text = text.replace(decimalSeparator === "." ? "," : ".", "");
+    text = text.replaceAll(decimalSeparator === "." ? "," : ".", "");
   } else if (lastComma >= 0) {
-    decimalSeparator = ",";
+    if ((text.match(/,/g)?.length ?? 0) > 1) {
+      decimalSeparator = null;
+      text = text.replaceAll(",", "");
+    } else {
+      decimalSeparator = ",";
+    }
   } else if ((text.match(/\./g)?.length ?? 0) > 1) {
     decimalSeparator = null;
     text = text.replace(/\./g, "");

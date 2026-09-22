@@ -140,6 +140,13 @@ export class SyncManager {
     };
   }
 
+  latestStatus(): SyncJobStatus | null {
+    const ids = [...this.jobs.keys()].reverse();
+    const active = ids.find((id) => this.jobs.get(id)?.status === "running")
+      ?? ids.find((id) => this.jobs.get(id)?.status === "queued");
+    return this.status(active ?? ids[0] ?? "");
+  }
+
   private update(jobId: string, patch: Partial<JobState>): void {
     const state = this.jobs.get(jobId);
     if (state) Object.assign(state, patch);
@@ -168,7 +175,8 @@ export class SyncManager {
     try {
       // Anche la scrittura sta nel try: un errore del database su un passo non
       // deve far cadere l'intero job (gli altri passi restano utili).
-      stored = this.store.upsertRecords(await this.fetchStep(client, step));
+      const rows = await this.fetchStep(client, step);
+      stored = this.store.replaceSnapshot(step.dataset, step.year, rows);
     } catch (error) {
       const state = this.jobs.get(jobId);
       if (state) {
@@ -186,16 +194,46 @@ export class SyncManager {
 
   /** Una richiesta per passo: l'endpoint torna già tutte le fonti e gli indici. */
   private async fetchStep(client: TernaClient, step: SyncStep): Promise<CapacityRow[]> {
+    const normalize = (
+      payload: Record<string, unknown>,
+      key: string,
+      convert: (data: Record<string, unknown>) => CapacityRow[],
+    ): CapacityRow[] => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error(`Unexpected Terna response for ${step.label}`);
+      }
+      if (Object.keys(payload).length === 0) return [];
+      if (!Array.isArray(payload[key])) {
+        throw new Error(`Unexpected Terna response for ${step.label}: missing ${key} array`);
+      }
+      return convert(payload);
+    };
     if (step.dataset === "renewable_source_capacity") {
-      return renewableSourceCapacityRows(await client.renewableSourceCapacity({ year: step.year }));
+      return normalize(
+        await client.renewableSourceCapacity({ year: step.year }),
+        "renewable_sources",
+        renewableSourceCapacityRows,
+      );
     }
     if (step.dataset === "generation_plants") {
-      return generationPlantsRows(await client.generationPlants({ year: step.year }));
+      return normalize(
+        await client.generationPlants({ year: step.year }),
+        "generation_plants",
+        generationPlantsRows,
+      );
     }
     if (step.dataset === "installed_capacity") {
-      return installedCapacityRows(await client.installedCapacity({ year: step.year }));
+      return normalize(
+        await client.installedCapacity({ year: step.year }),
+        "installed_capacity",
+        installedCapacityRows,
+      );
     }
-    return thermoelectricCapacityRows(await client.thermoelectricCapacity({ year: step.year }));
+    return normalize(
+      await client.thermoelectricCapacity({ year: step.year }),
+      "thermoelectric",
+      thermoelectricCapacityRows,
+    );
   }
 
 }
