@@ -1,5 +1,3 @@
-# Italian Renewable Capacity Explorer
-
 ![Italian Renewable Capacity Explorer banner](docs/readme-banner.png)
 
 **Explore Italy's renewable installed capacity — solar, wind, hydro, bioenergy and

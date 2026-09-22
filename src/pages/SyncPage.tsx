@@ -18,11 +18,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { DATASET_LABELS } from "@/api/client";
 import { useAvailability, useCredentialStatus, useMetadata } from "@/hooks/useMetadata";
 import { useSyncJob } from "@/hooks/useSyncJob";
+import { StoredDataOverview } from "@/components/sync/StoredDataOverview";
 import { cn } from "@/lib/utils";
-import { formatNumber } from "@/lib/utils";
 import type { DatasetName, SyncStatus } from "@/types";
 
 const FALLBACK_FIRST_YEAR = 2000;
@@ -209,35 +208,7 @@ export function SyncPage() {
                   Nothing stored yet. Press “Download everything” to fetch the data from Terna.
                 </p>
               ) : (
-                <div className="space-y-3">
-                  {ALL_DATASETS.map((d) => {
-                    const entry = availability.data?.datasets[d];
-                    if (!entry) return null;
-                    return (
-                      <div key={d} className="surface p-3.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-ink-800 dark:text-ink-100">
-                            {DATASET_LABELS[d]}
-                          </p>
-                          <span className="font-mono text-xs text-ink-500 dark:text-ink-400">
-                            {formatNumber(entry.total_rows)} rows
-                          </span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {entry.years.map((y) => (
-                            <span
-                              key={y.year}
-                              title={`${formatNumber(y.rows)} rows`}
-                              className="chip border-brand-500/30 bg-brand-500/10 font-mono text-[11px] text-brand-700 dark:border-brand-400/25 dark:bg-brand-400/10 dark:text-brand-300"
-                            >
-                              {y.year}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <StoredDataOverview availability={availability.data} datasets={ALL_DATASETS} />
               )}
             </FieldSection>
           </div>
