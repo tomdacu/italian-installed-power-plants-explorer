@@ -5,13 +5,11 @@ export function EmptyState({
   icon: Icon,
   title,
   description,
-  action,
   className,
 }: {
   icon: LucideIcon;
   title: string;
   description?: string;
-  action?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -23,7 +21,6 @@ export function EmptyState({
         <p className="font-display text-base font-semibold text-ink-800 dark:text-ink-100">{title}</p>
         {description && <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{description}</p>}
       </div>
-      {action}
     </div>
   );
 }

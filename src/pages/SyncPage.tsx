@@ -27,7 +27,8 @@ import {
 } from "@/hooks/useSyncJob";
 import { StoredDataOverview } from "@/components/sync/StoredDataOverview";
 import { cn } from "@/lib/utils";
-import type { DatasetName, SyncStatus } from "@/types";
+import { ALL_DATASETS } from "@/lib/constants";
+import type { SyncStatus } from "@/types";
 
 const FALLBACK_FIRST_YEAR = 2000;
 
@@ -47,13 +48,6 @@ const STATUS_ICON: Record<SyncStatus, React.ReactNode> = {
   failed: <XCircle className="h-3.5 w-3.5" />,
   cancelled: <XCircle className="h-3.5 w-3.5" />,
 };
-
-const ALL_DATASETS: DatasetName[] = [
-  "renewable_source_capacity",
-  "generation_plants",
-  "installed_capacity",
-  "thermoelectric_capacity",
-];
 
 function FieldSection({
   icon: Icon,

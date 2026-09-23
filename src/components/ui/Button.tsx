@@ -1,8 +1,8 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline" | "subtle";
-type Size = "sm" | "md" | "lg" | "icon";
+type Variant = "primary" | "ghost" | "danger" | "outline" | "subtle";
+type Size = "sm" | "md" | "lg";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -16,8 +16,6 @@ const VARIANTS: Record<Variant, string> = {
   // stops, so the whole button — hover state included — stays above 4,5:1.
   primary:
     "bg-gradient-to-b from-brand-500 to-brand-600 text-ink-950 shadow-sm ring-1 ring-inset ring-white/20 hover:from-brand-400 hover:to-brand-600 hover:shadow-glow focus-visible:ring-brand-500/50 disabled:from-brand-600/70 disabled:to-brand-600/70",
-  secondary:
-    "bg-ink-900 text-white hover:bg-ink-800 focus-visible:ring-ink-500/40 dark:bg-ink-100 dark:text-ink-900 dark:hover:bg-white",
   outline:
     "border border-ink-200 bg-white text-ink-800 shadow-sm hover:border-ink-300 hover:bg-ink-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-ink-100 dark:hover:bg-white/[0.08]",
   ghost:
@@ -32,7 +30,6 @@ const SIZES: Record<Size, string> = {
   sm: "h-8 px-3 text-xs gap-1.5",
   md: "h-10 px-4 text-sm gap-2",
   lg: "h-11 px-5 text-sm gap-2",
-  icon: "h-8 w-8 p-0",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

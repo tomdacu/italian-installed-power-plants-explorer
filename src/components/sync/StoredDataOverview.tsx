@@ -1,14 +1,15 @@
 import { DATASET_LABELS } from "@/api/client";
+import { ALL_DATASETS } from "@/lib/constants";
 import { formatNumber } from "@/lib/utils";
 import type { Availability, DatasetName } from "@/types";
 
 interface Props {
   availability: Availability;
-  datasets: readonly DatasetName[];
+  datasets?: readonly DatasetName[];
 }
 
 /** A compact shared timeline makes gaps and shorter datasets easy to compare. */
-export function StoredDataOverview({ availability, datasets }: Props) {
+export function StoredDataOverview({ availability, datasets = ALL_DATASETS }: Props) {
   const entries = datasets
     .map((name) => ({ name, data: availability.datasets[name] }))
     .filter((entry): entry is { name: DatasetName; data: NonNullable<typeof entry.data> } => Boolean(entry.data));

@@ -37,7 +37,7 @@ export function resolveStaticDir(): string {
   return found ?? candidates[0];
 }
 
-export interface StartOptions {
+interface StartOptions {
   port?: number;
   dataDir?: string;
   staticDir?: string;

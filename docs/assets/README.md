@@ -3,6 +3,22 @@
 The brand mark is hand-authored vector art: three ascending bars on an
 evergreen gradient plate, legible down to 16 px.
 
+## Shipped in the package
+
+These are the assets referenced from the published readme, included in the npm
+package (see the `files` list in `package.json`):
+
+| Asset | Location | Use |
+| --- | --- | --- |
+| Repository banner | [`docs/readme-banner.png`](../readme-banner.png) | shown at the top of the README; designed outside the script (hand-made raster, kept as delivered) |
+| Dashboard screenshot | [`docs/screenshot-dashboard.png`](../screenshot-dashboard.png) | dashboard view, captured from the running app |
+| Sync screenshot | [`docs/screenshot-sync.png`](../screenshot-sync.png) | sync flow, captured from the running app |
+
+## Repository only
+
+Everything else lives in the git repository but is not published with the
+package:
+
 | Asset | Location | Use |
 | --- | --- | --- |
 | Vector master | [`app-icon.svg`](../../app-icon.svg) | source of truth; edit this first |
@@ -10,13 +26,13 @@ evergreen gradient plate, legible down to 16 px.
 | In-app mark | [`BrandMark.tsx`](../../src/components/ui/BrandMark.tsx) | inline SVG with the same geometry |
 | Favicon | [`public/favicon.svg`](../../public/favicon.svg) | same drawing, browser tab |
 | BrandMark PNG | [`public/brandmark.png`](../../public/brandmark.png) | raster mark for third-party surfaces |
-| Repository banner | [`docs/readme-banner.png`](../readme-banner.png) | shown at the top of the README; designed outside the script (hand-made raster, kept as delivered) |
-| GitHub preview | `github-social-preview.png` | upload in GitHub repository settings |
-| Website hero | `hero-site.png` | real dashboard screenshot + abstract plate |
-| Hero background plate | `hero-background.png` | background source for the hero composition |
+| GitHub preview | [`github-social-preview.png`](./github-social-preview.png) | upload in GitHub repository settings |
+| Website hero | [`hero-site.png`](./hero-site.png) | real dashboard screenshot + abstract plate |
+| Hero background plate | [`hero-background.png`](./hero-background.png) | background source for the hero composition |
 | OG image | [`public/og-image.png`](../../public/og-image.png) | `og:image` / social cards |
-| PWA icons | `public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | installed-app icon |
+| PWA icons | [`public/icon-192.png`](../../public/icon-192.png), [`public/icon-512.png`](../../public/icon-512.png), [`public/icon-maskable-512.png`](../../public/icon-maskable-512.png) | installed-app icon |
 | Executable icon | [`assets/icon.ico`](../../assets/icon.ico) | `bun run compile` (local standalone build) |
+| Asset script | [`scripts/generate-brand-assets.py`](../../scripts/generate-brand-assets.py) | regenerates the raster set from the vector master |
 
 ## Regenerating
 

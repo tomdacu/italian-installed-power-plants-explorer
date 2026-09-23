@@ -37,12 +37,6 @@ const EXACT_FIELDS = [
   "type",
 ] as const;
 
-const MW_DATASET_NAMES: readonly DatasetName[] = [
-  "renewable_source_capacity",
-  "generation_plants",
-  "thermoelectric_capacity",
-];
-
 type Bindings = Record<string, string | number | null>;
 
 interface CountRow {
@@ -101,7 +95,7 @@ export function parseGroupBy(raw: string): string[] {
   return seen;
 }
 
-export function recordKey(row: CapacityRow | Record<string, unknown>): string {
+function recordKey(row: CapacityRow | Record<string, unknown>): string {
   return createHash("sha256").update(rowKey(row)).digest("hex");
 }
 
@@ -456,7 +450,6 @@ export class CapacityStore {
   /** Indice di capacità usato per i totali "stock" (uno solo, mai entrambi). */
   private capacityApplied(filters: RecordFilters): string | null {
     if (filters.dataset === "installed_capacity") return null;
-    if (filters.dataset && !MW_DATASET_NAMES.includes(filters.dataset)) return null;
     return filters.capacity_type ?? DEFAULT_CAPACITY_TYPE;
   }
 

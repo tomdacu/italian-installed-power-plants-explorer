@@ -158,7 +158,6 @@ interface Token {
 }
 
 interface RequestOptions {
-  params?: Record<string, string | number | null | undefined>;
   headers?: Record<string, string>;
   form?: Record<string, string>;
 }

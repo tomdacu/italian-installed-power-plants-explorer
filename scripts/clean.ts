@@ -11,16 +11,11 @@
  * posto: la nuova si prepara altrove e si commuta con un `rename`, così una
  * copia interrotta non può mai lasciare la cartella servita a metà.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /** Svuota `target` voce per voce. Lancia se una voce non si cancella. */
 export function emptyDir(target: string): number {
-  if (!existsSync(target)) {
-    mkdirSync(target, { recursive: true });
-    return 0;
-  }
-
   let removed = 0;
   for (const entry of readdirSync(target)) {
     const path = join(target, entry);
@@ -100,10 +95,4 @@ export function commitDir(staging: string, target: string): void {
   } catch {
     /* noop */
   }
-}
-
-if (import.meta.main) {
-  const target = process.argv[2] ?? join(import.meta.dir, "..", "dist");
-  const removed = emptyDir(target);
-  console.log(`${target}: ${removed} entries removed`);
 }

@@ -1,8 +1,6 @@
 # --- Node / frontend ---
 node_modules
 dist
-dist-ssr
-.vite
 *.local
 
 # --- Build outputs ---
@@ -22,10 +20,8 @@ static-old/
 
 
 # --- Release artifacts ---
-# Installers are published as GitHub Releases, not committed.
-release/
+# The compiled executable is built locally, not committed.
 *.exe
-*.msi
 
 # --- Documents / source material that must not be published ---
 *.pptx

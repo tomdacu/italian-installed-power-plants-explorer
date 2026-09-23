@@ -14,19 +14,16 @@
     "README.md",
     "LICENSE",
     "docs/*.md",
-    "docs/assets/README.md",
     "docs/readme-banner.png",
     "docs/screenshot-dashboard.png",
     "docs/screenshot-sync.png"
   ],
   "scripts": {
-    "dev": "vite --port 1420 --strictPort",
+    "dev": "vite",
     "build": "bun run scripts/build.ts",
     "serve": "bun run server/cli.ts",
-    "serve:browser": "bun run server/cli.ts --browser",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.node.json",
-    "preview": "vite preview --port 1420",
     "prepack": "bun run build",
     "compile": "bun run prepack && bun run scripts/copy-static.ts dist-exe && bun build server/cli.ts --compile --outfile dist-exe/ice.exe --windows-hide-console --windows-icon=assets/icon.ico --windows-title=\"Italian Renewable Capacity Explorer\""
   },

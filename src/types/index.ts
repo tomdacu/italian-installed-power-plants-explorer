@@ -12,12 +12,9 @@ import type { DatasetName } from "../../shared/types";
 export type {
   AggregatePoint,
   Availability,
-  AvailabilityDataset,
-  AvailabilityYear,
   CapacityRecord,
   CapacityType,
   CredentialStatus,
-  DataQualityYear,
   DatasetName,
   GroupBy,
   HealthStatus,
@@ -26,7 +23,6 @@ export type {
   Summary,
   SyncJobStatus,
   SyncJobResponse,
-  SyncRequestPayload,
   SyncStatus,
 } from "../../shared/types";
 

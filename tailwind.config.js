@@ -8,15 +8,12 @@ export default {
         brand: {
           50: "#edfcf5",
           100: "#d3f9e7",
-          200: "#a9f0d1",
           300: "#71e2b5",
           400: "#38cc96",
           500: "#14b07f",
           600: "#0a8f66",
           700: "#097153",
           800: "#0a5a43",
-          900: "#0a4a38",
-          950: "#042a20",
         },
         ink: {
           50: "#f5f7f9",
@@ -33,10 +30,6 @@ export default {
         },
         // Deep evergreen tones for the always-dark app rail & hero surfaces.
         forest: {
-          600: "#124a38",
-          700: "#0e3a2c",
-          800: "#0a2c21",
-          900: "#071f18",
           950: "#04130e",
         },
       },
@@ -79,13 +72,6 @@ export default {
           "0%": { opacity: "0", transform: "translateY(14px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
-        shimmer: {
-          "100%": { transform: "translateX(100%)" },
-        },
-        "pulse-soft": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: ".45" },
-        },
         "float-slow": {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-10px)" },
@@ -94,8 +80,6 @@ export default {
       animation: {
         "fade-in": "fade-in 220ms ease-out both",
         "fade-in-slow": "fade-in-slow 480ms cubic-bezier(.21,.65,.36,1) both",
-        shimmer: "shimmer 1.6s infinite",
-        "pulse-soft": "pulse-soft 2s ease-in-out infinite",
         "float-slow": "float-slow 7s ease-in-out infinite",
       },
     },

@@ -39,7 +39,7 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-export interface ServerOptions {
+interface ServerOptions {
   store: CapacityStore;
   settings: SettingsStore;
   sync: SyncManager;

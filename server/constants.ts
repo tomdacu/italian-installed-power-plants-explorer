@@ -6,7 +6,7 @@
  */
 import type { DatasetName } from "../shared/types";
 
-export const RENEWABLE_SOURCES = [
+const RENEWABLE_SOURCES = [
   "Bioenergie",
   "Eolico",
   "Fotovoltaico",
@@ -14,7 +14,7 @@ export const RENEWABLE_SOURCES = [
   "Idrico",
 ] as const;
 
-export const GENERATION_PLANT_SOURCES = [
+const GENERATION_PLANT_SOURCES = [
   "Eolico",
   "Fotovoltaico",
   "Geotermoelettrico",

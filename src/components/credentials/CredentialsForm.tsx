@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useCredentialStatus } from "@/hooks/useMetadata";
 import { api, ApiError } from "@/api/client";
 
-export function CredentialsForm({ compact }: { compact?: boolean }) {
+export function CredentialsForm() {
   const qc = useQueryClient();
   const toast = useToast();
   const status = useCredentialStatus();
@@ -87,7 +87,7 @@ export function CredentialsForm({ compact }: { compact?: boolean }) {
         )}
       </div>
 
-      <div className={compact ? "space-y-4" : "grid grid-cols-1 gap-4 md:grid-cols-2"}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Input
           label="Client ID"
           value={clientId}

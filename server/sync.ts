@@ -28,7 +28,7 @@ export const SYNCABLE_DATASETS: readonly DatasetName[] = [
   "thermoelectric_capacity",
 ];
 
-export interface SyncStep {
+interface SyncStep {
   label: string;
   dataset: DatasetName;
   year: number;
