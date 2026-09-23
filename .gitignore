@@ -8,11 +8,16 @@ dist-ssr
 # --- Build outputs ---
 # static/ is the built interface copied from dist/ (scripts/copy-static.ts);
 # dist-exe/ holds the compiled single-file executable. Both are reproducible.
-# dist-new/ is the staging directory of scripts/build.ts (renamed onto dist/
-# only when the build succeeds; removed on failure).
+# dist-new/ and static-new/ are the staging directories of scripts/build.ts,
+# dist-old/ and static-old/ the rollback backups: every directory is committed
+# into place with a rename only when complete, and the leftovers are removed
+# on failure (a crashed run may leave them behind, hence the ignores).
 static/
 dist-exe/
 dist-new/
+static-new/
+dist-old/
+static-old/
 *.tsbuildinfo
 
 

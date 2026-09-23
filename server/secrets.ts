@@ -8,9 +8,30 @@
  * macOS: `security`; Linux: `secret-tool` (entrambi one-shot, fuori dall'avvio).
  */
 import { dlopen, FFIType, ptr, toArrayBuffer, type Pointer } from "bun:ffi";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 
 const SERVICE = "italian-renewable-capacity-explorer";
+
+/**
+ * Scrittura atomica su file: prima il temporaneo, poi il rename. Un segreto
+ * scritto a metà (o un `secret.bin` troncato da un crash) è un segreto perso:
+ * il file compare completo o non compare affatto.
+ */
+async function writeAtomic(path: string, data: Uint8Array | string, mode?: number): Promise<void> {
+  const temporary = `${path}.tmp`;
+  try {
+    if (mode === undefined) await Bun.write(temporary, data);
+    else await Bun.write(temporary, data, { mode });
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      rmSync(temporary, { force: true });
+    } catch {
+      // il temporaneo non si cancella: l'errore da riportare resta quello vero
+    }
+    throw error;
+  }
+}
 
 const crypt32 =
   process.platform === "win32"
@@ -106,6 +127,17 @@ async function run(command: string[], input?: string): Promise<{ code: number; s
   }
 }
 
+/**
+ * Stato del segreto fotografato prima di sovrascriverlo: `restore()` rimette
+ * esattamente quello che c'era (i bytes su disco dove il segreto è un file, il
+ * valore nel portachiavi dove è il sistema a custodirlo). Serve al rollback
+ * della rotazione: se la scrittura di `settings.json` fallisce, id nuovo e
+ * segreto nuovo non devono restare appaiati a metà.
+ */
+export interface SecretSnapshot {
+  restore(): Promise<void>;
+}
+
 export interface SecretStore {
   save(clientId: string, secret: string): Promise<void>;
   load(clientId: string): Promise<string | null>;
@@ -114,13 +146,14 @@ export interface SecretStore {
    * lasciando il segreto nel portachiavi è peggio di un errore visibile.
    */
   remove(clientId: string): Promise<void>;
+  snapshot(clientId: string): Promise<SecretSnapshot>;
 }
 
 export function createSecretStore(filePath: string): SecretStore {
   if (process.platform === "win32") {
     return {
       async save(_clientId, secret) {
-        await Bun.write(filePath, dpapiProtect(secret));
+        await writeAtomic(filePath, dpapiProtect(secret));
       },
       async load(_clientId) {
         const file = Bun.file(filePath);
@@ -139,12 +172,31 @@ export function createSecretStore(filePath: string): SecretStore {
           throw new Error("Could not remove the stored secret from the credential file");
         }
       },
+      async snapshot() {
+        // I bytes cifrati sono l'unica cosa che si può rimettere identica: un
+        // salva/ripristina passando da DPAPI riuscirebbe solo se il blob vecchio
+        // è ancora decifrabile (e non lo sarebbe proprio nel caso in cui il
+        // rollback serve).
+        const previous = existsSync(filePath) ? readFileSync(filePath) : null;
+        return {
+          async restore() {
+            if (previous) await writeAtomic(filePath, previous);
+            else rmSync(filePath, { force: true });
+          },
+        };
+      },
     };
   }
 
   if (process.platform === "darwin") {
-    return {
+    const store: SecretStore = {
       async save(clientId, secret) {
+        // `security` non ha una forma documentata che legga il segreto da stdin
+        // o da file: l'unica alternativa senza argv è la modalità interattiva
+        // (`security -i`), che richiede di quotare il segreto in un parser a
+        // comandi — con un segreto che contiene apici diventa una iniezione.
+        // Quindi il segreto passa da `-w` e resta visibile in `ps` per la durata
+        // della chiamata (millisecondi): compromesso dichiarato, non silenzioso.
         const { code } = await run([
           "security", "add-generic-password", "-a", clientId, "-s", SERVICE, "-w", secret, "-U",
         ]);
@@ -161,7 +213,17 @@ export function createSecretStore(filePath: string): SecretStore {
           throw new Error("Could not remove the stored secret from the keychain");
         }
       },
+      async snapshot(clientId) {
+        const previous = await store.load(clientId);
+        return {
+          async restore() {
+            if (previous === null) await store.remove(clientId);
+            else await store.save(clientId, previous);
+          },
+        };
+      },
     };
+    return store;
   }
 
   // Linux: `secret-tool` quando c'è (GNOME/KDE), altrimenti un file leggibile
@@ -174,8 +236,10 @@ export function createSecretStore(filePath: string): SecretStore {
     );
   };
 
-  return {
+  const store: SecretStore = {
     async save(clientId, secret) {
+      // Il segreto viaggia su **stdin** (`run` scrive nel pipe del figlio):
+      // `secret-tool store` legge da lì, quindi non finisce mai in `ps`.
       const { code } = await run([
         "secret-tool",
         "store",
@@ -188,7 +252,7 @@ export function createSecretStore(filePath: string): SecretStore {
       ], secret);
       if (code === 0) return;
       unavailable();
-      await Bun.write(fallbackPath, secret, { mode: 0o600 });
+      await writeAtomic(fallbackPath, secret, 0o600);
     },
     async load(clientId) {
       const { code, stdout } = await run(["secret-tool", "lookup", "service", SERVICE, "account", clientId]);
@@ -205,5 +269,17 @@ export function createSecretStore(filePath: string): SecretStore {
         throw new Error("Could not remove the stored secret from the fallback file");
       }
     },
+    async snapshot(clientId) {
+      // Qui il segreto vive nel portachiavi o nel file di ripiego: in entrambi
+      // i casi rimettere il valore è rimettere lo stato.
+      const previous = await store.load(clientId);
+      return {
+        async restore() {
+          if (previous === null) await store.remove(clientId);
+          else await store.save(clientId, previous);
+        },
+      };
+    },
   };
+  return store;
 }

@@ -5,7 +5,7 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0d1118",
+  "background_color": "#04130e",
   "theme_color": "#04130e",
   "categories": ["utilities", "productivity", "education"],
   "icons": [

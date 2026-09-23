@@ -80,13 +80,14 @@ export function startApp(options: StartOptions = {}): LocalApp {
 
   const sync = new SyncManager(store, () => createTernaClient(settings));
 
-  const serve = (port: number) =>
+  const serve = (port: number, portFallback = false) =>
     startServer({
       store,
       settings,
       sync,
       staticDir: options.staticDir ?? resolveStaticDir(),
       port,
+      portFallback,
       logger: options.logger,
     });
 
@@ -102,7 +103,7 @@ export function startApp(options: StartOptions = {}): LocalApp {
   } catch (error) {
     if (!requested) throw error;
     fallback = true;
-    server = serve(0);
+    server = serve(0, true);
   }
 
   return {

@@ -97,6 +97,11 @@ export interface AggregatePoint {
 
 export interface HealthStatus {
   status: string;
+  version: string;
+  /** Porta effettiva su cui il server sta servendo la SPA. */
+  port: number;
+  /** `true` quando la porta preferita era occupata e il server ha ripiegato. */
+  port_fallback: boolean;
 }
 
 export interface CredentialStatus {
@@ -104,7 +109,7 @@ export interface CredentialStatus {
   client_id_suffix: string | null;
 }
 
-export type SyncStatus = "queued" | "running" | "completed" | "failed";
+export type SyncStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface SyncRequestPayload {
   years: number[];

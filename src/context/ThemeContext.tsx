@@ -41,6 +41,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    // La barra del titolo della finestra e del browser seguono il tema scelto:
+    // il valore scritto in `index.html` è solo il punto di partenza.
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "dark" ? "#04130e" : "#f5f7f9");
   }, [theme]);
 
   useEffect(() => {

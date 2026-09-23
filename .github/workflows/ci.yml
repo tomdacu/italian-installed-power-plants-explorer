@@ -78,10 +78,10 @@ jobs:
       - name: Typecheck (interface and server)
         run: bun run typecheck
 
-      # `clean.ts` e `copy-static.ts` sono nati dai fallimenti di `rmSync` su
-      # Windows (cartelle OneDrive): vanno esercitati su un runner Windows, non
-      # solo su Linux. `prepack` = `build` (che pulisce `dist/`) + copia in
-      # `static/`.
+      # `clean.ts` and `copy-static.ts` exist because `rmSync` misbehaves on
+      # Windows (OneDrive folders): exercise them on a Windows runner, not only
+      # on Linux. `prepack` = `build`, which compiles into `dist-new/`, commits
+      # it with a rename, then refreshes `static/` the same way.
       - name: Build the distributed package layout
         run: bun run prepack
 

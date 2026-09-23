@@ -29,7 +29,12 @@ const GEO_OPTIONS = [
   { label: "Province", value: "province" },
 ];
 
-const YEAR_RANGE_HINT = "Year range unavailable — waiting for local metadata";
+// Due stati diversi meritano due testi diversi: una query in errore sta
+// ritentando da sola (il menu si riaccende quando risponde), mentre una cache
+// che risponde ma non ha quel dataset non si sbloccherà da sola — lì la
+// promessa di un'attesa sarebbe falsa.
+const YEAR_RANGE_RETRYING_HINT = "Year range unavailable — retrying…";
+const YEAR_RANGE_EMPTY_HINT = "No data synced for this dataset yet";
 
 export function FiltersPanel({
   filters,
@@ -83,6 +88,15 @@ export function FiltersPanel({
   // conferma non sappiamo quali anni contenga davvero, e i due menu anno
   // restano spenti (gli altri filtri no) invece di proporre anni vuoti.
   const yearRangeUnavailable = !yearBoundsKnown && perDatasetFirstYear(filters.dataset) != null;
+  // "No data synced" è un'affermazione sulla cache: si può fare solo dopo una
+  // risposta riuscita. In attesa (o in errore, con i ritentativi in corso) il
+  // testo dice che si sta aspettando, invece di dichiarare vuoto ciò che non è
+  // ancora stato letto.
+  const yearRangeHint = yearRangeUnavailable
+    ? availability.isSuccess
+      ? YEAR_RANGE_EMPTY_HINT
+      : YEAR_RANGE_RETRYING_HINT
+    : undefined;
 
   const regionOptions = toOptions(db.regions ?? []);
   // Solo le province della regione scelta: offrire Roma mentre è selezionata la
@@ -185,7 +199,7 @@ export function FiltersPanel({
           placeholder="Any"
           options={yearFromOptions}
           disabled={yearRangeUnavailable}
-          hint={yearRangeUnavailable ? YEAR_RANGE_HINT : undefined}
+          hint={yearRangeHint}
           onChange={(e) => set({ year_from: e.target.value ? Number(e.target.value) : null })}
         />
         <Select
@@ -194,7 +208,7 @@ export function FiltersPanel({
           placeholder="Any"
           options={yearToOptions}
           disabled={yearRangeUnavailable}
-          hint={yearRangeUnavailable ? YEAR_RANGE_HINT : undefined}
+          hint={yearRangeHint}
           onChange={(e) => set({ year_to: e.target.value ? Number(e.target.value) : null })}
         />
         {showRegionFilter && (

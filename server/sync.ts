@@ -42,6 +42,13 @@ interface JobState {
   skippedSteps: number;
   /** Ultimo errore di passo: interno al job, non fa parte di `SyncJobStatus`. */
   lastStepError: string | null;
+  /**
+   * Cancellazione richiesta: il passo in corso finisce, quelli successivi no.
+   * Lo stato passa subito a `cancelled` (chi ha chiesto la cancellazione non
+   * deve aspettare la fine del passo per vederselo confermato), ma i contatori
+   * restano onesti e continuano a contare il passo già in volo.
+   */
+  cancelled: boolean;
 }
 
 /** Il piano di un job: i passi da eseguire e gli anni che nessun dataset pubblica. */
@@ -126,11 +133,30 @@ export class SyncManager {
       emptySteps: 0,
       skippedSteps: dropped,
       lastStepError: null,
+      cancelled: false,
     });
     // La coda non deve poter restare bloccata: `run` gestisce già i propri
     // errori, questo è il paracadute perché un job non fermi tutti i successivi.
     this.queue = this.queue.then(() => this.run(jobId, steps)).catch(() => undefined);
     return jobId;
+  }
+
+  /**
+   * Cancella un job. Il flag si legge fra un passo e l'altro: quello in corso
+   * finisce (Terna ha già la richiesta in volo e il suo risultato è comunque
+   * utile in cache), i successivi non partono. Idempotente: su un job già
+   * finito non cambia niente e restituisce lo stato che ha. `null` = id ignoto.
+   */
+  cancel(jobId: string): SyncJobStatus | null {
+    const state = this.jobs.get(jobId);
+    if (!state) return null;
+    if (state.status === "queued" || state.status === "running") {
+      state.cancelled = true;
+      state.status = "cancelled";
+      state.message = "Sync cancelled";
+      state.error = null;
+    }
+    return this.status(jobId);
   }
 
   status(jobId: string): SyncJobStatus | null {
@@ -162,16 +188,33 @@ export class SyncManager {
   }
 
   private async run(jobId: string, steps: SyncStep[]): Promise<void> {
+    // Cancellato prima che la coda lo raggiungesse: non parte nessun passo e
+    // non si torna a `running` (sovrascriverebbe la cancellazione già data).
+    if (this.jobs.get(jobId)?.cancelled) {
+      this.update(jobId, { status: "cancelled", message: "Sync cancelled" });
+      return;
+    }
     this.update(jobId, { status: "running", message: "Connecting to Terna" });
     try {
       const client = await this.clientFactory();
       for (const step of steps) {
+        // La cancellazione si legge **fra un passo e l'altro**: quello in corso
+        // è già partito verso Terna, i successivi non partono affatto.
+        if (this.jobs.get(jobId)?.cancelled) break;
         this.update(jobId, { message: step.label });
         await this.runStep(jobId, client, step);
       }
       const state = this.jobs.get(jobId);
-      const failed = state?.failedSteps ?? 0;
-      if (state && failed > 0) {
+      if (!state) return;
+      if (state.cancelled) {
+        // Il messaggio resta quello della cancellazione anche se il passo in
+        // volo è caduto: la causa di quel passo non è il motivo per cui il job
+        // si è fermato.
+        this.update(jobId, { status: "cancelled", message: "Sync cancelled", error: null });
+        return;
+      }
+      const failed = state.failedSteps;
+      if (failed > 0) {
         // Un job con passi falliti non può dire "Sync completed": il messaggio
         // comincia dal conteggio e porta l'ultima causa, così resta onesto
         // anche per chi lo filtra con una regex di successo (`useSyncJob`).
@@ -188,6 +231,13 @@ export class SyncManager {
       }
       this.update(jobId, { status: "completed", message: "Sync completed" });
     } catch (error) {
+      const state = this.jobs.get(jobId);
+      if (state?.cancelled) {
+        // La cancellazione vince: il guasto (per esempio il client che non
+        // arriva) non è il motivo per cui il job si è fermato.
+        this.update(jobId, { status: "cancelled", message: "Sync cancelled", error: null });
+        return;
+      }
       this.update(jobId, {
         status: "failed",
         message: "Sync failed",
@@ -209,8 +259,10 @@ export class SyncManager {
         const message = (error as Error).message;
         state.failedSteps += 1;
         state.completedSteps += 1;
-        state.message = `${step.label}: ${message}`;
         state.lastStepError = `${step.label}: ${message}`;
+        // Un job cancellato resta "Sync cancelled": il guasto del passo già in
+        // volo non cambia il motivo per cui il job si è fermato.
+        if (!state.cancelled) state.message = `${step.label}: ${message}`;
       }
       return;
     }

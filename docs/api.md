@@ -6,14 +6,15 @@ used the same routes, so anything written against it keeps working.
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /health` | readiness probe → `{status: "ok"}` |
+| `GET /health` | readiness probe → `{status: "ok", version, port, port_fallback}`: `version` is the app version, `port` the port actually bound, and `port_fallback` is `true` when the preferred port was busy and the server moved to a free one (an installed app stays bound to the old origin and has to be reinstalled) |
 | `GET /settings/credentials/status` | `{configured, client_id_suffix}` (the secret is never returned) |
 | `POST /settings/credentials` | store id + secret (`{client_id, client_secret}`) |
 | `DELETE /settings/credentials` | remove both |
 | `POST /settings/credentials/test` | OAuth2 round-trip against Terna → `{ok: true}` |
 | `POST /sync/jobs` | start a sync job → `{job_id, status}` |
 | `GET /sync/jobs/latest` | most recent active job, or the last finished job; 404 before any job starts |
-| `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, skipped_steps, message, error}` — `skipped_steps` is always present |
+| `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, skipped_steps, message, error}` — `skipped_steps` is always present; `status` is one of `queued`, `running`, `completed`, `failed`, `cancelled` |
+| `DELETE /sync/jobs/{id}` | cancel a queued or running job → `200` with the resulting status, whose `status` is `"cancelled"`. The step in flight is allowed to finish, the following ones are not executed, and the counters keep what was really done. An unknown id is a `404`; a job that has already finished is not modified and answers `200` with the status it already had |
 | `GET /metadata/options` | canonical sources/types per dataset, stored options, `first_year` (2000), `installed_capacity_first_year` (2021) and `current_year` |
 | `GET /metadata/availability` | row counts per dataset and year actually cached |
 | `GET /metadata/data-quality` | per year, cells Terna left empty even though the same key has a value another year (filters: `dataset`, `capacity_type`, `source`). It does **not** apply the implicit capacity index (see below): without `capacity_type` it counts the gaps of `Lorda` and `Netta` together — 64 cells across 14 years on the full cache, against 22 across 9 years with `capacity_type=Lorda` |
@@ -112,8 +113,9 @@ capacity indexes in a single response, so there is nothing to select here.
 Three different things can happen to a year you ask for, and the job reports them
 apart:
 
-- **Outside 2000 → the current year** the year is clamped away before the job
-  exists; nothing counts it, and if no year survives the request is a `422`.
+- **Outside 2000 → the current year** the year is dropped before the job exists
+  and counted in `skipped_steps`; if no year survives the request, the answer is
+  a `422` and no job is created.
 - **Inside the range but not published for that dataset** — the national endpoint
   starts at 2021 — the year never becomes a step: it is counted in
   `skipped_steps` (`total_steps` does not include it). The per-dataset first year
@@ -121,9 +123,10 @@ apart:
 - **Executed and answered with an empty body** (a year Terna has not published
   yet): the step runs, stores nothing, and is counted in `empty_steps`.
 
-So `total_steps + skipped_steps` covers everything the request asked for, and a
-plan never fails because of a year Terna does not publish. `GET /sync/jobs/{id}`
-returns all three counters plus `status`, `message` and `error`.
+So `total_steps + skipped_steps` covers everything the request asked for —
+out-of-range years included — and a plan never fails because of a year Terna does
+not publish. `GET /sync/jobs/{id}` returns all three counters plus `status`,
+`message` and `error`.
 
 ## Conventions
 
@@ -135,11 +138,12 @@ returns all three counters plus `status`, `message` and `error`.
 - `timeseries` rows always carry every dimension column; the ones not grouped are
   `NULL`.
 - **CSV export**: a field is quoted when it contains a `"`, a comma or a line
-  break (inner quotes are doubled), and a field that starts with `=`, `+`, `-`,
-  `@`, a tab or a carriage return is prefixed with an apostrophe `'`, so a
-  spreadsheet shows it as text instead of evaluating it as a formula
-  (CWE-1236). The apostrophe is part of the exported text — the JSON API does not
-  add it.
+  break (inner quotes are doubled). A **number** is written exactly as stored and
+  never touched: the apostrophe only hits *text* that starts with `=`, `+`, `-`,
+  `@`, a tab or a carriage return, so a spreadsheet shows it as text instead of
+  evaluating it as a formula (CWE-1236). A negative `efficient_power_mw` therefore
+  stays negative, while a text cell such as `=cmd` becomes `'=cmd`. The apostrophe
+  is part of the exported text — the JSON API does not add it.
 - Numbers are returned **as stored**: a JSON value carries the raw IEEE-754 double
   (`yoy_new_mw: 7683.684599999993`) and the CSV export writes the same unrounded
   value, so a value compared cell by cell between the two never differs by more

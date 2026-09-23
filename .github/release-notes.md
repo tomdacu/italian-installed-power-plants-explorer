@@ -44,14 +44,8 @@ sync, fewer surprises.
 
 ## Install or update
 
-```bash
-bunx italian-renewable-capacity-explorer
-```
-
-`bunx` always runs the latest published version, so updating is the same command.
-Bun is a single binary: [bun.sh](https://bun.sh).
-
-Prefer a checkout?
+The package is not on npm yet: run the app from a checkout. Updating is
+`git pull` followed by the same two commands.
 
 ```bash
 git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
@@ -61,6 +55,9 @@ bun run prepack   # build the interface: the bundle is not in the repository,
                   # so `bun run serve` on a fresh clone would answer 500
 bun run serve
 ```
+
+Bun is a single binary: [bun.sh](https://bun.sh). Once the package is published
+to npm, `bunx italian-renewable-capacity-explorer` will do the same in one line.
 
 ## Using it
 

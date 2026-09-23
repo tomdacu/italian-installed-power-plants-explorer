@@ -18,7 +18,8 @@ import { createTernaClient } from "./client.ts";
 import { parseGroupBy, RECORD_SORT_FIELDS, type CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
 import { buildPlan, type SyncManager } from "./sync.ts";
-import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type RecordFilters } from "../shared/types.ts";
+import pkg from "../package.json" with { type: "json" };
+import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type HealthStatus, type RecordFilters } from "../shared/types.ts";
 
 interface Dependencies {
   store: CapacityStore;
@@ -26,6 +27,12 @@ interface Dependencies {
   sync: SyncManager;
   /** Dove finiscono i guasti interni: lo stesso `logger` del server. */
   logger?: (message: string) => void;
+  /**
+   * Porta effettiva e ripiego su una porta libera. È una funzione e non due
+   * valori perché con `port: 0` la porta la sceglie il sistema operativo solo
+   * dentro `Bun.serve`, cioè dopo che `createApi` è già stato costruito.
+   */
+  serverInfo: () => { port: number; port_fallback: boolean };
 }
 
 /**
@@ -139,7 +146,7 @@ function withFilters(handler: (
   };
 }
 
-export function createApi({ store, settings, sync, logger }: Dependencies): Hono {
+export function createApi({ store, settings, sync, logger, serverInfo }: Dependencies): Hono {
   const app = new Hono();
 
   // Un handler che fallisce (per esempio il database che non risponde) è un
@@ -165,7 +172,10 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     };
   };
 
-  app.get("/health", (c) => c.json({ status: "ok" }));
+  // Oltre a "sono vivo": versione, porta effettiva e se il server ha ripiegato
+  // su una porta libera. La UI lo legge prima di proporre di installare la PWA,
+  // che resta legata all'origine (quindi alla porta) del momento dell'installazione.
+  app.get("/health", (c) => c.json({ status: "ok", version: pkg.version, ...serverInfo() } satisfies HealthStatus));
 
   app.get("/settings/credentials/status", async (c) => c.json(await credentialStatus()));
 
@@ -215,7 +225,7 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     }
     // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
     // trasformarsi in centinaia di richieste e bruciare la quota Terna.
-    const { years } = clampYears(body.years.map(Number).filter(Number.isFinite));
+    const { years, skipped } = clampYears(body.years.map(Number).filter(Number.isFinite));
     if (years.length === 0) {
       return c.json(
         { detail: `no year between ${DATA_FIRST_YEAR} and ${currentYear()} was requested` },
@@ -225,6 +235,10 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     // Il piano si costruisce **prima** di accodare il job: un rifiuto non deve
     // lasciare nella mappa un job che non è mai stato eseguito.
     const plan = buildPlan({ years, datasets: body.datasets });
+    // Gli anni limati da `clampYears` sono passi mai eseguiti come quelli che un
+    // dataset non pubblica: senza, `skipped_steps` restava a zero e il job
+    // sembrava aver coperto un intervallo che non ha mai chiesto.
+    plan.dropped += skipped;
     // Un piano che non contiene nemmeno un passo (tutti gli anni sotto la soglia
     // del dataset scelto) non è un job: meglio dirlo subito che restituire un
     // "completed" che non ha scaricato niente.
@@ -243,6 +257,16 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
 
   app.get("/sync/jobs/:jobId", (c) => {
     const status = sync.status(c.req.param("jobId"));
+    if (!status) return c.json({ detail: "Sync job not found" }, 404);
+    return c.json(status);
+  });
+
+  // Cancellazione: 200 con lo stato del job (idempotente — su un job già finito
+  // risponde con lo stato che ha, senza inventare un esito), 404 se l'id è
+  // ignoto. Lo stato è `cancelled` appena la richiesta è accettata: il passo in
+  // volo finisce comunque, e i contatori restano quelli veri.
+  app.delete("/sync/jobs/:jobId", (c) => {
+    const status = sync.cancel(c.req.param("jobId"));
     if (!status) return c.json({ detail: "Sync job not found" }, 404);
     return c.json(status);
   });

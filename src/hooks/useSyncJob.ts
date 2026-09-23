@@ -40,6 +40,7 @@ export function useSyncJob() {
   const toast = useToast();
   const [startedJobId, setStartedJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const notifiedJobId = useRef<string | null>(null);
 
   const latest = useQuery({
@@ -63,7 +64,14 @@ export function useSyncJob() {
   const connectionLost = running && status.isError;
 
   useEffect(() => {
-    if (latest.isError) toast.error("Could not load sync status", "Try reopening Data sync.");
+    if (latest.isError) {
+      // "Try reopening Data sync" incolpava la pagina quando la causa è il
+      // servizio locale spento: il testo dice quello che sappiamo davvero.
+      toast.error(
+        "Could not load sync status",
+        "The local data service is not responding. If the app was just opened, give it a few seconds.",
+      );
+    }
   }, [latest.isError, toast]);
 
   useEffect(() => {
@@ -75,12 +83,21 @@ export function useSyncJob() {
   useEffect(() => {
     if (!job || running || notifiedJobId.current === job.job_id) return;
     notifiedJobId.current = job.job_id;
-    if (job.status === "completed") {
+    if (job.status === "completed" || job.status === "cancelled") {
+      // I passi già completati hanno scritto nel database: la dashboard va
+      // riletta anche dopo una cancellazione.
       for (const key of ["metadata", "availability", "summary", "records", "timeseries", "data-quality"]) {
         void qc.invalidateQueries({ queryKey: [key] });
       }
       if (startedJobId === job.job_id) {
-        if (job.failed_steps > 0) {
+        if (job.status === "cancelled") {
+          // Cancellare non è un errore: nessun toast rosso, e nessuna
+          // affermazione di successo.
+          toast.info(
+            "Sync cancelled",
+            `${job.completed_steps} of ${job.total_steps} steps had already completed and are kept.`,
+          );
+        } else if (job.failed_steps > 0) {
           // Mai "limiti API temporanei": la causa la riporta il job stesso.
           toast.warning(
             "Sync partly completed",
@@ -110,14 +127,35 @@ export function useSyncJob() {
     }
   };
 
+  /**
+   * Chiede al server di fermare il job fra un passo e l'altro. Lo stato che
+   * torna (o un errore) lo gestisce l'effetto qui sopra, così il messaggio è
+   * uno solo per ogni esito.
+   */
+  const cancel = async (): Promise<void> => {
+    if (jobId === null || cancelling) return;
+    setCancelling(true);
+    try {
+      const updated = await api.cancelSync(jobId);
+      qc.setQueryData(["sync", "job", jobId], updated);
+      void qc.invalidateQueries({ queryKey: ["sync", "latest"] });
+    } catch (error) {
+      toast.error("Could not cancel the sync", (error as Error).message);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   return {
     job,
     starting,
+    cancelling,
     running,
     polling: running && !connectionLost,
     loadingExistingJob: !startedJobId && latest.isFetching,
     connectionLost,
     start,
+    cancel,
     reconnect: () => void status.refetch(),
   };
 }

@@ -161,6 +161,15 @@ export const api = {
     return request<SyncJobStatus>(`/sync/jobs/${encodeURIComponent(jobId)}`);
   },
 
+  /**
+   * Cancella un job in coda o in corso. Il server risponde 200 con lo stato
+   * risultante (`cancelled` se era ancora attivo, quello invariato se era già
+   * finito) e 404 se l'id è ignoto.
+   */
+  cancelSync(jobId: string): Promise<SyncJobStatus> {
+    return request<SyncJobStatus>(`/sync/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
+  },
+
   latestSyncStatus(): Promise<SyncJobStatus | null> {
     return request<SyncJobStatus>("/sync/jobs/latest").catch((error: unknown) => {
       if (error instanceof ApiError && error.status === 404) return null;

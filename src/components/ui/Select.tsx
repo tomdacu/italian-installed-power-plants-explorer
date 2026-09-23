@@ -19,6 +19,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, label, hint, options, placeholder, id, ...props }, ref) => {
     const generated = useId();
     const selectId = id ?? generated;
+    // L'hint è un paragrafo separato: senza `aria-describedby` un lettore di
+    // schermo non lo lega al menu e l'utente sente solo l'etichetta.
+    const hintId = `${selectId}-hint`;
     return (
       <div className="space-y-1.5">
         {label && (
@@ -32,6 +35,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             className={cn("input appearance-none pr-9", className)}
             {...props}
+            aria-describedby={props["aria-describedby"] ?? (hint ? hintId : undefined)}
+            aria-disabled={props.disabled ? true : undefined}
           >
             {placeholder !== undefined && <option value="">{placeholder}</option>}
             {options.map((o) => (
@@ -42,7 +47,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           </select>
           <ChevronDown className="pointer-events-none absolute inset-y-0 right-3 my-auto h-4 w-4 text-ink-500 dark:text-ink-400" />
         </div>
-        {hint && <p className="text-xs text-ink-500 dark:text-ink-400">{hint}</p>}
+        {hint && (
+          <p id={hintId} className="text-xs text-ink-500 dark:text-ink-400">
+            {hint}
+          </p>
+        )}
       </div>
     );
   },

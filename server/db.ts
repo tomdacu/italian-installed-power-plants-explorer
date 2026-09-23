@@ -108,11 +108,13 @@ export function recordKey(row: CapacityRow | Record<string, unknown>): string {
 function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  // Formula injection (CWE-1236): Excel esegue una cella che inizia con `=`,
-  // `+`, `-`, `@`, tab o CR, e il BOM che prepariamo per gli accenti non
-  // disinnesca nulla. L'apice la rende testo; se il campo contiene anche
-  // virgolette, virgole o a capo, la quotatura normale viene dopo.
-  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  // Un numero finito non è una formula: il meno di `-1234.567` è il segno, non
+  // l'inizio di un'espressione, e l'apice lo trasformava in testo (Excel
+  // smetteva di sommare la colonna: l'export perdeva i valori negativi). Solo
+  // le stringhe possono iniziare con `=`, `+`, `-`, `@`, tab o CR e vanno
+  // disinnescate (CWE-1236): il BOM che prepariamo per gli accenti non basta.
+  const numeric = typeof value === "number" && Number.isFinite(value);
+  const safe = !numeric && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
@@ -218,8 +220,20 @@ export class CapacityStore {
       .prepare("SELECT COUNT(*) AS n FROM capacity_records WHERE dataset = ? AND year = ?")
       .get(dataset, year) as CountRow | null;
     const stored = storedRow?.n ?? 0;
-    if (stored > 0 && rows.length * 2 < stored) {
-      throw new Error(`refusing to replace ${year} with ${rows.length} of ${stored} stored rows`);
+    // Un tetto di righe dimezzato può essere una ritrattazione *vera* di Terna
+    // (o un anno corretto a mano): l'uscita di sicurezza è dichiarata nel
+    // messaggio, così chi la incontra non deve leggere il codice per accettarla.
+    const shrunk = stored > 0 && rows.length * 2 < stored;
+    if (shrunk && process.env.TERNA_ALLOW_YEAR_SHRINK !== "1") {
+      throw new Error(
+        `refusing to replace ${year} with ${rows.length} of ${stored} stored rows ` +
+          "(set TERNA_ALLOW_YEAR_SHRINK=1 to accept it, or delete terna_cache.sqlite)",
+      );
+    }
+    if (shrunk) {
+      console.warn(
+        `TERNA_ALLOW_YEAR_SHRINK=1: replacing ${year} with ${rows.length} of ${stored} stored rows`,
+      );
     }
     const keys = new Set(rows.map(recordKey));
     this.db.transaction(() => {

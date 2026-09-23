@@ -80,6 +80,19 @@ jobs:
           name: windows-exe
           path: release-assets
 
+      # L'intestazione `## Version X.Y.Z` di `.github/release-notes.md` è il
+      # titolo della release: se non corrisponde a `package.json` il corpo
+      # annuncerebbe una versione diversa da quella pubblicata (stesso schema
+      # del guard sul tag in publish.yml). Il file si legge e basta.
+      - name: Check the release notes version matches package.json
+        run: |
+          version="$(bun -p 'require("./package.json").version')"
+          heading="$(sed -n 's/^## Version //p' .github/release-notes.md | head -n 1 | tr -d '\r')"
+          if [ "$heading" != "$version" ]; then
+            echo "::error::.github/release-notes.md says \"## Version $heading\" but package.json is version $version: update the heading to \"## Version $version\" (or bump package.json) and re-run this workflow."
+            exit 1
+          fi
+
       # `body_path` resta il corpo curato a mano; `generate_release_notes`
       # aggiunge in coda le note automatiche del tag (PR e commit), così due
       # release consecutive non hanno più lo stesso testo.

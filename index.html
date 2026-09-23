@@ -8,6 +8,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Italian Renewable Capacity Explorer — solar, wind, hydro, bioenergy and geothermal capacity across Italy, locally on your desktop." />
     <meta name="theme-color" content="#04130e" />
+    <!-- Applica il tema prima del primo paint: uno script esterno (la CSP è
+         `script-src 'self'`) e bloccante, quindi la classe `dark` c'è già
+         quando il browser dipinge. -->
+    <script src="/theme.js"></script>
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Italian Renewable Capacity Explorer" />
     <meta property="og:description" content="Explore Italy's installed generation capacity locally, with Terna data." />
@@ -22,7 +26,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script src="/theme.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

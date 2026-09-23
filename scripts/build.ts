@@ -1,90 +1,147 @@
 /**
- * Build dell'interfaccia senza mai lasciare `dist/` senza bundle.
+ * Build dell'interfaccia senza mai lasciare la cartella servita a metà.
  *
- * Il vecchio `clean.ts && vite build` svuotava `dist/` **prima** di compilare:
- * a build fallita il checkout restava senza interfaccia e `GET /` rispondeva
- * 500. Qui `vite build` scrive in `dist-new/` e `dist/` viene sostituita solo a
- * build riuscita; a fallimento il parziale viene rimosso e `dist/` e `static/`
- * restano quelle di prima.
+ * Il vecchio `clean.ts && vite build` svuotava `dist/` **prima** di compilare: a
+ * build fallita il checkout restava senza interfaccia e `GET /` rispondeva 500.
+ * Qui si preparano due cartelle complete — `dist-new/` con `vite build` e
+ * `static-new/` come sua copia integrale — e **solo a build riuscita** ciascuna
+ * viene commutata al suo posto con un `rename` (`commitDir`). Il server serve
+ * `static/` prima di `dist/` (`server/app.ts`): finché la nuova `static/` non è
+ * pronta, la vecchia resta quella servita e il messaggio finale lo dice.
  *
- * A build riuscita si rinfresca **anche** `static/`: il server cerca `static/`
- * prima di `dist/` (`server/app.ts`), quindi una copia vecchia vincerebbe sulla
- * nuova e riavviare il comando documentato servirebbe il bundle precedente.
+ * A build riuscita si riscrive **solo nell'artefatto** `sw.js` la costante
+ * `CACHE`, suffissandola con gli 8 caratteri iniziali dell'hash di `index.html`:
+ * ogni build cambia il nome della cache e l'`activate` del service worker butta
+ * i residui della precedente. Il sorgente `public/sw.js` resta con il valore
+ * base.
  *
  *   bun run scripts/build.ts
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, renameSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { emptyDir } from "./clean.ts";
+import { commitDir, removeDir } from "./clean.ts";
 
 const root = join(import.meta.dir, "..");
 const dist = join(root, "dist");
-const staging = join(root, "dist-new");
+const staticDir = join(root, "static");
+const stagingDist = join(root, "dist-new");
+const stagingStatic = join(root, "static-new");
 
-// 1. Compila in una cartella di appoggio: `dist/` non viene toccata finché la
-//    build non è riuscita.
-const exitCode = run(process.execPath, ["x", "vite", "build", "--outDir", "dist-new", "--emptyOutDir"]);
+/** Costante presente in `public/sw.js`; si rimpiazza solo nell'artefatto. */
+const SW_CACHE_CONSTANT = 'const CACHE = "ice-shell-v6"';
+
+// 1. Compila in una cartella di appoggio: `dist/` e `static/` non vengono
+//    toccate finché la build non è riuscita.
+const vite = spawnSync(process.execPath, ["x", "vite", "build", "--outDir", "dist-new", "--emptyOutDir"], {
+  cwd: root,
+  stdio: "inherit",
+});
+const exitCode = vite.status ?? 1;
 
 if (exitCode !== 0) {
   // 2. Fallita: via il parziale, `dist/` e `static/` intatte.
-  remove(staging);
-  console.error("Build fallita: dist/ e static/ sono rimaste invariate.");
+  discard(stagingDist, stagingStatic);
+  console.error(`Build fallita: dist/ e static/ sono rimaste invariate, il server servirà ${servedDir()}.`);
   process.exit(exitCode);
 }
 
 // Una build "riuscita" senza index.html non è servibile: meglio non sostituire.
-if (!existsSync(join(staging, "index.html"))) {
-  remove(staging);
-  console.error("vite non ha prodotto dist-new/index.html: dist/ e static/ sono rimaste invariate.");
+if (!existsSync(join(stagingDist, "index.html"))) {
+  discard(stagingDist, stagingStatic);
+  console.error(
+    `vite non ha prodotto dist-new/index.html: dist/ e static/ sono rimaste invariate, il server servirà ${servedDir()}.`,
+  );
   process.exit(1);
 }
 
-// 3. Riuscita: sostituzione. `renameSync` verso una cartella esistente fallisce
-//    su Windows, quindi `dist/` si svuota e si rimuove prima di rinominare.
+// 3. Bump della cache del service worker, solo nell'artefatto.
 try {
-  emptyDir(dist);
-  if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
-
-  try {
-    renameSync(staging, dist);
-  } catch (error) {
-    // OneDrive/antivirus possono tenere aperto l'handle della cartella: in quel
-    // caso si copiano le voci e si butta lo staging.
-    console.warn(`Rinomina dist-new → dist non riuscita (${errorMessage(error)}): copio le voci.`);
-    cpSync(staging, dist, { recursive: true });
-    remove(staging);
-  }
+  bumpServiceWorkerCache(join(stagingDist, "sw.js"), join(stagingDist, "index.html"));
 } catch (error) {
-  remove(staging);
-  console.error(`Sostituzione di dist/ non riuscita (${errorMessage(error)}): dist-new/ rimosso.`);
+  discard(stagingDist, stagingStatic);
+  console.error(
+    `Bump della cache del service worker non riuscito (${errorMessage(error)}): dist/ e static/ sono rimaste invariate, il server servirà ${servedDir()}.`,
+  );
   process.exit(1);
 }
 
-// 4. `static/` è servita prima di `dist/`: va rinfrescata a ogni build.
-const copyExitCode = run(process.execPath, ["run", "scripts/copy-static.ts"]);
-if (copyExitCode !== 0) {
-  console.error("dist/ aggiornata, ma la copia in static/ è fallita.");
-  process.exit(copyExitCode);
+// 4. `static-new/` è la copia integrale di `dist-new/`: si prepara **prima** di
+//    toccare `static/`, così la cartella servita non può restare a metà.
+try {
+  removeDir(stagingStatic);
+  cpSync(stagingDist, stagingStatic, { recursive: true });
+} catch (error) {
+  discard(stagingDist, stagingStatic);
+  console.error(
+    `Copia in static-new/ non riuscita (${errorMessage(error)}): dist/ e static/ sono rimaste invariate, il server servirà ${servedDir()}.`,
+  );
+  process.exit(1);
 }
 
-console.log("Build completata: dist/ sostituita e static/ rinfrescata.");
-
-/** Esegue un comando dalla radice del progetto, con output sul terminale. */
-function run(command: string, args: string[]): number {
-  const result = spawnSync(command, args, { cwd: root, stdio: "inherit" });
-  return result.status ?? 1;
+// 5. Commit di `dist/`: da qui in poi la nuova dist esiste, ma è servita solo se
+//    `static/` non la copre.
+try {
+  commitDir(stagingDist, dist);
+} catch (error) {
+  discard(stagingDist, stagingStatic);
+  console.error(
+    `Sostituzione di dist/ non riuscita (${errorMessage(error)}): dist/ e static/ restano quelle precedenti, il server servirà ${servedDir()}.`,
+  );
+  process.exit(1);
 }
 
-/** Cancella una cartella di appoggio: un residuo bloccato non è fatale. */
-function remove(target: string): void {
-  if (!existsSync(target)) return;
-  try {
-    emptyDir(target);
-    rmSync(target, { recursive: true, force: true });
-  } catch (error) {
-    console.warn(`Impossibile rimuovere ${target}: ${errorMessage(error)}`);
+// 6. Commit di `static/`: è la cartella che il server serve davvero.
+try {
+  commitDir(stagingStatic, staticDir);
+} catch (error) {
+  discard(stagingStatic);
+  console.error(`dist/ aggiornata, ma static/ non sostituibile (${errorMessage(error)}): ${servedMessage()}`);
+  process.exit(1);
+}
+
+console.log("Build completata: dist/ e static/ sostituite (rename), cache del service worker aggiornata.");
+
+/**
+ * Riscrive la costante `CACHE` nel solo artefatto `sw.js` (mai in
+ * `public/sw.js`), suffissandola con gli 8 caratteri iniziali dell'hash di
+ * `index.html`: ogni build bumpa il nome della cache.
+ */
+function bumpServiceWorkerCache(swPath: string, indexPath: string): void {
+  if (!existsSync(swPath)) {
+    throw new Error(`${swPath} does not exist: vite must copy public/sw.js into the build output`);
+  }
+  const hash = createHash("sha256").update(readFileSync(indexPath)).digest("hex").slice(0, 8);
+  const source = readFileSync(swPath, "utf8");
+  if (!source.includes(SW_CACHE_CONSTANT)) {
+    throw new Error(`${swPath} does not contain ${SW_CACHE_CONSTANT}: the cache name cannot be bumped`);
+  }
+  writeFileSync(swPath, source.replace(SW_CACHE_CONSTANT, `const CACHE = "ice-shell-v6-${hash}"`));
+}
+
+/** Cartella che il server servirà adesso: `static/` vince su `dist/`. */
+function servedDir(): string {
+  return existsSync(join(staticDir, "index.html")) ? "static/" : "dist/";
+}
+
+/** Esito del commit finale: dice esplicitamente quale cartella resta servita. */
+function servedMessage(): string {
+  if (servedDir() === "static/") {
+    return "static/ vecchia servita: dist/ aggiornata ma coperta da static/";
+  }
+  return "dist/ servita: static/ non aggiornabile";
+}
+
+/** Rimuove le cartelle di appoggio: un residuo bloccato non è fatale. */
+function discard(...targets: string[]): void {
+  for (const target of targets) {
+    try {
+      removeDir(target);
+    } catch (error) {
+      console.warn(`Impossibile rimuovere ${target}: ${errorMessage(error)}`);
+    }
   }
 }
 

@@ -30,6 +30,12 @@ export function csvNumber(value: number | null | undefined): number | null {
 
 function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
+  // Un numero finito è già testo innocuo: `String(-6.4)` è "-6.4", e l'apice
+  // anti-formula lo corromperebbe ("'-6.4" non è più un numero per Excel).
+  // I delta negativi dei grafici di addizioni sono numeri, quindi questo caso
+  // va prima della regex — non dopo. `NaN`/`Infinity` non passano di qui:
+  // non iniziano con un carattere di formula e restano stringhe normali.
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
   const text = String(value);
   // Formula injection (CWE-1236): Excel esegue una cella che inizia con `=`,
   // `+`, `-`, `@`, tab o CR, e il BOM che prepariamo per gli accenti non

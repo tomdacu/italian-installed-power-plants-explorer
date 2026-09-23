@@ -79,6 +79,40 @@ test("il CSV per fonte usa i gigawatt quando il dataset è quello nazionale", ()
   expect(csv).toContain("Photovoltaic,37.002");
 });
 
+test("un numero negativo resta un numero, senza apice", () => {
+  const csv = toCsv({
+    columns: [
+      { key: "year", label: "year" },
+      { key: "value", label: "value" },
+    ],
+    rows: [{ year: 2019, value: -6.4 }],
+  });
+
+  // `-6.4` inizia con `-` come una formula: l'apice lo renderebbe testo e
+  // Excel non lo sommerebbe più. Il caso reale è il delta negativo.
+  expect(csv).toContain("2019,-6.4");
+  expect(csv).not.toContain("'-6.4");
+});
+
+test("i delta negativi dei grafici di addizioni escono leggibili", () => {
+  // Serie reale in calo (Bioenergie 2019: −60.655 MW): è il caso che l'apice
+  // applicato alle stringhe corrompeva in ogni export.
+  const declining: YearlySplit = {
+    ...split,
+    data: [
+      { year: 2018, Bioenergie: 1120.655 },
+      { year: 2019, Bioenergie: 1060 },
+    ],
+    names: ["Bioenergie"],
+  };
+
+  const growth = yearlyAdditions(declining);
+  const csv = growth ? toCsv(additionsCsv(growth, "source")) : "";
+
+  expect(csv).toContain("2019,Bioenergie,-60.655");
+  expect(csv).not.toContain("'-60.655");
+});
+
 test("le celle che iniziano con una formula non escono eseguibili", () => {
   const csv = toCsv({
     columns: [
@@ -89,7 +123,9 @@ test("le celle che iniziano con una formula non escono eseguibili", () => {
       { source: '=HYPERLINK("http://evil")', value: 1 },
       { source: "+1+cmd", value: 2 },
       { source: "@SUM(1)", value: 3 },
-      { source: "Fotovoltaico", value: 4 },
+      { source: "=cmd|'/c calc'!A0", value: 4 },
+      { source: "-6.4", value: -6.4 },
+      { source: "Fotovoltaico", value: 5 },
     ],
   });
 

@@ -29,14 +29,26 @@ browser, or install it as an app with its own window and Start-menu entry.
 
 ## Get started
 
-With [Bun](https://bun.sh) installed — nothing to download, always current:
+The package is not on npm yet, so the app runs from a checkout — with
+[Bun](https://bun.sh) installed:
 
 ```bash
-bunx italian-renewable-capacity-explorer
+git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
+cd italian-renewable-capacity-explorer
+bun install
+bun run prepack        # build the interface into dist/ and static/ (needed before serving)
+bun run serve          # local server + browser window on 127.0.0.1:8731
 ```
 
 The app serves itself on `http://127.0.0.1:8731` and opens a browser window. Use
-your browser's *Install app* to get a standalone window with its own icon.
+your browser's *Install app* to get a standalone window with its own icon — the
+installed app is bound to the **origin** it was installed from, port included. If
+`8731` is busy the server starts on a free port instead and says so in
+`backend.log`: the app then points at the old origin and has to be reinstalled
+from the new one, which is the URL **Settings → Install** shows.
+
+Once the package is published to npm, `bunx italian-renewable-capacity-explorer`
+will be the one-line equivalent of that clone.
 
 Then, inside the app:
 
@@ -51,16 +63,11 @@ Then, inside the app:
 
 ![Data sync](docs/screenshot-sync.png)
 
-### From source
+### Development
 
 ```bash
-git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
-cd italian-renewable-capacity-explorer
-bun install
-bun run prepack        # build the interface into dist/ and static/ (needed before serving)
-bun run serve          # local server + browser window on 127.0.0.1:8731
 bun run dev            # Vite dev server with hot reload; run `bun run serve` too
-bun test               # 88 tests
+bun test               # 110 tests
 ```
 
 The interface is built, not committed: without `bun run prepack` (or `bun run
@@ -79,7 +86,7 @@ its `static/` folder next to it** — the two must travel together.
 
 ```mermaid
 flowchart LR
-  CLI["ice / bunx italian-renewable-capacity-explorer"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
+  CLI["bun run serve (ice)"] --> SRV["Bun + Hono server<br/>127.0.0.1:8731"]
   SRV --> SPA["React interface<br/>served from the same origin"]
   SRV --> DB[("SQLite cache")]
   SRV --> SEC[("client secret<br/>DPAPI / Keychain / secret-tool")]
@@ -129,9 +136,11 @@ Details in [docs/configuration.md](docs/configuration.md).
 
 ## Status
 
-Early, single-author project: the server and the interface are covered by tests
-(`bun test`, plus a build in CI), while the interface itself has no test runner
-yet. Known limits and upstream data quirks are listed in
+Early, single-author project: the server and the interface's logic are covered by
+tests (`bun test`, plus a build in CI) — the same suite exercises `src/lib/*` and
+the API client. What is missing is a DOM/component runner: there is no
+vitest/jsdom setup, so the React components themselves are verified by hand.
+Known limits and upstream data quirks are listed in
 [docs/data-validation.md](docs/data-validation.md); the practical ones are the
 Terna request limits (one call per second, plus a broader quota the client waits
 out) and the two hydro perimeters.

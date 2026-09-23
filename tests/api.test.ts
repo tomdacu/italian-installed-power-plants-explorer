@@ -8,7 +8,9 @@ import { CapacityStore } from "../server/db.ts";
 import type { CapacityRow } from "../server/normalize.ts";
 import { SettingsStore } from "../server/settings.ts";
 import { SyncManager, type SyncPlan } from "../server/sync.ts";
+import type { TernaClient } from "../server/terna.ts";
 import type { RecordFilters } from "../shared/types.ts";
+import pkg from "../package.json" with { type: "json" };
 
 const STORES: CapacityStore[] = [];
 
@@ -26,7 +28,10 @@ afterAll(() => {
 
 const FETCHED = "2026-01-01T00:00:00+00:00";
 
-function buildApp() {
+function buildApp(serverInfo: () => { port: number; port_fallback: boolean } = () => ({
+  port: 8731,
+  port_fallback: false,
+})) {
   const root = tempDir("ice-api-");
   const store = new CapacityStore(join(root, "cache.sqlite"));
   STORES.push(store);
@@ -53,15 +58,31 @@ function buildApp() {
   ];
   store.upsertRecords(rows);
 
-  return { app: createApi({ store, settings, sync }), store, sync };
+  return { app: createApi({ store, settings, sync, serverInfo }), store, sync };
 }
 
-test("GET /health risponde come la versione Python", async () => {
-  const { app } = buildApp();
-  const response = await app.request("/health");
+test("GET /health dice versione, porta effettiva e ripiego sulla porta libera", async () => {
+  let info = { port: 8731, port_fallback: false };
+  const { app } = buildApp(() => info);
 
+  const response = await app.request("/health");
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ status: "ok" });
+  expect(await response.json()).toEqual({
+    status: "ok",
+    version: pkg.version,
+    port: 8731,
+    port_fallback: false,
+  });
+
+  // La porta la sceglie il sistema dentro `Bun.serve`, cioè dopo la creazione
+  // dell'API: i valori vanno riletti a ogni richiesta, non fissati una volta.
+  info = { port: 54321, port_fallback: true };
+  expect(await (await app.request("/health")).json()).toEqual({
+    status: "ok",
+    version: pkg.version,
+    port: 54321,
+    port_fallback: true,
+  });
 });
 
 test("GET /records applica i filtri della query", async () => {
@@ -144,6 +165,80 @@ test("gli anni fuori intervallo vengono limati, non richiesti a Terna", async ()
 
   // Resta solo il 2023 (una volta sola): né il 1999 né il 2999 generano richieste.
   expect(status.total_steps).toBe(1);
+});
+
+test("gli anni limati finiscono in skipped_steps invece di sparire", async () => {
+  const { app } = buildApp();
+  const response = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [1999, 2100, 2024], datasets: ["renewable_source_capacity"] }),
+  });
+
+  expect(response.status).toBe(200);
+  const { job_id } = (await response.json()) as { job_id: string };
+  const status = (await (await app.request(`/sync/jobs/${job_id}`)).json()) as {
+    total_steps: number;
+    skipped_steps: number;
+  };
+
+  // Il 1999 (prima del primo anno pubblicato) e il 2100 (nel futuro) sono passi
+  // mai eseguiti come quelli che un dataset non pubblica: senza il conteggio il
+  // job sembrava aver coperto un intervallo che non ha mai chiesto.
+  expect(status.total_steps).toBe(1);
+  expect(status.skipped_steps).toBeGreaterThanOrEqual(2);
+});
+
+test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () => {
+  const root = tempDir("ice-api-");
+  const store = new CapacityStore(join(root, "cache.sqlite"));
+  STORES.push(store);
+  // Un passo che non torna mai: il job resta in corsa finché non lo si cancella.
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const client = {
+    renewableSourceCapacity: async () => {
+      await gate;
+      return {};
+    },
+  } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const app = createApi({
+    store,
+    settings: new SettingsStore(root),
+    sync,
+    serverInfo: () => ({ port: 8731, port_fallback: false }),
+  });
+
+  const created = await app.request("/sync/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ years: [2024], datasets: ["renewable_source_capacity"] }),
+  });
+  const { job_id } = (await created.json()) as { job_id: string };
+
+  const response = await app.request(`/sync/jobs/${job_id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ job_id, status: "cancelled", message: "Sync cancelled" });
+  // Lo stato resta cancellato anche al polling successivo.
+  expect(await (await app.request(`/sync/jobs/${job_id}`)).json()).toMatchObject({ status: "cancelled" });
+  // Il passo in volo non ha ancora scritto niente in cache.
+  expect(store.countRecords({})).toBe(0);
+
+  const missing = await app.request("/sync/jobs/inesistente", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  expect(missing.status).toBe(404);
+  expect(await missing.json()).toEqual({ detail: "Sync job not found" });
+
+  release();
 });
 
 test("GET /export/csv risponde con nome file e contenuto", async () => {

@@ -45,6 +45,12 @@ export interface ServerOptions {
   sync: SyncManager;
   staticDir: string;
   port: number;
+  /**
+   * `true` quando `port` era occupata e il chiamante ha ripiegato su una porta
+   * libera (`serve(0)`): `/health` lo riporta, perché la PWA installata resta
+   * legata alla porta del momento dell'installazione.
+   */
+  portFallback?: boolean;
   hostname?: string;
   /**
    * Dove finiscono gli errori a runtime. Il chiamante (`cli.ts`) passa la
@@ -141,12 +147,22 @@ function mutationAllowed(request: Request, port: number): { ok: true } | { ok: f
 export type LocalServer = Server<undefined> & { port: number };
 
 export function startServer(options: ServerOptions): LocalServer {
-  const api = createApi({ store: options.store, settings: options.settings, sync: options.sync, logger: options.logger });
   const staticRoot = normalize(options.staticDir);
   const indexPath = join(staticRoot, "index.html");
   // La porta effettiva: con `port: 0` la sceglie il sistema, e i controlli su
   // Host/Origin devono confrontarsi con quella vera, non con quella richiesta.
-  const bound = { port: options.port };
+  // `portFallback` lo sa solo chi ha ritentato l'avvio (`app.ts`): qui si
+  // riporta e basta. L'oggetto è vivo — `/health` lo legge a ogni richiesta,
+  // così dopo `Bun.serve` la porta riportata è quella davvero in ascolto.
+  const bound = { port: options.port, portFallback: options.portFallback ?? false };
+
+  const api = createApi({
+    store: options.store,
+    settings: options.settings,
+    sync: options.sync,
+    logger: options.logger,
+    serverInfo: () => ({ port: bound.port, port_fallback: bound.portFallback }),
+  });
 
   const server = Bun.serve({
     hostname: options.hostname ?? "127.0.0.1",

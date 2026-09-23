@@ -36,6 +36,8 @@ const STATUS_VARIANT: Record<SyncStatus, "neutral" | "brand" | "success" | "rose
   running: "brand",
   completed: "success",
   failed: "rose",
+  // Cancellare è una scelta dell'utente, non un guasto: resta neutro.
+  cancelled: "neutral",
 };
 
 const STATUS_ICON: Record<SyncStatus, React.ReactNode> = {
@@ -43,6 +45,7 @@ const STATUS_ICON: Record<SyncStatus, React.ReactNode> = {
   running: <LoaderCircle className="h-3.5 w-3.5 animate-spin" />,
   completed: <CircleCheck className="h-3.5 w-3.5" />,
   failed: <XCircle className="h-3.5 w-3.5" />,
+  cancelled: <XCircle className="h-3.5 w-3.5" />,
 };
 
 const ALL_DATASETS: DatasetName[] = [
@@ -103,17 +106,24 @@ export function SyncPage() {
   }, null);
   const [yearFrom, setYearFrom] = useState<string>("");
   const [yearTo, setYearTo] = useState<string>("");
-  // Once a field is edited the defaults must not overwrite it; before that the
-  // effect re-seeds both ends as soon as the availability cache answers.
-  const yearsEdited = useRef(false);
+  // Un campo toccato non va più riscritto dai default. I due flag sono
+  // separati: chi digita solo "From" deve comunque ricevere la correzione di
+  // "To" quando l'availability risponde (era un unico flag, e il secondo campo
+  // restava per sempre sul valore provvisorio).
+  const fromEdited = useRef(false);
+  const toEdited = useRef(false);
 
   useEffect(() => {
-    if (yearsEdited.current) return;
+    if (fromEdited.current) return;
     setYearFrom(String(firstStored ?? firstYear));
+  }, [firstStored, firstYear]);
+
+  useEffect(() => {
+    if (toEdited.current) return;
     // Con la cache vuota non sappiamo cosa Terna abbia pubblicato: l'anno
     // corrente non è ancora uscito, quindi si propone il precedente.
     setYearTo(String(lastPublished ?? currentYear - 1));
-  }, [firstStored, lastPublished, firstYear, currentYear]);
+  }, [lastPublished, currentYear]);
 
   const startSync = async () => {
     if (sync.loadingExistingJob || sync.starting || sync.running) return;
@@ -132,7 +142,8 @@ export function SyncPage() {
     from = Math.max(firstYear, Math.min(currentYear, from));
     to = Math.max(firstYear, Math.min(currentYear, to));
     const [safeFrom, safeTo] = from <= to ? [from, to] : [to, from];
-    yearsEdited.current = true;
+    fromEdited.current = true;
+    toEdited.current = true;
     setYearFrom(String(safeFrom));
     setYearTo(String(safeTo));
     const years = Array.from({ length: safeTo - safeFrom + 1 }, (_, i) => safeFrom + i);
@@ -172,7 +183,7 @@ export function SyncPage() {
                   type="number"
                   value={yearFrom}
                   onChange={(e) => {
-                    yearsEdited.current = true;
+                    fromEdited.current = true;
                     setYearFrom(e.target.value);
                   }}
                   className="h-9 max-w-[140px]"
@@ -182,7 +193,7 @@ export function SyncPage() {
                   type="number"
                   value={yearTo}
                   onChange={(e) => {
-                    yearsEdited.current = true;
+                    toEdited.current = true;
                     setYearTo(e.target.value);
                   }}
                   className="h-9 max-w-[140px]"
@@ -250,6 +261,16 @@ export function SyncPage() {
                     {sync.connectionLost && (
                       <Button variant="outline" size="sm" onClick={sync.reconnect}>Reconnect</Button>
                     )}
+                    {sync.running && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void sync.cancel()}
+                        loading={sync.cancelling}
+                      >
+                        <XCircle className="h-3.5 w-3.5" /> Cancel
+                      </Button>
+                    )}
                     <Badge variant={STATUS_VARIANT[job.status]}>
                       {STATUS_ICON[job.status]} {job.status}
                     </Badge>
@@ -279,13 +300,27 @@ export function SyncPage() {
                     </span>
                     <span className="font-mono font-semibold text-ink-700 dark:text-ink-200">{pct}%</span>
                   </div>
-                  <p className="surface p-3.5 text-sm leading-relaxed text-ink-700 dark:text-ink-300">
-                    {/* Un server più vecchio annunciava "Sync completed" anche con
-                        dei passi falliti: quel messaggio non va mostrato. */}
-                    {partlyFailed && !syncMessageIsHonest(job)
-                      ? failedStepsSummary(job)
-                      : job.message}
-                  </p>
+                  {/* Cancellato: né rosso (non è un guasto) né "completed"
+                      (i passi che mancavano non ci sono). Il messaggio grezzo
+                      del server lascia il posto a questo, che è più preciso. */}
+                  {job.status === "cancelled" ? (
+                    <p className="flex items-start gap-2 rounded-xl border border-ink-200/70 bg-ink-50/60 p-3.5 text-sm leading-relaxed text-ink-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-ink-300">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="font-semibold">Sync cancelled.</span> {job.completed_steps} of{" "}
+                        {job.total_steps} steps had already completed and are kept; start another sync
+                        to download the rest.
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="surface p-3.5 text-sm leading-relaxed text-ink-700 dark:text-ink-300">
+                      {/* Un server più vecchio annunciava "Sync completed" anche con
+                          dei passi falliti: quel messaggio non va mostrato. */}
+                      {partlyFailed && !syncMessageIsHonest(job)
+                        ? failedStepsSummary(job)
+                        : job.message}
+                    </p>
+                  )}
                   {job.status === "failed" && (
                     <p className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-3.5 text-sm leading-relaxed text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
                       {syncFailureReason(job)}

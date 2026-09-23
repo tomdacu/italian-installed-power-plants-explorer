@@ -15,6 +15,9 @@ export function useAvailability() {
     queryKey: ["availability"],
     queryFn: () => api.availability(),
     staleTime: 30_000,
+    // Un errore di rete all'avvio non deve congelare la UI per sempre: finché
+    // la query è in errore si ritenta da sola, e al primo successo si smette.
+    refetchInterval: (query) => (query.state.status === "error" ? 15_000 : false),
   });
 }
 
@@ -35,6 +38,10 @@ export function useCredentialStatus() {
     queryKey: ["credentials", "status"],
     queryFn: () => api.credentialStatus(),
     staleTime: 30_000,
+    // Il banner offline deve tornare verde da solo: se la query è in errore
+    // (servizio locale non ancora pronto, o appena riavviato) si ritenta ogni
+    // 15 s finché non riesce, poi si torna al ritmo normale.
+    refetchInterval: (query) => (query.state.status === "error" ? 15_000 : false),
   });
 }
 

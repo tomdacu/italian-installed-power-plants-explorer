@@ -13,12 +13,24 @@ const BASE_URL = "https://api.terna.it/generation/v2.0";
  * reali, con `retry-after: 1`). Il margine tiene conto che la finestra è
  * allineata ai secondi dell'orologio, non ai nostri intervalli.
  */
+const MAX_REQUEST_INTERVAL = 10;
+
 export const MIN_REQUEST_INTERVAL = (() => {
   const raw = process.env.TERNA_MIN_REQUEST_INTERVAL;
   // `Number(raw) || 1.2` trasformava uno 0 esplicito (utile nei test) in 1,2.
   if (raw === undefined || raw.trim() === "") return 1.2;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1.2;
+  if (!Number.isFinite(parsed) || parsed < 0) return 1.2;
+  // Oltre dieci secondi fra due richieste il sync non finirebbe più: il tetto
+  // vale come il pavimento, e l'avviso dice che il valore dichiarato è stato
+  // ignorato (la CLI lo scrive in `backend.log`).
+  if (parsed > MAX_REQUEST_INTERVAL) {
+    console.warn(
+      `TERNA_MIN_REQUEST_INTERVAL=${raw} exceeds the ${MAX_REQUEST_INTERVAL}s ceiling: using ${MAX_REQUEST_INTERVAL}`,
+    );
+    return MAX_REQUEST_INTERVAL;
+  }
+  return parsed;
 })();
 
 /**
@@ -33,7 +45,27 @@ const MAX_RETRIES = 5;
 const BACKOFF_SECONDS = [2, 4, 8, 15, 30];
 const REQUEST_TIMEOUT_MS = 30_000;
 
-export class TernaApiError extends Error {}
+/**
+ * Un 401 che sopravvive alla riautenticazione non è un token scaduto: le
+ * credenziali sono state rifiutate. Il messaggio dice cosa fare, perché è
+ * quello che l'interfaccia mostra all'utente.
+ */
+const UNAUTHORIZED_MESSAGE =
+  "401 Unauthorized — the credentials were rejected (check them in Credentials)";
+
+export class TernaApiError extends Error {
+  /**
+   * Stato HTTP della risposta che ha prodotto l'errore (`null` per un guasto di
+   * trasporto o un corpo illeggibile). Serve a distinguere un 401 dagli altri
+   * errori senza leggere il testo del messaggio.
+   */
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null = null) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const HTML_TAG = /<[^>]+>/g;
 const WHITESPACE = /\s+/g;
@@ -47,11 +79,43 @@ export function cleanErrorBody(text: string, limit = 300): string {
     .slice(0, limit);
 }
 
+/**
+ * Le sole frasi con cui Terna annuncia un limite di richieste: `Developer Over
+ * Qps` (finestra di un secondo) e `Developer Over Rate` (quota ampia). La
+ * sottostringa nuda `"over"` classificava come rate-limit qualunque 403 il cui
+ * corpo la contenesse — per esempio "overview" — trasformando un rifiuto
+ * definitivo in sei tentativi e un minuto di pausa. I confini di parola tengono
+ * le varianti senza pescare mezze parole.
+ */
+const RATE_LIMIT_MARKERS: readonly RegExp[] = [
+  /\bover\s+qps\b/,
+  /\bover\s+rate\b/,
+  /\bqps\b/,
+  /\brate\s+limit\b/,
+  /\btoo\s+many\b/,
+];
+
 function isRateLimited(status: number, body: string): boolean {
   if (status === 429) return true;
   if (status !== 403) return false;
   const marker = body.toLowerCase();
-  return marker.includes("qps") || marker.includes("over") || marker.includes("rate limit") || marker.includes("too many");
+  return RATE_LIMIT_MARKERS.some((pattern) => pattern.test(marker));
+}
+
+/**
+ * `Retry-After` ha due forme (RFC 9110): i secondi (`120`) o una data HTTP
+ * (`Wed, 21 Oct 2015 07:28:00 GMT`). Terna usa la prima, ma un proxy davanti
+ * può usare la seconda: senza `Date.parse` la data finiva in `Number(...)` =
+ * `NaN` e la pausa diventava il backoff normale, ignorando quanto chiedeva il
+ * server. `null` = header assente o illeggibile.
+ */
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return seconds;
+  const when = Date.parse(value);
+  if (Number.isNaN(when)) return null;
+  return Math.max(0, (when - Date.now()) / 1000);
 }
 
 /**
@@ -182,6 +246,7 @@ export class TernaClient {
 
   private async requestWithRetries(method: string, url: string, options: RequestOptions): Promise<Response> {
     let lastError = "unknown error";
+    let lastStatus: number | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       await this.waitForCooldown();
@@ -210,37 +275,70 @@ export class TernaClient {
           return new Response(body, { status: response.status, headers: response.headers });
         }
         lastError = `${response.status} ${cleanErrorBody(body)}`;
+        lastStatus = response.status;
         const retryable = isRateLimited(response.status, body) || response.status >= 500;
-        if (!retryable) throw new TernaApiError(`Terna API request failed: ${lastError}`);
+        if (!retryable) throw new TernaApiError(`Terna API request failed: ${lastError}`, response.status);
         retryAfter = response.headers.get("retry-after");
         if (isBroadQuota(response.status, body)) {
           // Quota ampia esaurita: si aspetta la finestra, non i pochi secondi
           // del backoff normale.
-          const parsed = Number(retryAfter);
-          this.startCooldown(Number.isFinite(parsed) ? parsed : null);
+          this.startCooldown(parseRetryAfter(retryAfter));
         }
       }
 
       if (attempt >= MAX_RETRIES) break;
       const fallback = BACKOFF_SECONDS[Math.min(attempt, BACKOFF_SECONDS.length - 1)];
-      const parsedRetry = retryAfter ? Number(retryAfter) : Number.NaN;
-      const delay = Number.isFinite(parsedRetry) ? Math.min(60, Math.max(1, parsedRetry)) : fallback;
+      const parsedRetry = parseRetryAfter(retryAfter);
+      const delay = parsedRetry === null ? fallback : Math.min(60, Math.max(1, parsedRetry));
       await sleep(delay * 1000);
     }
 
-    throw new TernaApiError(`Terna API request failed after ${MAX_RETRIES + 1} attempts: ${lastError}`);
+    throw new TernaApiError(
+      `Terna API request failed after ${MAX_RETRIES + 1} attempts: ${lastError}`,
+      lastStatus,
+    );
   }
 
   private async get(path: string, params: Record<string, string | number | null | undefined>): Promise<Record<string, unknown>> {
-    const token = await this.getToken();
     const clean: Record<string, string> = {};
     for (const [key, value] of Object.entries(params)) {
       if (value !== null && value !== undefined && value !== "") clean[key] = String(value);
     }
     const query = new URLSearchParams(clean).toString();
-    const response = await this.requestWithRetries("GET", `${this.baseUrl}${path}${query ? `?${query}` : ""}`, {
-      headers: { Authorization: `Bearer ${token.accessToken}`, Accept: "Application/Json" },
-    });
+    const url = `${this.baseUrl}${path}${query ? `?${query}` : ""}`;
+    const fetchWith = (token: Token) =>
+      this.requestWithRetries("GET", url, {
+        headers: { Authorization: `Bearer ${token.accessToken}`, Accept: "Application/Json" },
+      });
+
+    const token = await this.getToken();
+    let response: Response;
+    try {
+      response = await fetchWith(token);
+    } catch (error) {
+      if (!(error instanceof TernaApiError) || error.status !== 401) throw error;
+      // Un 401 con un token che credevamo valido significa che è stato revocato
+      // o che l'orologio ci ha ingannati: si riautentica **una volta forzando**
+      // la cache e si ritenta il passo una volta sola. Se anche il token nuovo
+      // viene rifiutato, sono le credenziali a essere sbagliate e insistere non
+      // le aggiusta: l'errore lo dice, invece di ripetere un "401" nudo.
+      const fresh = await this.getToken(true).catch((authError: unknown) => {
+        // Anche il token endpoint che rifiuta le credenziali è lo stesso caso:
+        // l'errore del passo deve dire cosa controllare, non ripetere un 401.
+        if (authError instanceof TernaApiError && authError.status === 401) {
+          throw new TernaApiError(UNAUTHORIZED_MESSAGE, 401);
+        }
+        throw authError;
+      });
+      try {
+        response = await fetchWith(fresh);
+      } catch (retryError) {
+        if (retryError instanceof TernaApiError && retryError.status === 401) {
+          throw new TernaApiError(UNAUTHORIZED_MESSAGE, 401);
+        }
+        throw retryError;
+      }
+    }
     const text = await response.text();
     if (!text.trim()) {
       // Terna risponde con corpo vuoto (non un errore) per valori o anni senza

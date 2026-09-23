@@ -1,7 +1,8 @@
-import { Moon, Sun, BookOpen, KeyRound, RefreshCw, LayoutDashboard, Info, Database, ShieldCheck, MonitorSmartphone, CheckCircle2 } from "lucide-react";
+import { Moon, Sun, BookOpen, KeyRound, RefreshCw, LayoutDashboard, Info, Database, ShieldCheck, MonitorSmartphone, CheckCircle2, TriangleAlert } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/context/ThemeContext";
+import { useHealth } from "@/hooks/useMetadata";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,13 @@ const STEPS = [
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const install = usePwaInstall();
+  const health = useHealth();
+  // La porta la sa il server (può aver ripiegato su una libera), non il
+  // documento: `window.location` resta solo come riserva mentre `/health`
+  // non ha ancora risposto.
+  const serverPort = health.data?.port ?? null;
+  const portFallback = health.data?.port_fallback === true;
+  const appUrl = serverPort !== null ? `http://127.0.0.1:${serverPort}` : window.location.origin;
 
   return (
     <div>
@@ -104,6 +112,17 @@ export function SettingsPage() {
             </span>
           </div>
 
+          {portFallback && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-100/60 p-3.5 text-sm leading-relaxed text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Running on a fallback port — the installed app stays bound to{" "}
+                <span className="font-mono text-xs">{appUrl}</span>; reinstall after restarting on the
+                default port.
+              </span>
+            </p>
+          )}
+
           <div className="mt-4 flex flex-wrap items-center gap-3">
             {install.installed ? (
               <p className="flex items-center gap-2 text-sm text-brand-700 dark:text-brand-300">
@@ -114,7 +133,7 @@ export function SettingsPage() {
             ) : (
               <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
                 Open this page from the address shown by <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/[0.07]">ice</code>{" "}
-                (for example <span className="font-mono text-xs">http://127.0.0.1:8731</span>), then use your
+                (<span className="font-mono text-xs">{appUrl}</span>), then use your
                 browser&apos;s menu → <em>Install app</em>. Chromium-based browsers only.
               </p>
             )}

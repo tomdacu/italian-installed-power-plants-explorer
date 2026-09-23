@@ -70,6 +70,90 @@ async function settle(sync: SyncManager, id: string): Promise<SyncJobStatus> {
   throw new Error("il job non è mai finito");
 }
 
+/**
+ * Aspetta che una condizione diventi vera senza orologio: la catena del job è
+ * fatta di microtask, quindi basta cedere il turno.
+ */
+async function until(condition: () => boolean, message: string): Promise<void> {
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    if (condition()) return;
+    await Promise.resolve();
+  }
+  throw new Error(message);
+}
+
+test("una cancellazione ferma i passi successivi e lascia i contatori onesti", async () => {
+  const writes: string[] = [];
+  const store = {
+    replaceSnapshot(dataset: string, year: number) {
+      writes.push(`${dataset} ${year}`);
+      return 1;
+    },
+  } as unknown as CapacityStore;
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = 0;
+  const client = {
+    renewableSourceCapacity: async () => {
+      started += 1;
+      await gate;
+      return {};
+    },
+    generationPlants: async () => {
+      started += 1;
+      return {};
+    },
+  } as unknown as TernaClient;
+
+  const sync = new SyncManager(store, async () => client);
+  const id = sync.start(
+    buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
+  );
+
+  // Il primo passo deve essere davvero partito: cancellare prima proverebbe
+  // solo che la coda non è stata raggiunta.
+  await until(() => started > 0, "il primo passo non è mai partito");
+
+  const cancelled = sync.cancel(id);
+  expect(cancelled?.status).toBe("cancelled");
+  expect(cancelled?.message).toBe("Sync cancelled");
+
+  // Il passo in volo finisce (la sua risposta è comunque utile in cache)…
+  release();
+  await until(() => sync.status(id)?.completed_steps === 1, "il passo in volo non si è concluso");
+  const status = sync.status(id)!;
+
+  expect(status.status).toBe("cancelled");
+  expect(status.message).toBe("Sync cancelled");
+  expect(status.total_steps).toBe(2);
+  expect(status.completed_steps).toBe(1); // solo quello già in volo
+  expect(status.failed_steps).toBe(0);
+  // …il secondo non parte e la cache non lo vede.
+  expect(started).toBe(1);
+  expect(writes).toEqual(["renewable_source_capacity 2024"]);
+});
+
+test("cancellare un job già finito non cambia niente, un id ignoto è null", async () => {
+  const store = {
+    replaceSnapshot() {
+      return 1;
+    },
+  } as unknown as CapacityStore;
+  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
+
+  expect((await settle(sync, id)).status).toBe("completed");
+
+  const again = sync.cancel(id);
+  expect(again?.status).toBe("completed");
+  expect(again?.message).toBe("Sync completed");
+  expect(sync.cancel("inesistente")).toBeNull();
+});
+
 test("un payload Terna inatteso fallisce il passo invece di apparire vuoto", async () => {
   let writes = 0;
   const store = {

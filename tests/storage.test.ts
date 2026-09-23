@@ -346,6 +346,67 @@ describe("CapacityStore", () => {
     expect(csv).not.toContain("'Eolico");
   });
 
+  test("l'export CSV non tocca i numeri negativi: l'apice era corruzione dei dati", () => {
+    store.upsertRecords([
+      row({ year: 2024, source: "Eolico", efficient_power_mw: -1234.567 }),
+      row({ year: 2024, source: "Fotovoltaico", efficient_power_mw: 0 }),
+      row({ year: 2023, source: "Idrico", efficient_power_mw: -0.5 }),
+      row({ year: 2024, source: "=cmd", efficient_power_mw: 1 }),
+      row({ year: 2024, source: "+x", efficient_power_mw: 2 }),
+      row({ year: 2024, source: "-2+3", efficient_power_mw: 3 }),
+      row({ year: 2024, source: "@SUM(1)", efficient_power_mw: 4 }),
+    ]);
+
+    const csv = store.toCsv({} satisfies RecordFilters);
+
+    // Un numero finito è già sicuro: l'apice lo trasformava in testo e la
+    // colonna smetteva di sommare (i valori negativi spariscono dai totali).
+    expect(csv).toContain("-1234.567");
+    expect(csv).not.toContain("'-1234.567");
+    expect(csv).not.toContain("'-0.5");
+    // La riga completa del numero negativo non contiene nemmeno un apice.
+    const line = csv.split("\r\n").find((entry) => entry.includes("-1234.567"));
+    expect(line).toBe(
+      "renewable_source_capacity,2024,Lorda,Lombardia,Milano,Eolico,,,,-1234.567,,2026-01-01T00:00:00+00:00",
+    );
+    // Solo le stringhe con un carattere di formula restano disinnescate.
+    expect(csv).toContain("'=cmd");
+    expect(csv).toContain("'+x");
+    expect(csv).toContain("'-2+3");
+    expect(csv).toContain("'@SUM(1)");
+  });
+
+  test("la guardia shrink nomina la via d'uscita e la rispetta", () => {
+    const stored = [1, 2, 3].map((n) => row({ year: 2023, source: `Fonte${n}`, efficient_power_mw: n }));
+    store.upsertRecords(stored);
+
+    // Il rifiuto dice *entrambe* le vie: la variabile e la cancellazione della cache.
+    expect(() => store.replaceSnapshot("renewable_source_capacity", 2023, [stored[0]!])).toThrow(
+      "TERNA_ALLOW_YEAR_SHRINK=1",
+    );
+    expect(() => store.replaceSnapshot("renewable_source_capacity", 2023, [stored[0]!])).toThrow(
+      "delete terna_cache.sqlite",
+    );
+    expect(store.countRecords({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toBe(3);
+
+    const before = process.env.TERNA_ALLOW_YEAR_SHRINK;
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(String(message));
+    process.env.TERNA_ALLOW_YEAR_SHRINK = "1";
+    try {
+      // Con la variabile la sostituzione avviene, e l'avviso dice cosa è stato accettato.
+      expect(store.replaceSnapshot("renewable_source_capacity", 2023, [stored[0]!])).toBe(1);
+    } finally {
+      console.warn = warn;
+      if (before === undefined) delete process.env.TERNA_ALLOW_YEAR_SHRINK;
+      else process.env.TERNA_ALLOW_YEAR_SHRINK = before;
+    }
+
+    expect(warnings.join("\n")).toContain("TERNA_ALLOW_YEAR_SHRINK=1");
+    expect(store.countRecords({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toBe(1);
+  });
+
   test("busy_timeout waits for the write lock instead of failing straight away", async () => {
     // Cross-process lock contention: SQLite's busy handler waits on a real OS
     // lock, so the one delay below cannot be driven by fake timers (the child

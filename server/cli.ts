@@ -9,6 +9,7 @@
  */
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { inspect } from "node:util";
 
 import { startApp, type LocalApp } from "./app.ts";
 import { appDataDir } from "./settings.ts";
@@ -60,6 +61,25 @@ function log(message: string): void {
     }
   }
   process.stderr.write(`${message}\n`);
+}
+
+/** Una riga di console: gli argomenti non-stringa passano da `inspect`, così un
+ *  Error porta con sé lo stack invece di diventare "[object Object]". */
+function consoleMessage(args: unknown[]): string {
+  return args.map((value) => (typeof value === "string" ? value : inspect(value))).join(" ");
+}
+
+/**
+ * `console.warn` e `console.error` finiscono nel log dell'istanza. Il file
+ * `backend.log` è l'unica traccia che resta quando la finestra è senza console:
+ * gli avvisi emessi dalle librerie (per esempio il ripiego Linux di
+ * `secrets.ts` o l'intervallo minimo fra richieste corretto da `db.ts`) devono
+ * arrivare lì. Una sola destinazione: `log` scrive già su file **e** stderr,
+ * quindi non c'è doppio stampo.
+ */
+function installConsoleBridge(): void {
+  console.warn = (...args: unknown[]) => log(`[warn] ${consoleMessage(args)}`);
+  console.error = (...args: unknown[]) => log(`[error] ${consoleMessage(args)}`);
 }
 
 interface CliOptions {
@@ -134,6 +154,9 @@ function openInterface(url: string, mode: CliOptions["window"]): void {
 }
 
 function main(): void {
+  // Prima di tutto: qualunque avviso emesso da qui in avanti (avvio compreso)
+  // deve poter finire nel log dell'istanza.
+  installConsoleBridge();
   const options = parseArgs(Bun.argv.slice(2));
 
   // Una sola cartella dati per tutta l'istanza: con `--data-dir D` il log sta in
