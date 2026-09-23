@@ -20,9 +20,14 @@ sync, fewer surprises.
 - **Year menus follow the dataset.** With *Installed capacity (national)*
   selected, the pickers offer 2021–2022 instead of years that dataset has never
   published, so the dashboard can no longer end up silently empty.
-- **The sync default range stops at the last year you actually have**, instead of
-  asking for years Terna has not published yet: no more guaranteed empty steps.
-  Any year the API accepts can still be entered by hand.
+- **The sync default range follows what Terna has published.** With data in the
+  cache it ends at the latest year you actually have, instead of asking for
+  years Terna has not published yet. On a first start the cache is empty and
+  there is nothing to follow, so it ends at the last complete year (the current
+  one minus one): a sensible guess, not a promise — Terna publishes with a lag,
+  so a year it has not released yet can still come back empty, and the sync
+  reports it as such when it ends. Any year the API accepts can still be entered
+  by hand.
 - **Skipped and empty steps are told apart.** Years a dataset does not publish are
   counted in `skipped_steps` and reported as such ("those years are not published
   for the selected datasets"), separate from the empty or failed ones — and
@@ -46,6 +51,13 @@ sync, fewer surprises.
 
 The package is not on npm yet: run the app from a checkout. Updating is
 `git pull` followed by the same two commands.
+
+On Windows there is also the release **zip**, and it needs no Bun at all:
+`Italian-Renewable-Capacity-Explorer-<version>-win-x64.zip` holds the executable
+**and** the interface it serves. Unzip it and run `ice.exe` from inside the
+extracted folder; check the download against the `SHA256SUMS.txt` published next
+to it. There is no bare `ice.exe` to download: without the `static/` folder
+beside it, `GET /` answers `500` and the window stays empty.
 
 ```bash
 git clone https://github.com/tomdacu/italian-renewable-capacity-explorer

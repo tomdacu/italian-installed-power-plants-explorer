@@ -67,7 +67,7 @@ Then, inside the app:
 
 ```bash
 bun run dev            # Vite dev server with hot reload; run `bun run serve` too
-bun test               # 110 tests
+bun test               # 114 tests
 ```
 
 The interface is built, not committed: without `bun run prepack` (or `bun run

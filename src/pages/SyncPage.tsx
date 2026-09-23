@@ -73,7 +73,7 @@ function FieldSection({
           <Icon className="h-4 w-4" />
         </span>
         <div>
-          <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">{title}</h3>
+          <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">{title}</h2>
           <p className="text-xs text-ink-500 dark:text-ink-400">{description}</p>
         </div>
       </div>
@@ -126,7 +126,9 @@ export function SyncPage() {
   }, [lastPublished, currentYear]);
 
   const startSync = async () => {
-    if (sync.loadingExistingJob || sync.starting || sync.running) return;
+    // `busy` è la stessa condizione che spegne i bottoni: guardia e `disabled`
+    // non possono divergere.
+    if (sync.busy) return;
     if (!creds.data?.configured) {
       toast.error("Configure credentials first", "Add your Terna keys in the Credentials page.");
       return;
@@ -164,7 +166,7 @@ export function SyncPage() {
         title="Data sync"
         subtitle="Download all Terna capacity data, then explore it on the dashboard"
         actions={
-          <Button variant="primary" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.loadingExistingJob || sync.running}>
+          <Button variant="primary" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.busy}>
             <RefreshCw className={cn("h-4 w-4", sync.polling && "animate-spin")} /> Download everything
           </Button>
         }
@@ -198,7 +200,7 @@ export function SyncPage() {
                   }}
                   className="h-9 max-w-[140px]"
                 />
-                <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.loadingExistingJob || sync.running}>
+                <Button variant="outline" size="sm" className="h-9" onClick={startSync} loading={sync.starting} disabled={sync.busy}>
                   <DownloadCloud className="h-3.5 w-3.5" /> Download
                 </Button>
               </div>
@@ -211,7 +213,12 @@ export function SyncPage() {
                   2021 onwards, so those earlier years are skipped for that dataset.
                 </span>
               </p>
-              {lastPublished === null && (
+              {/* "Nothing is cached yet" è un'affermazione sulla cache: si può
+                  fare solo dopo una risposta riuscita e con la cache davvero
+                  vuota. In caricamento o in errore non sappiamo niente, e la
+                  nota restava lì mentre il database aveva 68k righe (o
+                  lampeggiava per il tempo della richiesta). */}
+              {availability.isSuccess && lastPublished === null && (
                 <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -232,7 +239,8 @@ export function SyncPage() {
                 <p className="text-sm text-ink-500 dark:text-ink-400">Loading…</p>
               ) : availability.isError ? (
                 <p className="text-sm text-ink-500 dark:text-ink-400">
-                  Could not reach the local data service. Start a download to populate the database.
+                  Could not reach the local data service. It keeps retrying on its own, so give it
+                  a few seconds — downloading now would fail for the same reason.
                 </p>
               ) : !availability.data || availability.data.total_rows === 0 ? (
                 <p className="text-sm text-ink-500 dark:text-ink-400">
@@ -252,7 +260,7 @@ export function SyncPage() {
                     <Radar className="h-4 w-4" />
                   </span>
                   <div>
-                    <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Job status</h3>
+                    <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Job status</h2>
                     <p className="text-xs text-ink-500 dark:text-ink-400">Live progress of the current sync.</p>
                   </div>
                 </div>
@@ -293,7 +301,7 @@ export function SyncPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <Progress value={job.completed_steps} max={Math.max(1, job.total_steps)} />
+                  <Progress value={job.completed_steps} max={Math.max(1, job.total_steps)} label="Sync progress" />
                   <div className="flex items-center justify-between text-xs text-ink-500 dark:text-ink-400">
                     <span>
                       {job.completed_steps} / {job.total_steps} steps

@@ -117,9 +117,14 @@ export class SyncManager {
     const jobId = crypto.randomUUID();
     const { steps, dropped } = plan;
     // Un job completato serve solo a rispondere al polling dell'interfaccia:
-    // oltre venti, i più vecchi non servono più a nessuno.
+    // oltre venti, i più vecchi non servono più a nessuno. Vale anche per i
+    // cancellati: l'interfaccia smette di interrogarli appena li vede tali, e
+    // lasciarli nella mappa significava espellere solo i job finiti, cioè non
+    // far mai posto a una lunga serie di cancellazioni.
     if (this.jobs.size >= 20) {
-      const oldest = [...this.jobs.entries()].find(([, state]) => state.status === "completed" || state.status === "failed");
+      const oldest = [...this.jobs.entries()].find(
+        ([, state]) => state.status === "completed" || state.status === "failed" || state.status === "cancelled",
+      );
       if (oldest) this.jobs.delete(oldest[0]);
     }
     this.jobs.set(jobId, {

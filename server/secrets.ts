@@ -27,7 +27,11 @@ async function writeAtomic(path: string, data: Uint8Array | string, mode?: numbe
     try {
       rmSync(temporary, { force: true });
     } catch {
-      // il temporaneo non si cancella: l'errore da riportare resta quello vero
+      // Il temporaneo non si cancella: l'errore da riportare resta quello vero.
+      // Ma il file abbandonato va nominato — senza questa riga restava sul disco
+      // (magari con dentro un segreto) senza che nessuno sapesse dove guardare.
+      // Nessuna cancellazione d'ufficio: chi legge il log decide cosa farne.
+      console.warn(`[secrets] temporary file left behind: ${temporary}`);
     }
     throw error;
   }

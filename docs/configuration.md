@@ -83,7 +83,7 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 110 tests, no network or credentials required
+bun test                 # 114 tests, no network or credentials required
 bun run typecheck        # interface + server
 bun run build            # production bundle: dist/, and static/ refreshed with it
 ```
@@ -129,6 +129,42 @@ A standalone executable for your own machine, if you want one:
 ```bash
 bun run compile          # dist-exe/ice.exe plus static/ — needs both to run
 ```
+
+## Releasing
+
+`.github/workflows/release.yml` and `.github/workflows/publish.yml` both fire on
+a `v*` tag (and by hand from *Actions*), so a release is: bump, write the notes,
+tag. Checklist:
+
+1. **Version.** `package.json` `version` is the single source of truth. The tag
+   must be `v<version>` — `publish.yml` refuses to publish when `GITHUB_REF_NAME`
+   does not match it — and the first heading of
+   [`.github/release-notes.md`](../.github/release-notes.md) must read
+   `## Version <version>`, which is what `release.yml` checks before drafting the
+   release (the comparison folds case and trims spaces, so `## version 1.1.0`
+   passes too). Both failures name the two values, so they are one line of fix
+   rather than a guessing game.
+2. **The notes.** Rewrite the version heading and the *What's new* section of
+   `.github/release-notes.md`: that file is the release body (`body_path`), and
+   GitHub appends its automatic notes — merged PRs, commits — after it.
+3. **The npm token.** The repository secret `NPM_TOKEN` must hold an npm
+   **automation token** with publish rights. A token that still answers a 2FA
+   prompt cannot be published from here: `npm publish` runs unattended on a
+   runner and nobody can type the one-time password (EOTP), so the run dies at
+   the registry with an authentication error. Automation tokens are exempt from
+   that prompt — that is what they are for. `publish.yml` fails with an explicit
+   `::error::` when the secret is empty, instead of finishing green without
+   publishing anything; the provenance attestation needs no further secret
+   (`id-token: write` is already in the workflow).
+4. **Tag and push.** `git tag v1.1.0 && git push origin v1.1.0`. A tag that was
+   never pushed triggers nothing.
+5. **The assets.** The release must carry the **zip**
+   `Italian-Renewable-Capacity-Explorer-<version>-win-x64.zip` (executable +
+   `static/`) and `SHA256SUMS.txt` with its SHA-256. The bare `ice.exe` is an
+   internal job artifact, never a release asset: on its own, without the
+   `static/` next to it, it answers `500`. `release.yml` starts the built
+   executable and asks it for `/health` and `/` before packaging it, so a broken
+   bundle stops the release instead of reaching a download page.
 
 ## Troubleshooting
 

@@ -7,12 +7,12 @@
  *   ice --browser      → browser di sistema
  *   ice --no-window    → solo server (script, test, uso da remoto)
  */
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspect } from "node:util";
 
 import { startApp, type LocalApp } from "./app.ts";
-import { appDataDir } from "./settings.ts";
+import { appDataDir, ensureDataDir } from "./settings.ts";
 
 const BROWSER_CANDIDATES = [
   join(process.env["ProgramFiles(x86)"] ?? "", "Microsoft/Edge/Application/msedge.exe"),
@@ -23,12 +23,16 @@ const BROWSER_CANDIDATES = [
 
 /** Porta stabile: l'origine della PWA installata include la porta, quindi una
  * porta casuale a ogni avvio invaliderebbe l'installazione. Se è occupata si
- * ripiega su una porta libera (in quel caso la PWA va reinstallata). */
-/** Una ICE_PORT malformata non deve far esplodere l'avvio: si ricade sul default. */
-const DEFAULT_PORT = (() => {
-  const raw = Number(process.env.ICE_PORT ?? 8731);
-  return Number.isInteger(raw) && raw > 0 && raw < 65536 ? raw : 8731;
-})();
+ * ripiega su una porta libera (in quel caso la PWA va reinstallata).
+ *
+ * Una ICE_PORT malformata non deve far esplodere l'avvio: si ricade sul default
+ * (8731), e la riga in `backend.log` dice che il valore dichiarato è stato
+ * ignorato. Una variabile assente o vuota è "non impostata", non un errore. */
+const RAW_ICE_PORT = process.env.ICE_PORT;
+const ICE_PORT_VALUE = Number(RAW_ICE_PORT ?? 8731);
+const ICE_PORT_USABLE = Number.isInteger(ICE_PORT_VALUE) && ICE_PORT_VALUE > 0 && ICE_PORT_VALUE < 65536;
+const DEFAULT_PORT = ICE_PORT_USABLE ? ICE_PORT_VALUE : 8731;
+const ICE_PORT_INVALID = RAW_ICE_PORT !== undefined && RAW_ICE_PORT.trim() !== "" && !ICE_PORT_USABLE;
 
 /** File di log dell'istanza: aperto prima di costruire l'app, così ogni errore
  * d'avvio resta scritto da qualche parte anche senza console. */
@@ -46,6 +50,10 @@ function openLog(path: string): void {
   // senza, `logTarget` restava valorizzato anche quando nessuno poteva
   // scrivere, e la riga "Dettagli in …" indicava un file inesistente.
   appendFileSync(path, "");
+  // Su Windows `appendFileSync` non fallisce nemmeno contro una cartella: se il
+  // target è una directory la prova deve comunque fallire, altrimenti
+  // `logTarget` punterebbe a un percorso su cui non si scriverà mai nulla.
+  if (!statSync(path).isFile()) throw new Error(`${path} is a directory, not a log file`);
   logTarget = path;
 }
 
@@ -169,7 +177,7 @@ function main(): void {
   // e, con la finestra senza console, non lo vedeva nessuno.
   let logPath: string | null = null;
   try {
-    mkdirSync(dataDir, { recursive: true });
+    ensureDataDir(dataDir);
     logPath = join(dataDir, "backend.log");
     openLog(logPath);
   } catch (error) {
@@ -198,6 +206,12 @@ function main(): void {
     // Il ripiego sulla porta scelta dal sistema non deve essere silenzioso:
     // `--port abc` rispondeva 200 su una porta che nessuno aveva chiesto.
     log(`invalid --port value: using port ${app.port}`);
+  }
+  if (ICE_PORT_INVALID) {
+    // Stessa cortesia per la variabile d'ambiente: senza questa riga il log
+    // diceva solo "porta occupata" facendo credere che l'unico problema fosse
+    // la porta, mentre il valore dichiarato in `ICE_PORT era illeggibile.
+    log(`invalid ICE_PORT value: using port ${app.port}`);
   }
   if (app.portFallback) {
     // Con la console nascosta l'avviso su stderr non lo vede nessuno: finisce

@@ -3,6 +3,7 @@
  * Porting di `backend/src/terna_backend/settings.py`: stessa cartella dati,
  * stessa migrazione dai nomi precedenti alla rinomina.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
@@ -47,6 +48,78 @@ export function appDataDir(root: string = appDataRoot()): string {
     }
   }
   return target;
+}
+
+/**
+ * SID dell'utente corrente, indipendente dalla lingua del sistema (`whoami /user`
+ * in formato CSV: l'ultimo campo è sempre il SID). `null` se non si riesce a
+ * leggerlo — in quel caso l'ACL non si tocca: senza l'utente corrente nella
+ * lista dei permessi la cartella resterebbe inaccessibile a chi l'ha creata.
+ * Gli eseguenti si cercano in `System32`: nel PATH può esserci il `whoami` di
+ * un'altra piattaforma (Git Bash, MSYS) che non conosce `/user`.
+ */
+function currentUserSid(): string | null {
+  try {
+    const output = execFileSync(windowsTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    return output.match(/"(S-1-[0-9-]+)"/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Percorso assoluto di un eseguente di sistema: il PATH non è una garanzia. */
+function windowsTool(name: string): string {
+  const root = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
+  return join(root, "System32", name);
+}
+
+/**
+ * Permessi della cartella dati su Windows: via l'ereditarietà (che porta dentro
+ * `INTERACTIVE`, cioè qualunque utente collegato alla macchina) e permessi
+ * pieni solo a utente corrente, SYSTEM e Administrators. I SID dei gruppi
+ * predefiniti sono gli stessi in ogni lingua; l'utente corrente si nomina col
+ * suo SID perché `DOMINIO\utente` cambia con la lingua e col tipo di account.
+ */
+function restrictDataDirWindows(dataDir: string): void {
+  const sid = currentUserSid();
+  if (!sid) {
+    console.warn(`[settings] data directory permissions left unchanged: current user SID not available (${dataDir})`);
+    return;
+  }
+  try {
+    execFileSync(
+      windowsTool("icacls.exe"),
+      [
+        dataDir,
+        "/inheritance:r",
+        "/grant:r", `*${sid}:(OI)(CI)F`,
+        "/grant:r", "*S-1-5-18:(OI)(CI)F", // SYSTEM
+        "/grant:r", "*S-1-5-32-544:(OI)(CI)F", // Administrators
+      ],
+      { stdio: "ignore", windowsHide: true },
+    );
+  } catch (error) {
+    // Best effort: senza ACL restrittiva l'app funziona lo stesso, e un avviso
+    // battuto nel log è meglio di una cartella dati che nessuno può più leggere.
+    const detail = (error as Error)?.message ?? String(error);
+    console.warn(`[settings] could not restrict permissions on the data directory (${dataDir}): ${detail}`);
+  }
+}
+
+/**
+ * Crea la cartella dati con i permessi giusti **alla creazione**: su POSIX
+ * `0700` (il segreto ci vive accanto), su Windows l'ACL ristretta qui sopra.
+ * Se la cartella esiste già non si tocca niente: più istanze sulla stessa
+ * cartella non devono litigare sui permessi di una cartella che non hanno
+ * creato loro — e una cartella condivisa di proposito deve restare com'è.
+ */
+export function ensureDataDir(dataDir: string): void {
+  if (existsSync(dataDir)) return;
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  if (platform() === "win32") restrictDataDirWindows(dataDir);
 }
 
 export interface AppSettings {
@@ -99,7 +172,9 @@ function writeSettings(path: string, payload: SettingsPayload): void {
     try {
       rmSync(temporary, { force: true });
     } catch {
-      // il temporaneo non si cancella: l'errore da riportare resta quello vero
+      // Il temporaneo non si cancella: l'errore da riportare resta quello vero,
+      // ma il file abbandonato va nominato invece di sparire dal log.
+      console.warn(`[settings] temporary file left behind: ${temporary}`);
     }
     throw error;
   }
@@ -130,7 +205,7 @@ export class SettingsStore {
   }
 
   load(): AppSettings {
-    mkdirSync(this.dataDir, { recursive: true });
+    ensureDataDir(this.dataDir);
     const payload = this.readPayload();
     const fromEnv = envCredentials();
     return {
@@ -152,7 +227,7 @@ export class SettingsStore {
    * 500 e lo stato continua a mostrare le credenziali precedenti.
    */
   async saveCredentials(clientId: string, clientSecret: string): Promise<void> {
-    mkdirSync(this.dataDir, { recursive: true });
+    ensureDataDir(this.dataDir);
     const payload = this.readPayload();
     const previousClientId = payload.client_id ?? null;
     // Il segreto vecchio si legge **prima** di scrivere quello nuovo. Senza un

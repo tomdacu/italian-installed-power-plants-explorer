@@ -14,6 +14,7 @@ jobs:
   build-exe:
     name: Build the Windows executable
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +31,35 @@ jobs:
       - name: Build the executable
         run: bun run compile
 
+      # L'eseguibile da solo — senza la `static/` che gli sta accanto — su
+      # `GET /` risponde 500 in silenzio: prima di impacchettarlo lo si avvia
+      # davvero e gli si chiede l'interfaccia. Su un runner non c'è nulla da
+      # aprire (`--no-window`) e la data dir vive in `$RUNNER_TEMP`.
+      # Niente `pipefail` (come in ci.yml): `grep -q` esce al primo match e la
+      # SIGPIPE che ne segue farebbe fallire la pipeline di curl.
+      - name: Smoke test the executable
+        shell: bash
+        run: |
+          set -eu
+          ./dist-exe/ice.exe --no-window --port 8899 --data-dir "$RUNNER_TEMP/zapp-exe-smoke" &
+          exe_pid=$!
+          trap 'kill "$exe_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl --max-time 5 -fsS http://127.0.0.1:8899/health > /dev/null; then break; fi
+            sleep 1
+          done
+
+          curl --max-time 5 -fsS http://127.0.0.1:8899/health
+          curl --max-time 5 -fsS http://127.0.0.1:8899/ | grep -q "<!doctype html"
+
+          kill "$exe_pid"
+          wait "$exe_pid" 2>/dev/null || true
+
+      # Gli asset pubblici della release sono lo **zip** (eseguibile +
+      # interfaccia) e i suoi checksum: l'`.exe` nudo non viene allegato, perché
+      # da solo, senza la `static/` che gli sta accanto, per chi lo scarica è un
+      # 500 silenzioso. Il checksum copre i file allegati, cioè lo zip.
       - name: Package the release assets (zip + checksums)
         shell: pwsh
         run: |
@@ -37,14 +67,13 @@ jobs:
           $zip = "Italian-Renewable-Capacity-Explorer-$version-win-x64.zip"
           Compress-Archive -Path dist-exe/* -DestinationPath $zip -Force
 
-          $sums = foreach ($asset in @("dist-exe/ice.exe", $zip)) {
-            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLower()
-            "$hash  $(Split-Path $asset -Leaf)"
-          }
-          Set-Content -Path SHA256SUMS.txt -Value $sums -Encoding ascii
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+          Set-Content -Path SHA256SUMS.txt -Value "$hash  $zip" -Encoding ascii
           Get-Content SHA256SUMS.txt
 
-      - name: Upload the release assets
+      # L'artefatto del job (interno, non un asset pubblico) porta anche
+      # l'eseguibile nudo: serve solo a questo run.
+      - name: Upload the job artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
@@ -58,6 +87,7 @@ jobs:
     name: Draft the GitHub release
     needs: build-exe
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +104,7 @@ jobs:
           bun run typecheck
           bun run build
 
-      - name: Download the executable built on Windows
+      - name: Download the release assets built on Windows
         uses: actions/download-artifact@v4
         with:
           name: windows-exe
@@ -83,12 +113,15 @@ jobs:
       # L'intestazione `## Version X.Y.Z` di `.github/release-notes.md` è il
       # titolo della release: se non corrisponde a `package.json` il corpo
       # annuncerebbe una versione diversa da quella pubblicata (stesso schema
-      # del guard sul tag in publish.yml). Il file si legge e basta.
+      # del guard sul tag in publish.yml). Il confronto è tenace — spazi finali,
+      # `\r` di un checkout Windows e un `## version` minuscolo non devono
+      # produrre un rosso falso — ma il messaggio nomina comunque entrambi i
+      # valori. Il file si legge e basta.
       - name: Check the release notes version matches package.json
         run: |
           version="$(bun -p 'require("./package.json").version')"
-          heading="$(sed -n 's/^## Version //p' .github/release-notes.md | head -n 1 | tr -d '\r')"
-          if [ "$heading" != "$version" ]; then
+          heading="$(sed -nE 's/^##[[:space:]]*version[[:space:]]*//Ip' .github/release-notes.md | head -n 1 | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ "$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]')" ]; then
             echo "::error::.github/release-notes.md says \"## Version $heading\" but package.json is version $version: update the heading to \"## Version $version\" (or bump package.json) and re-run this workflow."
             exit 1
           fi
@@ -96,6 +129,9 @@ jobs:
       # `body_path` resta il corpo curato a mano; `generate_release_notes`
       # aggiunge in coda le note automatiche del tag (PR e commit), così due
       # release consecutive non hanno più lo stesso testo.
+      #
+      # `files` allega lo **zip** (eseguibile + interfaccia) e i checksum, non
+      # l'`.exe` nudo: l'eseguibile da solo non sa servire l'interfaccia.
       - name: Publish the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -104,6 +140,5 @@ jobs:
           body_path: .github/release-notes.md
           generate_release_notes: true
           files: |
-            release-assets/dist-exe/ice.exe
             release-assets/Italian-Renewable-Capacity-Explorer-*-win-x64.zip
             release-assets/SHA256SUMS.txt

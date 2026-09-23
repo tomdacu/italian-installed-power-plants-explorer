@@ -3,10 +3,18 @@
  *
  * Su Windows un database SQLite in WAL tiene i file `-shm`/`-wal` mappati fino
  * alla fine del processo: la cartella non si può cancellare mentre il run è in
- * corso. Quindi ogni run **ripulisce i residui del run precedente** (quando
+ * corso. Quindi ogni run **ripulisce i residui dei run precedenti** (quando
  * nessuno li tiene più) e prova comunque a rimuovere i propri alla fine.
+ *
+ * Due garanzie, in ordine:
+ * 1. lo sweep tocca **solo** i prefissi che questa suite crea (`SUITE_PREFIXES`)
+ *    — mai cartelle altrui che usano `%TEMP%`;
+ * 2. tocca solo ciò che è **morto**: `tempDir` scrive `owner.pid` dentro ogni
+ *    cartella, e lo sweep la salta se quel processo è ancora vivo. Due suite
+ *    simultanee (il caso che il vecchio glob di prefissi non copriva) si
+ *    rispettano a vicenda; un run crashato lascia comunque residui rimovibili.
  */
-import { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,12 +59,36 @@ let swept = false;
  */
 export const SUITE_PREFIXES = ["ice-api-", "ice-http-", "ice-root-", "ice-settings-", "ice-test-"];
 
-/** Esperto per il test: rimuove i residui dei run precedenti, mai il resto. */
+/** `true` solo se il processo risponde viva; ogni dubbio conta come vivo. */
+function ownerAlive(dir: string): boolean {
+  let raw: string;
+  try {
+    raw = readFileSync(join(dir, "owner.pid"), "utf8").trim();
+  } catch {
+    // Nessun proprietario dichiarato: residuo (crash prima della scrittura o
+    // run anteriore a questo meccanismo) — lo sweep lo prende, come faceva lui.
+    return false;
+  }
+  const pid = Number(raw);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // ESRCH = morto (lo sweep provveda); qualunque altro dubbio (permessi,
+    // pid di un altro utente) = lo si lascia stare.
+    return (error as NodeJS.ErrnoException)?.code !== "ESRCH";
+  }
+}
+
+/** Esperto per il test: rimuove i residui morti, mai il vivo, mai il forestiero. */
 export function sweepSuiteLeftovers(): void {
   try {
     for (const entry of readdirSync(tmpdir())) {
       if (!SUITE_PREFIXES.some((prefix) => entry.startsWith(prefix))) continue;
-      removeDir(join(tmpdir(), entry));
+      const dir = join(tmpdir(), entry);
+      if (ownerAlive(dir)) continue;
+      removeDir(dir);
     }
   } catch {
     // %TEMP% illeggibile: pazienza.
@@ -73,6 +105,18 @@ export function tempDir(prefix: string): string {
   sweepLeftovers();
   const dir = mkdtempSync(join(tmpdir(), prefix));
   created.push(dir);
+  // Senza il marchio la cartella sarebbe "suite ma senza proprietario", cioè
+  // esattamente il caso che lo sweep prende mentre è viva: se il marchio non si
+  // può scrivere, meglio NON avere una cartella live senza proprietario.
+  try {
+    writeFileSync(join(dir, "owner.pid"), String(process.pid));
+  } catch (error) {
+    removeDir(dir);
+    throw new Error(
+      `Could not mark ${dir} as owned by this run (${(error as Error)?.message ?? String(error)}): ` +
+        "another suite would be allowed to sweep it mid-run.",
+    );
+  }
   return dir;
 }
 

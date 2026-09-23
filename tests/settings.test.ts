@@ -175,15 +175,22 @@ test("se settings.json non si scrive, la rotazione non lascia un id nuovo accant
   const store = new SettingsStore(dataDir);
   await store.saveCredentials("old-client", "OLD-SECRET");
 
+  // Il modo di rendere la scrittura impossibile dipende dalla piattaforma.
   // Su Windows `chmod 444` mette l'attributo sola-lettura: la scrittura e il
   // rename del file falliscono con EPERM e il contenuto vecchio resta leggibile.
+  // Su POSIX i permessi del *file* non fermano il rename: a decidere è la
+  // scrittura nella cartella, che resta permessa anche con `settings.json` a
+  // 0444 (il rename sostituisce una voce di directory, non riscrive il file).
+  // Lì si toglie il permesso di scrittura alla cartella dati: il `.tmp` non
+  // nasce e la scrittura fallisce con EACCES prima di toccare `settings.json`.
   const settingsPath = join(dataDir, "settings.json");
   const before = readFileSync(settingsPath, "utf8");
-  chmodSync(settingsPath, 0o444);
+  const blocked = process.platform === "win32" ? settingsPath : dataDir;
+  chmodSync(blocked, process.platform === "win32" ? 0o444 : 0o555);
   try {
     await expect(store.saveCredentials("new-client", "NEW-SECRET")).rejects.toThrow();
   } finally {
-    chmodSync(settingsPath, 0o644);
+    chmodSync(blocked, process.platform === "win32" ? 0o644 : 0o700);
   }
 
   // Il file è rimasto quello di prima, byte per byte, e il segreto è stato

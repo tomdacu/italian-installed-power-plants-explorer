@@ -189,6 +189,37 @@ test("gli anni limati finiscono in skipped_steps invece di sparire", async () =>
   expect(status.skipped_steps).toBeGreaterThanOrEqual(2);
 });
 
+test("anni duplicati non diventano passi saltati: la deduplica è silenziosa", async () => {
+  const { app } = buildApp();
+  const post = (years: number[]) =>
+    app.request("/sync/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ years, datasets: ["renewable_source_capacity"] }),
+    });
+  const counts = async (years: number[]) => {
+    const response = await post(years);
+    expect(response.status).toBe(200);
+    const { job_id } = (await response.json()) as { job_id: string };
+    return (await (await app.request(`/sync/jobs/${job_id}`)).json()) as {
+      total_steps: number;
+      skipped_steps: number;
+    };
+  };
+
+  // Lo stesso anno richiesto due volte: un passo solo, zero saltati — prima
+  // `years.length - kept.length` contava il duplicato come «non pubblicato» e
+  // la UI raccontava un anno inesistente agli utenti.
+  const dup = await counts([2024, 2024]);
+  expect(dup.total_steps).toBe(1);
+  expect(dup.skipped_steps).toBe(0);
+
+  // Un fuori-range ripetuto conta una volta sola: l'unico vero salto è il 1999.
+  const mixed = await counts([1999, 1999, 2024]);
+  expect(mixed.total_steps).toBe(1);
+  expect(mixed.skipped_steps).toBe(1);
+});
+
 test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () => {
   const root = tempDir("ice-api-");
   const store = new CapacityStore(join(root, "cache.sqlite"));

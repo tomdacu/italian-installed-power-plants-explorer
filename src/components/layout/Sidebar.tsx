@@ -114,7 +114,7 @@ export function Sidebar() {
         </div>
         <div className="min-w-0">
           <p className="font-display text-[15px] font-semibold leading-tight text-ink-900 dark:text-white">Italian Renewable</p>
-          <p className="truncate text-[11px] font-medium tracking-wide text-brand-600 dark:text-brand-300/80">
+          <p className="truncate text-[11px] font-medium tracking-wide text-brand-700 dark:text-brand-300/80">
             Capacity Explorer
           </p>
         </div>

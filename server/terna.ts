@@ -15,7 +15,29 @@ const BASE_URL = "https://api.terna.it/generation/v2.0";
  */
 const MAX_REQUEST_INTERVAL = 10;
 
-export const MIN_REQUEST_INTERVAL = (() => {
+/**
+ * L'intervallo minimo arriva già calcolato oppure come funzione da valutare
+ * alla costruzione del client: `server/client.ts` passa `MIN_REQUEST_INTERVAL`,
+ * che è una funzione.
+ */
+export type MinRequestInterval = number | (() => number);
+
+/**
+ * Intervallo minimo fra due richieste, letto dall'ambiente **al primo uso** e
+ * non all'import: a livello di modulo il calcolo cadeva prima che la CLI
+ * installasse il ponte di `console` (`server/cli.ts`), quindi l'avviso su un
+ * valore fuori scala finiva su una console che non esiste e non in
+ * `backend.log`. Il valore si calcola una volta sola: l'ambiente non cambia a
+ * processo avviato e l'avviso non deve ripetersi a ogni client.
+ */
+let minRequestIntervalValue: number | null = null;
+
+export function MIN_REQUEST_INTERVAL(): number {
+  if (minRequestIntervalValue === null) minRequestIntervalValue = readMinRequestInterval();
+  return minRequestIntervalValue;
+}
+
+function readMinRequestInterval(): number {
   const raw = process.env.TERNA_MIN_REQUEST_INTERVAL;
   // `Number(raw) || 1.2` trasformava uno 0 esplicito (utile nei test) in 1,2.
   if (raw === undefined || raw.trim() === "") return 1.2;
@@ -31,7 +53,7 @@ export const MIN_REQUEST_INTERVAL = (() => {
     return MAX_REQUEST_INTERVAL;
   }
   return parsed;
-})();
+}
 
 /**
  * Oltre al limite per secondo c'è una quota più ampia (`403 Developer Over
@@ -151,11 +173,18 @@ export class TernaClient {
   private readonly tokenUrl: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  /** Pausa fra due richieste, risolta alla costruzione (vedi il costruttore). */
+  private readonly minRequestInterval: number;
 
   constructor(
     private readonly clientId: string,
     private readonly clientSecret: string,
-    private readonly minRequestInterval: number = MIN_REQUEST_INTERVAL,
+    /**
+     * Numero o funzione: `server/client.ts` passa `MIN_REQUEST_INTERVAL`, la
+     * cui valutazione (avviso compreso) deve cadere **qui**, a runtime, quando
+     * il ponte di `console` della CLI è già installato.
+     */
+    minRequestInterval: MinRequestInterval = MIN_REQUEST_INTERVAL,
     // Seam di test: gli endpoint, il transport e le pause sono sostituibili senza rete.
     options: {
       tokenUrl?: string;
@@ -165,6 +194,7 @@ export class TernaClient {
       maxRateCooldownSeconds?: number;
     } = {},
   ) {
+    this.minRequestInterval = typeof minRequestInterval === "function" ? minRequestInterval() : minRequestInterval;
     this.tokenUrl = options.tokenUrl ?? TOKEN_URL;
     this.baseUrl = options.baseUrl ?? BASE_URL;
     this.fetchImpl = options.fetchImpl ?? fetch;

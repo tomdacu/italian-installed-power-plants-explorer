@@ -16,6 +16,14 @@
  * base.
  *
  *   bun run scripts/build.ts
+ *
+ * Il bump riconosce il marker anche con apici singoli o doppi e spaziature
+ * diverse (vedi `SW_CACHE_PATTERN`), e sostituisce **tutte** le occorrenze.
+ *
+ * Limite noto dell'harness: le prove di questa build girano su uno specchio in
+ * `%TEMP%` (fuori da OneDrive), mentre la build reale gira dentro OneDrive; i
+ * rami d'errore che dipendono dalle ACL di OneDrive (rename rifiutato, file
+ * bloccato) non sono quindi esercitati su OneDrive da qui.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -30,8 +38,12 @@ const staticDir = join(root, "static");
 const stagingDist = join(root, "dist-new");
 const stagingStatic = join(root, "static-new");
 
-/** Costante presente in `public/sw.js`; si rimpiazza solo nell'artefatto. */
-const SW_CACHE_CONSTANT = 'const CACHE = "ice-shell-v6"';
+/**
+ * Nome base della cache in `public/sw.js`; la regex si applica solo
+ * all'artefatto. Tollera apici singoli o doppi e spaziature diverse attorno a
+ * `const`/`=`: il marker è quel testo, non quella formattazione.
+ */
+const SW_CACHE_PATTERN = /const(\s+)CACHE(\s*=\s*)(["'])ice-shell-v6\3(\s*;?)/g;
 
 // 1. Compila in una cartella di appoggio: `dist/` e `static/` non vengono
 //    toccate finché la build non è riuscita.
@@ -107,7 +119,10 @@ console.log("Build completata: dist/ e static/ sostituite (rename), cache del se
 /**
  * Riscrive la costante `CACHE` nel solo artefatto `sw.js` (mai in
  * `public/sw.js`), suffissandola con gli 8 caratteri iniziali dell'hash di
- * `index.html`: ogni build bumpa il nome della cache.
+ * `index.html`: ogni build bumpa il nome della cache. Il marker si riconosce
+ * con apici singoli o doppi e con spaziature diverse, e si sostituiscono
+ * **tutte** le occorrenze; se il marker non c'è si fallisce in chiaro, dicendo
+ * quale testo manca.
  */
 function bumpServiceWorkerCache(swPath: string, indexPath: string): void {
   if (!existsSync(swPath)) {
@@ -115,10 +130,16 @@ function bumpServiceWorkerCache(swPath: string, indexPath: string): void {
   }
   const hash = createHash("sha256").update(readFileSync(indexPath)).digest("hex").slice(0, 8);
   const source = readFileSync(swPath, "utf8");
-  if (!source.includes(SW_CACHE_CONSTANT)) {
-    throw new Error(`${swPath} does not contain ${SW_CACHE_CONSTANT}: the cache name cannot be bumped`);
+  const found = source.match(SW_CACHE_PATTERN);
+  if (!found || found.length === 0) {
+    throw new Error(
+      `${swPath} does not contain const CACHE = "ice-shell-v6" (apici singoli o doppi ammessi): the cache name cannot be bumped`,
+    );
   }
-  writeFileSync(swPath, source.replace(SW_CACHE_CONSTANT, `const CACHE = "ice-shell-v6-${hash}"`));
+  const bumped = source.replace(SW_CACHE_PATTERN, (_match, gapAfterConst, gapAroundEquals, quote, tail) => {
+    return `const${gapAfterConst}CACHE${gapAroundEquals}${quote}ice-shell-v6-${hash}${quote}${tail}`;
+  });
+  writeFileSync(swPath, bumped);
 }
 
 /** Cartella che il server servirà adesso: `static/` vince su `dist/`. */

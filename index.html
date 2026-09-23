@@ -10,7 +10,9 @@
     <meta name="theme-color" content="#04130e" />
     <!-- Applica il tema prima del primo paint: uno script esterno (la CSP è
          `script-src 'self'`) e bloccante, quindi la classe `dark` c'è già
-         quando il browser dipinge. -->
+         quando il browser dipinge. Il `theme-color` qui sopra è il valore
+         scuro di partenza: lo script lo corregge subito se il tema salvato è
+         chiaro (dopo il mount lo tiene allineato `ThemeContext`). -->
     <script src="/theme.js"></script>
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Italian Renewable Capacity Explorer" />

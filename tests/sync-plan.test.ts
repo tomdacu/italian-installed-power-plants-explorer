@@ -52,7 +52,7 @@ test("clampYears tiene solo gli anni che Terna può servire", () => {
   const { years, skipped } = clampYears([1899, 2000, 2024, 2024, 2100]);
 
   expect(years).toEqual([2000, 2024]);
-  expect(skipped).toBe(3); // 1899, il duplicato 2024 e il 2100
+  expect(skipped).toBe(2); // solo 1899 e 2100: il duplicato 2024 è silenzioso
   expect(clampYears([]).years).toEqual([]);
 });
 
@@ -216,5 +216,33 @@ test("un job senza errori resta il messaggio di sempre", async () => {
 
   const status = await settle(sync, id);
   expect(status).toMatchObject({ status: "completed", message: "Sync completed", failed_steps: 0, error: null });
+});
+
+test("i job cancellati vengono espulsi dalla mappa come quelli finiti", () => {
+  const store = {
+    replaceSnapshot() {
+      return 0;
+    },
+  } as unknown as CapacityStore;
+  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const plan = () => buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] });
+
+  // Ventuno «cancellati» di fila: con lo stato nuovo la mappa di venti non si
+  // svuotava mai più, perché il `find` dell'espulsione cercava solo job finiti
+  // e i cancellati non lo sono mai diventati (crescita illimitata, misurata).
+  const ids: string[] = [];
+  for (let i = 0; i < 20; i += 1) {
+    const id = sync.start(plan());
+    sync.cancel(id);
+    ids.push(id);
+  }
+  expect(sync.status(ids[0])).not.toBeNull();
+
+  const overflow = sync.start(plan());
+  expect(sync.status(ids[0])).toBeNull(); // il più vecchio cancellato è fuori
+  expect(sync.status(ids[1])).not.toBeNull();
+  expect(sync.status(overflow)).not.toBeNull();
+  sync.cancel(overflow);
 });
 

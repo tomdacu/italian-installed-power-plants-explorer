@@ -23,6 +23,74 @@ used the same routes, so anything written against it keeps working.
 | `GET /analytics/timeseries` | grouped sums; `group_by=year,source`, `latest_only=true`; same implicit single index as `summary`, so a group by source never sums Lorda and Netta together |
 | `GET /export/csv` | every row matching the filters, as CSV |
 
+## Mutating requests
+
+Every `POST` and `DELETE` in the table — the credential routes, `POST /sync/jobs`
+and `DELETE /sync/jobs/{id}` — must be sent with `Content-Type: application/json`,
+**including the requests that carry no body at all** — every `DELETE` in the
+table. The check runs before the route is looked up, so a request without the
+header never reaches the handler: no credential is stored or removed and no job
+is created or cancelled. Measured against a running server, with an id that does
+not exist:
+
+```
+$ curl -i -X DELETE http://127.0.0.1:8731/sync/jobs/00000000-0000-4000-8000-000000000000
+HTTP/1.1 403 Forbidden
+{"detail":"mutating requests must be sent as application/json"}
+```
+
+With the header the request is routed normally, and an unknown id is the `404`
+the endpoint documents:
+
+```
+$ curl -i -X DELETE -H 'Content-Type: application/json' \
+    http://127.0.0.1:8731/sync/jobs/00000000-0000-4000-8000-000000000000
+HTTP/1.1 404 Not Found
+{"detail":"Sync job not found"}
+```
+
+That same requirement is what protects the writes: a page from another origin
+cannot send `application/json` without a CORS preflight, and this server does not
+answer preflights, so no outside page can save credentials or cancel a sync. The
+one exception is `ICE_DEV_ORIGIN` — see
+[configuration.md](configuration.md#environment-variables), which also lists the
+`403` a state-changing request from another origin gets.
+
+### Cancelling a job from a command line
+
+A job id is a `crypto.randomUUID()` and is announced in the answer to
+`POST /sync/jobs` (and in `GET /sync/jobs/latest`); keep the `job_id` from
+there, because there is no route that lists the earlier ones.
+
+```bash
+# 1. start a job — the answer is where the id comes from
+curl -s -X POST http://127.0.0.1:8731/sync/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"years":[2024],"datasets":["generation_plants"]}'
+{"job_id":"9c1a4f1e-0e0f-4d1a-9d6c-3b1e2f7a5c40","status":"queued"}
+
+# 2. cancel it — same header, still no body
+curl -s -X DELETE \
+  -H 'Content-Type: application/json' \
+  http://127.0.0.1:8731/sync/jobs/9c1a4f1e-0e0f-4d1a-9d6c-3b1e2f7a5c40
+{"job_id":"9c1a4f1e-0e0f-4d1a-9d6c-3b1e2f7a5c40","status":"cancelled",
+ "total_steps":4,"completed_steps":1,"failed_steps":0,"empty_steps":0,
+ "skipped_steps":0,"message":"Sync cancelled","error":null}
+```
+
+The id in the second call is the one the first call returned; a made-up UUID is
+the `404` shown above. The cancel is idempotent: a known id always answers `200`,
+and a job that has already finished comes back with the status it already had —
+`completed` or `failed` — instead of being relabelled `cancelled`. The step in
+flight is allowed to finish, so `completed_steps` can still grow after the
+answer: poll `GET /sync/jobs/{id}` until the counters settle.
+
+Do not run this against the real credentials just to read the bodies: the two
+JSON shapes printed here are what the code produces — a first `POST` answers
+`200` with `{"job_id": …, "status": "queued"}`, and `cancel()` fills `message`
+with `"Sync cancelled"` and `error` with `null` — while only the `403` and the
+`404` above were measured against a running server, and those need no credential.
+
 ## Filters
 
 Accepted by `/records`, `/analytics/*`, `/metadata/data-quality` and `/export/csv`:

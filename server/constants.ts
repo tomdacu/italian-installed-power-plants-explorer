@@ -74,11 +74,17 @@ export function firstYearFor(dataset: DatasetName): number {
  * dataset, anno corrente come tetto), ordinati e senza duplicati. L'API e la UI
  * usano questa stessa funzione, così il range mostrato e quello scaricato non
  * possono divergere.
+ *
+ * `skipped` conta solo gli anni che Terna non può servire. La deduplica è
+ * silenziosa: un anno ripetuto non è un passo mai eseguito, quindi non gonfia
+ * il conteggio (prima `years.length - kept.length` contava anche i duplicati e
+ * il job dichiarava passi saltati che non esistevano).
  */
 export function clampYears(years: number[], now: Date = new Date()): { years: number[]; skipped: number } {
   const ceiling = currentYear(now);
-  const kept = [...new Set(years)]
+  const requested = [...new Set(years)];
+  const kept = requested
     .filter((year) => Number.isInteger(year) && year >= DATA_FIRST_YEAR && year <= ceiling)
     .sort((a, b) => a - b);
-  return { years: kept, skipped: years.length - kept.length };
+  return { years: kept, skipped: requested.length - kept.length };
 }

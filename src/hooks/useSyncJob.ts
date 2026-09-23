@@ -6,6 +6,24 @@ import type { SyncJobStatus, SyncRequest } from "@/types";
 
 const ACTIVE = new Set(["queued", "running"]);
 
+/**
+ * Ritmo e durata dell'assestamento dopo una cancellazione.
+ *
+ * Il server legge la cancellazione **fra un passo e l'altro**: quello in volo
+ * finisce comunque, e i contatori del job si muovono ancora per qualche
+ * secondo. Il pannello deve arrivare al conteggio vero senza che l'utente
+ * ricarichi la pagina, quindi si continua a interrogare il job finché i
+ * contatori non stanno fermi per `SETTLE_QUIET_MS`, con un tetto di letture.
+ */
+const SETTLE_POLL_MS = 1500;
+const SETTLE_QUIET_MS = 5000;
+const SETTLE_MAX_POLLS = 12;
+
+/** I contatori che possono muoversi ancora dopo una cancellazione. */
+function counters(job: SyncJobStatus): string {
+  return `${job.completed_steps}/${job.failed_steps}/${job.empty_steps}/${job.message}`;
+}
+
 // Un server più vecchio annunciava "Sync completed" anche con dei passi
 // falliti: il messaggio si crede solo quando non contraddice i contatori.
 const COMPLETED_CLAIM = /^sync (?:completed|finished|succeeded)\b/i;
@@ -41,7 +59,21 @@ export function useSyncJob() {
   const [startedJobId, setStartedJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  /**
+   * La guardia vera di "una sync alla volta". Fra il click e il commit di React
+   * passa un frame in cui `starting` è ancora false: un secondo click in quella
+   * finestra faceva partire un secondo job. Il ref è già vero nel tick del
+   * click; `starting` resta lo specchio per il rendering (`disabled`, spinner).
+   */
+  const startingRef = useRef(false);
+  const markStarting = (value: boolean) => {
+    startingRef.current = value;
+    setStarting(value);
+  };
+  // Job cancellato i cui contatori possono ancora muoversi (passo in volo).
+  const [settlingJobId, setSettlingJobId] = useState<string | null>(null);
   const notifiedJobId = useRef<string | null>(null);
+  const settling = useRef<{ id: string; counters: string; lastChangeAt: number; polls: number } | null>(null);
 
   const latest = useQuery({
     queryKey: ["sync", "latest"],
@@ -56,12 +88,55 @@ export function useSyncJob() {
     enabled: jobId !== null,
     retry: 5,
     retryDelay: 2500,
-    refetchInterval: (query) =>
-      !query.state.error && (!query.state.data || ACTIVE.has(query.state.data.status)) ? 1500 : false,
+    refetchInterval: (query) => {
+      if (query.state.error) return false;
+      const data = query.state.data;
+      // Nessun dato (o job attivo): si segue. Job finito: si smette, tranne se
+      // è quello appena cancellato e i suoi contatori stanno ancora girando.
+      if (!data || ACTIVE.has(data.status)) return SETTLE_POLL_MS;
+      return settlingJobId === data.job_id ? SETTLE_POLL_MS : false;
+    },
   });
   const job = status.data ?? (latest.data?.job_id === jobId ? latest.data : null);
   const running = job ? ACTIVE.has(job.status) : false;
   const connectionLost = running && status.isError;
+  /**
+   * Una sola verità per "adesso non si può far partire un'altra sync": la usano
+   * la guardia di `start` e l'attributo `disabled` dei bottoni. `starting` resta
+   * vero finché la query di stato del job appena creato non ha risposto —
+   * altrimenti, fra la risposta del POST e il primo stato, il pannello non sa
+   * ancora che il job esiste e un secondo click ne faceva partire un altro.
+   * `!startedJobId && latest.isFetching` è il primo caricamento (job già in
+   * corso sul server): finché non si sa cosa sta girando non si parte.
+   */
+  const busy = starting || running || (!startedJobId && latest.isFetching);
+
+  // Il job appena creato esiste per il server: appena lo stato (o l'ultimo job)
+  // lo conferma, `job`/`running` prendono il comando.
+  useEffect(() => {
+    if (!starting || startedJobId === null) return;
+    if (status.data?.job_id === startedJobId || latest.data?.job_id === startedJobId || status.isError) {
+      markStarting(false);
+    }
+  }, [starting, startedJobId, status.data, status.isError, latest.data]);
+
+  // Dopo una cancellazione si smette di interrogare il job solo quando i suoi
+  // contatori sono fermi da un po' (o quando il tetto di letture è raggiunto).
+  useEffect(() => {
+    const state = settling.current;
+    if (!state || status.data?.job_id !== state.id) return;
+    state.polls += 1;
+    const now = counters(status.data);
+    if (now !== state.counters) {
+      state.counters = now;
+      state.lastChangeAt = Date.now();
+      return;
+    }
+    if (state.polls >= SETTLE_MAX_POLLS || Date.now() - state.lastChangeAt >= SETTLE_QUIET_MS) {
+      settling.current = null;
+      setSettlingJobId(null);
+    }
+  }, [status.data, status.dataUpdatedAt]);
 
   useEffect(() => {
     if (latest.isError) {
@@ -113,32 +188,64 @@ export function useSyncJob() {
   }, [job, running, startedJobId, qc, toast]);
 
   const start = async (request: SyncRequest): Promise<void> => {
-    if (starting || latest.isFetching || running) return;
-    setStarting(true);
+    if (startingRef.current || busy) return;
+    markStarting(true);
     try {
       const response = await api.startSync(request);
       notifiedJobId.current = null;
       setStartedJobId(response.job_id);
       toast.info("Sync started", `Job ${response.job_id.slice(0, 8)} queued`);
+      // Niente `finally`: `starting` resta vero finché lo stato del job creato
+      // non risponde (l'effetto qui sopra lo abbassa). È la finestra in cui un
+      // doppio click faceva partire un secondo job.
     } catch (error) {
+      markStarting(false);
       toast.error("Sync failed to start", (error as Error).message);
-    } finally {
-      setStarting(false);
     }
   };
 
   /**
-   * Chiede al server di fermare il job fra un passo e l'altro. Lo stato che
-   * torna (o un errore) lo gestisce l'effetto qui sopra, così il messaggio è
-   * uno solo per ogni esito.
+   * Chiede al server di fermare il job fra un passo e l'altro.
+   *
+   * Due esiti possibili: se il server ha già un altro job attivo il pannello lo
+   * adotta e il messaggio lo dice (cancellare questo non ferma quello); se non
+   * c'è nessun altro job lo stato cancellato lo annuncia l'effetto qui sopra,
+   * mentre i contatori continuano a essere letti finché il passo in volo non si
+   * chiude — così il pannello arriva al conteggio vero senza ricaricare.
    */
   const cancel = async (): Promise<void> => {
     if (jobId === null || cancelling) return;
+    const cancelledId = jobId;
     setCancelling(true);
     try {
-      const updated = await api.cancelSync(jobId);
-      qc.setQueryData(["sync", "job", jobId], updated);
+      const updated = await api.cancelSync(cancelledId);
+      // Da qui il job cancellato lo racconta questa funzione: l'effetto non deve
+      // annunciare "Sync cancelled" mentre si sta ancora decidendo se un altro
+      // job è in corso.
+      notifiedJobId.current = cancelledId;
+      const other = await api.latestSyncStatus().catch(() => null);
+      if (other && other.job_id !== cancelledId && ACTIVE.has(other.status)) {
+        // Il server ha un altro job attivo (coda): cancellare questo non ferma
+        // quello. Il pannello lo adotta e il messaggio lo dice, invece di
+        // lasciare l'utente convinto che non stia scaricando più niente.
+        notifiedJobId.current = null;
+        setStartedJobId(other.job_id);
+        qc.setQueryData(["sync", "latest"], other);
+        qc.setQueryData(["sync", "job", other.job_id], other);
+        toast.info(
+          "Another sync is running",
+          `Job ${cancelledId.slice(0, 8)} was cancelled, but job ${other.job_id.slice(0, 8)} is already running — this page now follows it.`,
+        );
+        return;
+      }
+      // Nessun altro job: si annuncia la cancellazione (contatori finali, via
+      // effetto) e si continua a leggere il job finché il passo in volo non si
+      // chiude, così il conteggio mostrato è quello vero.
+      notifiedJobId.current = null;
+      qc.setQueryData(["sync", "job", cancelledId], updated);
       void qc.invalidateQueries({ queryKey: ["sync", "latest"] });
+      settling.current = { id: cancelledId, counters: counters(updated), lastChangeAt: Date.now(), polls: 0 };
+      setSettlingJobId(cancelledId);
     } catch (error) {
       toast.error("Could not cancel the sync", (error as Error).message);
     } finally {
@@ -151,8 +258,8 @@ export function useSyncJob() {
     starting,
     cancelling,
     running,
+    busy,
     polling: running && !connectionLost,
-    loadingExistingJob: !startedJobId && latest.isFetching,
     connectionLost,
     start,
     cancel,

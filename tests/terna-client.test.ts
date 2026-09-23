@@ -240,13 +240,14 @@ test("cleanErrorBody toglie i tag e comprime gli spazi", () => {
 });
 
 /**
- * `MIN_REQUEST_INTERVAL` si calcola all'import del modulo: l'unico modo di
- * provare la variabile d'ambiente è un processo nuovo che lo importa.
+ * `MIN_REQUEST_INTERVAL` si calcola **al primo uso** e non più all'import:
+ * nel processo nuovo va invocata (o costruito un client) perché l'ambiente del
+ * figlio sia quello che si sta provando.
  */
 async function intervalFor(raw: string): Promise<{ value: number; stderr: string }> {
   const module = pathToFileURL(join(import.meta.dir, "..", "server", "terna.ts")).href;
   const child = Bun.spawn(
-    [process.execPath, "-e", `import(${JSON.stringify(module)}).then((m) => console.log(m.MIN_REQUEST_INTERVAL));`],
+    [process.execPath, "-e", `import(${JSON.stringify(module)}).then((m) => console.log(m.MIN_REQUEST_INTERVAL()));`],
     { env: { ...process.env, TERNA_MIN_REQUEST_INTERVAL: raw }, stdout: "pipe", stderr: "pipe" },
   );
   const [stdout, stderr] = await Promise.all([
