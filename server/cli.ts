@@ -41,6 +41,10 @@ function openLog(path: string): void {
   } catch {
     // se non si può ruotare, si continua ad appendere
   }
+  // La prova di scrittura è la sola cosa che dice se il log è davvero aperto:
+  // senza, `logTarget` restava valorizzato anche quando nessuno poteva
+  // scrivere, e la riga "Dettagli in …" indicava un file inesistente.
+  appendFileSync(path, "");
   logTarget = path;
 }
 
@@ -140,12 +144,16 @@ function main(): void {
   // Il log va aperto **prima** di costruire l'app: un errore d'avvio (cartella
   // dati non scrivibile, database corrotto, porta occupata) spariva su stderr
   // e, con la finestra senza console, non lo vedeva nessuno.
-  const logPath = join(dataDir, "backend.log");
+  let logPath: string | null = null;
   try {
     mkdirSync(dataDir, { recursive: true });
+    logPath = join(dataDir, "backend.log");
     openLog(logPath);
-  } catch {
-    // Se nemmeno il log è scrivibile, resta la console.
+  } catch (error) {
+    // Nessun log aperto: la riga "Dettagli in …" non deve puntare a un file
+    // che non esiste, ma il motivo va detto (la console è rimasta).
+    logPath = null;
+    console.error(`Log non creato (${join(dataDir, "backend.log")}): ${(error as Error)?.message ?? String(error)}`);
   }
 
   let app: LocalApp;
@@ -157,7 +165,7 @@ function main(): void {
     const message = (error as Error)?.message ?? String(error);
     log(`avvio fallito (dati in ${dataDir}): ${message}`);
     console.error(`Impossibile avviare l'applicazione: ${message}`);
-    console.error(`Dettagli in ${logPath}`);
+    console.error(logPath ? `Dettagli in ${logPath}` : "Log non disponibile: i dettagli restano su questa console.");
     process.exit(1);
   }
 

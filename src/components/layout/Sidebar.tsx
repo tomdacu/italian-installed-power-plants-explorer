@@ -39,7 +39,7 @@ function BackendStatus() {
         )}
         <span className={cn("relative inline-flex h-2 w-2 rounded-full", state.color)} />
       </span>
-      <span className="truncate text-xs font-medium text-ink-500 dark:text-ink-400">{state.label}</span>
+      <span className="truncate text-xs font-medium text-ink-600 dark:text-ink-400">{state.label}</span>
     </div>
   );
 }

@@ -268,6 +268,84 @@ describe("CapacityStore", () => {
     expect(store.options().provinces).toEqual(["Olbia-Tempio"]);
   });
 
+  test("repairPlaceNames porta il valore del doppione nella riga canonica", () => {
+    // La grafia non canonica ha i valori, quella canonica ha le celle vuote:
+    // cancellare il doppione senza fondere le colonne perdeva il dato.
+    store.upsertRecords([
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 12, installed_capacity_gw: 1.5, province: "Olbia0tempio" }),
+      row({
+        year: 2023,
+        source: "Fotovoltaico",
+        efficient_power_mw: null as unknown as number,
+        province: "Olbia-Tempio",
+      }),
+    ]);
+
+    expect(store.repairPlaceNames(PLACE_FIXES)).toBe(1);
+
+    const rows = store.records({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 });
+    expect(rows.map((entry) => [entry.province, entry.efficient_power_mw, entry.installed_capacity_gw])).toEqual([
+      ["Olbia-Tempio", 12, 1.5],
+    ]);
+    // Secondo giro: non resta niente da riparare e il valore è ancora lì.
+    expect(store.repairPlaceNames(PLACE_FIXES)).toBe(0);
+    expect(store.records({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toHaveLength(1);
+  });
+
+  test("repairPlaceNames non sovrascrive la riga canonica già valorizzata", () => {
+    store.upsertRecords([
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 12, province: "Olbia0tempio" }),
+      row({ year: 2023, source: "Fotovoltaico", efficient_power_mw: 7, province: "Olbia-Tempio" }),
+    ]);
+
+    expect(store.repairPlaceNames(PLACE_FIXES)).toBe(1);
+
+    const [record] = store.records({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 });
+    expect(record?.province).toBe("Olbia-Tempio");
+    // COALESCE(existente, nuovo): il valore già in cache vince.
+    expect(record?.efficient_power_mw).toBe(7);
+  });
+
+  test("replaceSnapshot rifiuta un payload parziale invece di bruciare le righe", () => {
+    const stored = [1, 2, 3].map((n) => row({ year: 2023, source: `Fonte${n}`, efficient_power_mw: n }));
+    store.upsertRecords(stored);
+
+    // Una risposta con un terzo delle righe non è una ritrattazione: il passo
+    // deve fallire con i due conteggi e la cache restare intatta.
+    expect(() => store.replaceSnapshot("renewable_source_capacity", 2023, [stored[0]!])).toThrow(
+      "refusing to replace 2023 with 1 of 3 stored rows",
+    );
+    expect(store.countRecords({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toBe(3);
+
+    // Un taglio entro la metà resta una sostituzione legittima.
+    expect(store.replaceSnapshot("renewable_source_capacity", 2023, [stored[0]!, stored[1]!])).toBe(2);
+    expect(store.countRecords({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toBe(2);
+
+    // Il payload vuoto non prova niente e non cancella, come prima.
+    expect(store.replaceSnapshot("renewable_source_capacity", 2023, [])).toBe(0);
+    expect(store.countRecords({ dataset: "renewable_source_capacity", year_from: 2023, year_to: 2023 })).toBe(2);
+  });
+
+  test("l'export CSV neutralizza le formule e lascia intatti gli altri campi", () => {
+    store.upsertRecords([
+      row({ year: 2024, source: '=HYPERLINK("http://evil")', efficient_power_mw: 1 }),
+      row({ year: 2024, source: "+1+cmd", efficient_power_mw: 2 }),
+      row({ year: 2024, source: "@SUM(1)", efficient_power_mw: 3 }),
+      row({ year: 2024, source: "Eolico", efficient_power_mw: 4 }),
+    ]);
+
+    const csv = store.toCsv({} satisfies RecordFilters);
+
+    // Excel eseguirebbe queste celle: l'apice le rende testo (e la quotatura
+    // normale resta al suo posto per la virgoletta interna).
+    expect(csv).toContain(`"'=HYPERLINK(""http://evil"")"`);
+    expect(csv).toContain("'+1+cmd");
+    expect(csv).toContain("'@SUM(1)");
+    // I campi normali non guadagnano l'apice.
+    expect(csv).toContain("Eolico");
+    expect(csv).not.toContain("'Eolico");
+  });
+
   test("busy_timeout waits for the write lock instead of failing straight away", async () => {
     // Cross-process lock contention: SQLite's busy handler waits on a real OS
     // lock, so the one delay below cannot be driven by fake timers (the child

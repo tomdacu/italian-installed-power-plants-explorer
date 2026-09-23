@@ -116,7 +116,9 @@ Rules of thumb:
 
 - the latest year is fine in any dataset;
 - `renewable_source_capacity` and `generation_plants` agree cell by cell on wind,
-  photovoltaic, bioenergy and geothermal; they differ on hydro, where
+  photovoltaic and geothermal; bioenergy exists **only** in
+  `renewable_source_capacity` (`generation_plants` publishes no such source, so
+  `?source=Bioenergie` on it returns nothing). They differ on hydro, where
   `generation_plants` includes pure pumped storage;
 - the API serves data up to 2024 (2025 is still empty at the source).
 

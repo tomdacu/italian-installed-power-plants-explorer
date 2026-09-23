@@ -9,6 +9,7 @@
  * `ICE_DEV_ORIGIN`, e solo se è loopback.
  */
 import { afterAll, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 
@@ -41,7 +42,7 @@ afterAll(async () => {
 });
 
 /** Un server vero su una porta libera: la guardia si prova sulla richiesta, non a unità. */
-function startTestServer(options: { logger?: (message: string) => void } = {}): {
+function startTestServer(options: { logger?: (message: string) => void; shell?: boolean } = {}): {
   origin: string;
   port: number;
   store: CapacityStore;
@@ -52,11 +53,18 @@ function startTestServer(options: { logger?: (message: string) => void } = {}): 
   const sync = new SyncManager(store, () => {
     throw new Error("nessuna credenziale nei test");
   });
+  // Senza `shell` la cartella `static/` non esiste: è il caso "interfaccia non
+  // costruita" (500). Con `shell: true` c'è una index.html vera da servire.
+  const staticDir = join(root, "static");
+  if (options.shell) {
+    mkdirSync(staticDir, { recursive: true });
+    writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>shell</title>");
+  }
   const server = startServer({
     store,
     settings: new SettingsStore(root),
     sync,
-    staticDir: join(root, "static"),
+    staticDir,
     port: 0,
     logger: options.logger,
   });
@@ -238,4 +246,34 @@ test("un handler che fallisce è un 500 nel log, non solo a schermo", async () =
   // Hono intercetta da sé gli errori degli handler: senza `app.onError` questa
   // riga non arrivava né al logger né a `backend.log` (I13).
   expect(messages.join("\n")).toContain("internal error");
+});
+
+test("le rotte SPA accettano solo GET e HEAD: ogni altro metodo è un 405", async () => {
+  const { origin } = startTestServer({ shell: true });
+
+  // Pre-fix il ramo statico non guardava il metodo: `POST`/`OPTIONS` su una rotta
+  // dell'app ricevevano 200 con l'HTML della shell.
+  for (const method of ["POST", "OPTIONS", "PUT", "DELETE"]) {
+    const response = await fetch(`${origin}/dashboard`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("GET, HEAD");
+    expect(response.headers.get("content-security-policy")).toBe(CONTENT_SECURITY_POLICY);
+    expect(await response.json()).toEqual({ detail: "method not allowed" });
+  }
+
+  // I metodi ammessi non cambiano: la shell arriva ancora, anche senza corpo (HEAD).
+  const get = await fetch(`${origin}/`);
+  expect(get.status).toBe(200);
+  expect(await get.text()).toContain("shell");
+  expect((await fetch(`${origin}/`, { method: "HEAD" })).status).toBe(200);
+
+  // Il 405 è solo per le rotte statiche: l'API risponde da sé (credenziali assenti).
+  const api = await fetch(`${origin}/settings/credentials/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  expect(api.status).toBe(502);
 });

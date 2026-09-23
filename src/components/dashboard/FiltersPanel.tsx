@@ -29,6 +29,8 @@ const GEO_OPTIONS = [
   { label: "Province", value: "province" },
 ];
 
+const YEAR_RANGE_HINT = "Year range unavailable — waiting for local metadata";
+
 export function FiltersPanel({
   filters,
   onChange,
@@ -52,25 +54,35 @@ export function FiltersPanel({
   // The year menus offer the years the chosen dataset actually holds: the
   // database-wide `years` list mixed every dataset, so with the national
   // dataset (2021-2022) the menus still offered 2000-2024 and each selection
-  // came back empty. `database.years` remains the fallback while the
-  // availability cache is empty, and the menus stop at the last stored year:
-  // proposing one Terna has not published yet only empties the dashboard.
-  const yearBounds = (dataset: DatasetName): { minYear: number; maxYear: number } => {
+  // came back empty.
+  //
+  // Il nazionale è l'unico dataset con un primo anno *per-dataset* nel
+  // metadata: finché l'availability non lo conferma l'altro capo è ignoto e il
+  // massimo globale (2024) offriva anni che il nazionale non ha.
+  const perDatasetFirstYear = (dataset: DatasetName): number | undefined =>
+    dataset === "installed_capacity" ? meta.data?.installed_capacity_first_year : undefined;
+
+  const yearBounds = (dataset: DatasetName): { minYear: number; maxYear: number; known: boolean } => {
     const stored = availability.data?.datasets[dataset];
-    const minYear =
-      stored?.year_min ??
-      (dataset === "installed_capacity"
-        ? (meta.data?.installed_capacity_first_year ?? 2021)
-        : (meta.data?.first_year ?? 2000));
-    const cached = (db.years ?? []).filter((year) => year >= minYear);
+    const minYear = stored?.year_min ?? perDatasetFirstYear(dataset) ?? meta.data?.first_year ?? 2000;
+    // Senza availability il massimo non supera mai l'ultimo anno davvero
+    // presente nel database né l'anno corrente: proporne uno che Terna non ha
+    // ancora pubblicato svuota la dashboard.
+    const lastStoredYear = (db.years ?? [])
+      .filter((year) => year >= minYear)
+      .reduce<number | null>((max, year) => (max === null || year > max ? year : max), null);
+    const currentYear = meta.data?.current_year ?? new Date().getFullYear();
     return {
       minYear,
-      maxYear:
-        stored?.year_max ??
-        Math.max(...(cached.length ? cached : [meta.data?.current_year ?? new Date().getFullYear()])),
+      maxYear: stored?.year_max ?? lastStoredYear ?? currentYear - 1,
+      known: stored?.year_min != null && stored?.year_max != null,
     };
   };
-  const { minYear, maxYear } = yearBounds(filters.dataset);
+  const { minYear, maxYear, known: yearBoundsKnown } = yearBounds(filters.dataset);
+  // Il dataset nazionale ha un primo anno per-dataset: se l'availability non lo
+  // conferma non sappiamo quali anni contenga davvero, e i due menu anno
+  // restano spenti (gli altri filtri no) invece di proporre anni vuoti.
+  const yearRangeUnavailable = !yearBoundsKnown && perDatasetFirstYear(filters.dataset) != null;
 
   const regionOptions = toOptions(db.regions ?? []);
   // Solo le province della regione scelta: offrire Roma mentre è selezionata la
@@ -172,6 +184,8 @@ export function FiltersPanel({
           value={String(filters.year_from ?? "")}
           placeholder="Any"
           options={yearFromOptions}
+          disabled={yearRangeUnavailable}
+          hint={yearRangeUnavailable ? YEAR_RANGE_HINT : undefined}
           onChange={(e) => set({ year_from: e.target.value ? Number(e.target.value) : null })}
         />
         <Select
@@ -179,6 +193,8 @@ export function FiltersPanel({
           value={String(filters.year_to ?? "")}
           placeholder="Any"
           options={yearToOptions}
+          disabled={yearRangeUnavailable}
+          hint={yearRangeUnavailable ? YEAR_RANGE_HINT : undefined}
           onChange={(e) => set({ year_to: e.target.value ? Number(e.target.value) : null })}
         />
         {showRegionFilter && (

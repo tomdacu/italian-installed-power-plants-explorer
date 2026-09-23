@@ -2,9 +2,37 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
-import type { SyncRequest } from "@/types";
+import type { SyncJobStatus, SyncRequest } from "@/types";
 
 const ACTIVE = new Set(["queued", "running"]);
+
+// Un server più vecchio annunciava "Sync completed" anche con dei passi
+// falliti: il messaggio si crede solo quando non contraddice i contatori.
+const COMPLETED_CLAIM = /^sync (?:completed|finished|succeeded)\b/i;
+
+/** Il messaggio del job non afferma un successo smentito da `failed_steps`. */
+export function syncMessageIsHonest(job: SyncJobStatus): boolean {
+  return (job.failed_steps ?? 0) === 0 || !COMPLETED_CLAIM.test((job.message ?? "").trim());
+}
+
+/**
+ * Conteggio onesto dei passi falliti, nella forma usata da toast e pannello.
+ * Non dice *perché* sono falliti: la causa la conosce solo il server.
+ */
+export function failedStepsSummary(job: SyncJobStatus): string {
+  const failed = job.failed_steps ?? 0;
+  const total = job.total_steps ?? 0;
+  if (total > 0) return `${failed} of ${total} steps failed`;
+  return `${failed} step${failed === 1 ? "" : "s"} failed`;
+}
+
+/** Perché un job è fallito: l'errore del server, o il suo messaggio se onesto. */
+export function syncFailureReason(job: SyncJobStatus): string {
+  const error = job.error?.trim();
+  if (error) return error;
+  if (syncMessageIsHonest(job) && (job.message ?? "").trim()) return job.message.trim();
+  return failedStepsSummary(job);
+}
 
 /** A job runs on the server; this hook only follows its progress while mounted. */
 export function useSyncJob() {
@@ -53,16 +81,17 @@ export function useSyncJob() {
       }
       if (startedJobId === job.job_id) {
         if (job.failed_steps > 0) {
+          // Mai "limiti API temporanei": la causa la riporta il job stesso.
           toast.warning(
             "Sync partly completed",
-            `${job.failed_steps} step${job.failed_steps === 1 ? "" : "s"} failed. Retry the download to fill the gaps.`,
+            `${failedStepsSummary(job)}. Retry the download to fill the gaps.`,
           );
         } else {
           toast.success("Sync completed", "The dashboard is up to date.");
         }
       }
     } else if (startedJobId === job.job_id) {
-      toast.error("Sync failed", job.error ?? job.message);
+      toast.error("Sync failed", syncFailureReason(job));
     }
   }, [job, running, startedJobId, qc, toast]);
 

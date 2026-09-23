@@ -108,7 +108,12 @@ export function recordKey(row: CapacityRow | Record<string, unknown>): string {
 function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  // Formula injection (CWE-1236): Excel esegue una cella che inizia con `=`,
+  // `+`, `-`, `@`, tab o CR, e il BOM che prepariamo per gli accenti non
+  // disinnesca nulla. L'apice la rende testo; se il campo contiene anche
+  // virgolette, virgole o a capo, la quotatura normale viene dopo.
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export class CapacityStore {
@@ -204,6 +209,17 @@ export class CapacityStore {
     if (rows.length === 0) return 0;
     if (rows.some((row) => row.dataset !== dataset || row.year !== year)) {
       throw new Error(`Invalid ${dataset} snapshot for ${year}`);
+    }
+    // Una risposta *parziale* non è una ritrattazione: Terna che torna con un
+    // pugno di righe al posto di migliaia significa che la richiesta è andata
+    // male a metà, e sostituire in silenzio brucerebbe i dati già in cache.
+    // Il caso vuoto resta protetto più sopra (payload vuoto = nessuna prova).
+    const storedRow = this.db
+      .prepare("SELECT COUNT(*) AS n FROM capacity_records WHERE dataset = ? AND year = ?")
+      .get(dataset, year) as CountRow | null;
+    const stored = storedRow?.n ?? 0;
+    if (stored > 0 && rows.length * 2 < stored) {
+      throw new Error(`refusing to replace ${year} with ${rows.length} of ${stored} stored rows`);
     }
     const keys = new Set(rows.map(recordKey));
     this.db.transaction(() => {
@@ -605,12 +621,23 @@ export class CapacityStore {
     // trovava la riga stessa e la cancellava come se fosse un doppione (due
     // esecuzioni sovrapposte, o un riavvio a metà, perdevano quel dato).
     const check = this.db.prepare(
-      `SELECT COUNT(*) AS n FROM capacity_records
+      `SELECT id FROM capacity_records
        WHERE id <> ? AND dataset = ? AND year = ? AND province IS ? AND source IS ?
-         AND capacity_type IS ? AND category IS ? AND subcategory IS ? AND type IS ? AND region IS ?`,
+         AND capacity_type IS ? AND category IS ? AND subcategory IS ? AND type IS ? AND region IS ?
+       LIMIT 1`,
     );
     const move = this.db.prepare(
       `UPDATE capacity_records SET region = $region, province = $province, record_key = $record_key WHERE id = $id`,
+    );
+    // Prima di cancellare il doppione si fondono le celle di valore mancanti
+    // nella riga che resta: la stessa COALESCE dell'upsert (`db.ts:169`), così
+    // non si perde un dato che la grafia non canonica aveva già acquisito.
+    // La riga canonica già valorizzata non viene sovrascritta.
+    const merge = this.db.prepare(
+      `UPDATE capacity_records SET
+         efficient_power_mw = COALESCE(efficient_power_mw, $efficient_power_mw),
+         installed_capacity_gw = COALESCE(installed_capacity_gw, $installed_capacity_gw)
+       WHERE id = $id`,
     );
     const drop = this.db.prepare("DELETE FROM capacity_records WHERE id = ?");
     const stale = this.db
@@ -637,9 +664,15 @@ export class CapacityStore {
           row.subcategory,
           row.type,
           region,
-        ) as CountRow | null;
-        if (twin && twin.n > 0) {
-          // La riga canonica esiste già: questa è un doppione da rimuovere.
+        ) as { id: number } | null;
+        if (twin) {
+          // La riga canonica esiste già: questa è un doppione da rimuovere,
+          // ma prima le sue celle di valore passano a quella che resta.
+          merge.run({
+            $efficient_power_mw: row.efficient_power_mw,
+            $installed_capacity_gw: row.installed_capacity_gw,
+            $id: twin.id,
+          });
           drop.run(row.id);
         } else {
           move.run({

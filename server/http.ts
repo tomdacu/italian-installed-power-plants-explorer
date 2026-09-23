@@ -185,6 +185,19 @@ export function startServer(options: ServerOptions): LocalServer {
         return response;
       }
 
+      // Le rotte statiche e la shell SPA si **leggono** soltanto: senza questo
+      // controllo un `POST`/`OPTIONS` su `/dashboard` riceveva 200 con l'HTML
+      // (e il service worker lo memorizzava come se fosse una risposta valida).
+      // L'API non passa di qui: i metodi delle sue rotte restano quelli di Hono.
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return withSecurityHeaders(
+          new Response(JSON.stringify({ detail: "method not allowed" }), {
+            status: 405,
+            headers: { "content-type": "application/json", allow: "GET, HEAD" },
+          }),
+        );
+      }
+
       const candidate = normalize(join(staticRoot, url.pathname));
       // `existsSync` è vero anche per una cartella: servire una directory con
       // `Bun.file` faceva rispondere 500 invece del contenuto o di index.html.

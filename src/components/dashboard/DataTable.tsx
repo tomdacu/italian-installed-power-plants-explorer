@@ -28,6 +28,8 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 ];
 
 const PAGE_SIZE = 50;
+/** Stesso limite di `q` sul server (`MAX_QUERY_LENGTH`): oltre, 400. */
+const SEARCH_MAX_LENGTH = 200;
 
 function rowKey(record: CapacityRecord, index: number): string {
   return [
@@ -158,6 +160,8 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
               placeholder="Search rows…"
               className="h-9 w-[220px] pl-8"
               aria-label="Search rows"
+              // Lo stesso limite del server: oltre, la richiesta è un 400.
+              maxLength={SEARCH_MAX_LENGTH}
             />
           </div>
           <Button variant="outline" size="sm" className="h-9" onClick={() => void exportFilteredCsv()}>
@@ -192,7 +196,7 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 backdrop-blur dark:bg-ink-900/95 dark:text-ink-400">
+              <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-600 backdrop-blur dark:bg-ink-900/95 dark:text-ink-400">
                 <tr>
                   {COLUMNS.map((column) => (
                     <th

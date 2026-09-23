@@ -8,8 +8,11 @@ dist-ssr
 # --- Build outputs ---
 # static/ is the built interface copied from dist/ (scripts/copy-static.ts);
 # dist-exe/ holds the compiled single-file executable. Both are reproducible.
+# dist-new/ is the staging directory of scripts/build.ts (renamed onto dist/
+# only when the build succeeds; removed on failure).
 static/
 dist-exe/
+dist-new/
 *.tsbuildinfo
 
 

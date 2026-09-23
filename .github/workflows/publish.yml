@@ -17,9 +17,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
-      # Node serve solo a `npm publish`: il pacchetto contiene già `static/`.
+      # Node serve solo a `npm publish`. `static/` **non** è nel repository
+      # (`static/` è in .gitignore): arriva dal lifecycle `prepack`, che
+      # `npm publish` esegue da sé su questa cartella.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,18 +30,44 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Tests, typecheck and interface build
+      # Nessuna build qui: la costruisce `prepack` (lo step "Build the package
+      # layout" e poi il lifecycle di `npm publish`), non questo step.
+      - name: Tests and typecheck
         run: |
           bun test
           bun run typecheck
-          bun run build
 
+      # Un tag che non corrisponde a `package.json` pubblicherebbe una versione
+      # diversa da quella che il tag annuncia. Vale anche per `workflow_dispatch`:
+      # la pubblicazione va lanciata dal tag `v<versione>`.
+      - name: Check the tag matches package.json
+        run: |
+          version="$(bun -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Ref $GITHUB_REF_NAME does not match the package.json version v$version: tag the release v$version (or bump package.json) and run this workflow from that tag."
+            exit 1
+          fi
+
+      - name: Build the package layout
+        run: bun run prepack
+
+      # Il tarball si verifica **prima** di pubblicarlo. `--ignore-scripts`
+      # perché la build è appena stata fatta: qui serve solo l'elenco dei file
+      # che finirebbero nel pacchetto. `--json` perché `npm pack` scrive
+      # l'elenco dei file su stderr e su stdout solo il nome del tarball.
+      - name: Verify the tarball ships the interface
+        run: |
+          npm pack --dry-run --ignore-scripts --json > "$RUNNER_TEMP/zapp-pack.json"
+          grep -q "static/index.html" "$RUNNER_TEMP/zapp-pack.json"
+
+      # Un tag senza segreto non è un successo: senza token la pubblicazione
+      # non parte e il workflow deve dirlo, non uscire con 0.
       - name: Publish (with provenance)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::notice::NPM_TOKEN is not configured — skipping the npm publish. Add the secret and re-run this workflow."
-            exit 0
+            echo "::error::NPM_TOKEN is not configured: the npm publish cannot run. Add the repository secret NPM_TOKEN (an npm automation token with publish rights) and re-run this workflow."
+            exit 1
           fi
           npm publish --provenance --access public

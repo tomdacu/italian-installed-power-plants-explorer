@@ -88,7 +88,13 @@ export function CapacityByRegionChart({
               }}
               cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
             />
-            <Legend iconType="circle" iconSize={8} />
+            <Legend
+              iconType="circle"
+              iconSize={8}
+              // Lo swatch resta del colore della serie, il testo no: il giallo
+              // del fotovoltaico su bianco sta a 2.15:1.
+              formatter={(value) => <span className="text-ink-500 dark:text-ink-400">{value}</span>}
+            />
             {series.names.map((source, index) => (
               <Bar key={source} dataKey={source} stackId="area" fill={colorFor(source, index, filters.dataset)} maxBarSize={26} />
             ))}

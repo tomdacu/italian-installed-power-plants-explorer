@@ -4,7 +4,9 @@
  * Mirrors the server-side exporter (`server/db.ts`): fields are quoted only when
  * they carry a comma, a quote or a newline, rows are CRLF-terminated and the
  * payload opens with a UTF-8 BOM so Excel on Windows reads accented place names
- * ("Forlì-Cesena", "Vallée d'Aoste") instead of mojibake.
+ * ("Forlì-Cesena", "Vallée d'Aoste") instead of mojibake. As there, a cell that
+ * starts with `=`, `+`, `-`, `@`, tab or CR gets an apostrophe: the BOM alone
+ * does not stop Excel from running it as a formula.
  */
 
 interface CsvColumn {
@@ -29,7 +31,12 @@ export function csvNumber(value: number | null | undefined): number | null {
 function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  // Formula injection (CWE-1236): Excel esegue una cella che inizia con `=`,
+  // `+`, `-`, `@`, tab o CR, e il BOM che prepariamo per gli accenti non
+  // disinnesca nulla. L'apice la rende testo; se il campo contiene anche
+  // virgolette, virgole o a capo, la quotatura normale viene dopo.
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export function toCsv(table: CsvTable): string {

@@ -12,7 +12,7 @@ export function ChartEmptyState({ dataset }: { dataset?: DatasetName | "" }) {
 
   return (
     <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 p-6 text-center">
-      <div className="rounded-2xl border border-ink-200/70 bg-ink-50 p-3.5 text-ink-400 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-ink-500">
+      <div className="rounded-2xl border border-ink-200/70 bg-ink-50 p-3.5 text-ink-600 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-ink-400">
         {needsSync ? <DatabaseZap className="h-6 w-6" /> : <SearchX className="h-6 w-6" />}
       </div>
       <div>

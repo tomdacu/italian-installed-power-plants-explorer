@@ -9,15 +9,61 @@ permissions:
   contents: write
 
 jobs:
+  # L'eseguibile è il prodotto che si scarica dalla release: va costruito e
+  # impacchettato su Windows (dove gira) prima di annunciare la release.
+  build-exe:
+    name: Build the Windows executable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `compile` = `prepack` (build + `static/`) + copia di `static/` accanto
+      # all'eseguibile + `bun build --compile`. Produce `dist-exe/ice.exe` e
+      # `dist-exe/static/`, cioè un eseguibile che serve davvero l'interfaccia.
+      - name: Build the executable
+        run: bun run compile
+
+      - name: Package the release assets (zip + checksums)
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $zip = "Italian-Renewable-Capacity-Explorer-$version-win-x64.zip"
+          Compress-Archive -Path dist-exe/* -DestinationPath $zip -Force
+
+          $sums = foreach ($asset in @("dist-exe/ice.exe", $zip)) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $asset).Hash.ToLower()
+            "$hash  $(Split-Path $asset -Leaf)"
+          }
+          Set-Content -Path SHA256SUMS.txt -Value $sums -Encoding ascii
+          Get-Content SHA256SUMS.txt
+
+      - name: Upload the release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: |
+            dist-exe/ice.exe
+            Italian-Renewable-Capacity-Explorer-*-win-x64.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+
   release:
     name: Draft the GitHub release
+    needs: build-exe
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -28,9 +74,23 @@ jobs:
           bun run typecheck
           bun run build
 
+      - name: Download the executable built on Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: release-assets
+
+      # `body_path` resta il corpo curato a mano; `generate_release_notes`
+      # aggiunge in coda le note automatiche del tag (PR e commit), così due
+      # release consecutive non hanno più lo stesso testo.
       - name: Publish the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           body_path: .github/release-notes.md
+          generate_release_notes: true
+          files: |
+            release-assets/dist-exe/ice.exe
+            release-assets/Italian-Renewable-Capacity-Explorer-*-win-x64.zip
+            release-assets/SHA256SUMS.txt

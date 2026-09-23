@@ -1,7 +1,9 @@
 <!-- Release notes template used by .github/workflows/release.yml (body_path).
-     Replace the "What's new" section for each release. -->
+     Replace the version heading and the "What's new" section for each release. -->
 
-## What's new
+## Version 1.1.0
+
+### What's new
 
 Everything here is about the app doing what it already promised — same data, same
 sync, fewer surprises.
@@ -54,7 +56,10 @@ Prefer a checkout?
 ```bash
 git clone https://github.com/tomdacu/italian-renewable-capacity-explorer
 cd italian-renewable-capacity-explorer
-bun install && bun run serve
+bun install
+bun run prepack   # build the interface: the bundle is not in the repository,
+                  # so `bun run serve` on a fresh clone would answer 500
+bun run serve
 ```
 
 ## Using it

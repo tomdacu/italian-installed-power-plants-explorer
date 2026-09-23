@@ -25,9 +25,16 @@ would then need reinstalling on the new origin).
 | --- | --- | --- |
 | `ICE_PORT` | `8731` | same as `--port` |
 | `ICE_STATIC_DIR` | `static/` next to the executable, or `dist/` in a checkout | where the built interface lives |
+| `ICE_DEV_ORIGIN` | – (same-origin only) | one extra **loopback** origin whose state-changing requests are accepted, e.g. `http://localhost:1420` for `bun run dev`; needed because the Vite dev server is on another port |
 | `TERNA_MIN_REQUEST_INTERVAL` | `1.2` | minimum seconds between Terna API calls (the platform allows ~1/second) |
 | `TERNA_APP_DATA_DIR` | see below | alternative data folder |
 | `TERNA_CLIENT_ID` / `TERNA_CLIENT_SECRET` | – | credentials for headless runs, bypassing the stored ones |
+
+`ICE_DEV_ORIGIN` widens nothing but the dev loop: the value must be a loopback
+origin (`127.0.0.1`, `localhost`, `[::1]`) and only that exact origin is added to
+the same-origin rule. Leave it unset in normal use — then *Save*, *Test
+connection*, *Remove* and the sync routes answer `403` to any page served from a
+different origin.
 
 ## Files written at runtime
 
@@ -50,21 +57,33 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 53 tests, no network or credentials required
+bun test                 # 84 tests, no network or credentials required
 bun run typecheck        # interface + server
-bun run build            # production interface bundle into dist/
+bun run build            # production bundle: dist/, and static/ refreshed with it
 ```
 
 In development the Vite server proxies `/health`, `/records`, `/analytics`,
 `/metadata`, `/settings`, `/sync` and `/export` to `http://127.0.0.1:8799`
 (override with `VITE_API_PROXY`), so the interface always uses relative URLs.
 
+The page keeps coming from `http://localhost:1420` while the API is on `:8799`:
+reads are proxied, but every state-changing request (*Save*, *Test connection*,
+*Remove*, the sync routes) carries that other origin and is rejected with `403
+cross-origin request rejected`. Start the server with `ICE_DEV_ORIGIN` set to the
+dev server's origin to have it accepted — `ICE_DEV_ORIGIN=http://localhost:1420`
+on macOS and Linux, `set ICE_DEV_ORIGIN=http://localhost:1420 && bun run serve
+--no-window --port 8799` on Windows. Without it (the normal case for the
+installed app) only the server's own origin may mutate anything.
+
 Where the server looks for the built interface, in order: `ICE_STATIC_DIR`, then
 `static/` next to the executable, then `static/` next to `server/`, then `dist/`.
-In a checkout that order matters — `bun run prepack` leaves a `static/` folder
-(and `bun run build` alone does not touch it), so an old `static/` keeps being
-served after a plain `bun run build` and the page shows the previous bundle.
-Delete `static/` or rebuild with `bun run prepack` whenever the interface changes.
+In a checkout that order matters, because `static/` wins over `dist/`: `bun run
+build` compiles into `dist/` and then refreshes `static/` with the same bundle,
+so the two never disagree. `bun run prepack` (what publishing and `bun run
+compile` run) is that same command. `dist/` is replaced only when the build
+succeeded and produced an `index.html` — a failed build leaves `dist/` and
+`static/` exactly as they were, so the server is never left without an interface.
+`bun run dev` needs no build at all: Vite serves the source.
 
 A standalone executable for your own machine, if you want one:
 

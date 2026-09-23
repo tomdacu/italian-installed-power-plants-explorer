@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyRound, Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
+import { KeyRound, Eye, EyeOff, Lock, ServerOff, ShieldCheck } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -71,6 +71,12 @@ export function CredentialsForm({ compact }: { compact?: boolean }) {
         <span className="text-sm text-ink-600 dark:text-ink-300">Status:</span>
         {status.isLoading ? (
           <Badge variant="neutral">Checking…</Badge>
+        ) : status.isError ? (
+          // Un errore del backend non è "non configurato": le chiavi possono
+          // esserci, è il servizio locale che non risponde.
+          <Badge variant="neutral">
+            <ServerOff className="h-3.5 w-3.5" /> Local service unreachable
+          </Badge>
         ) : status.data?.configured ? (
           <Badge variant="success">
             <ShieldCheck className="h-3.5 w-3.5" /> Configured
@@ -103,7 +109,7 @@ export function CredentialsForm({ compact }: { compact?: boolean }) {
             <button
               type="button"
               onClick={() => setShow((s) => !s)}
-              className="rounded-lg p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-white/10 dark:hover:text-white"
+              className="rounded-lg p-1.5 text-ink-500 transition hover:bg-ink-100 hover:text-ink-700 dark:text-ink-400 dark:hover:bg-white/10 dark:hover:text-white"
               aria-label={show ? "Hide secret" : "Show secret"}
             >
               {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

@@ -10,7 +10,7 @@ official statistics. Reproduce it with your own credentials at any time.
 | Raw payload → cache | Full sync of 2000–2024 × 3 datasets plus 2021–2024 of the national one (79 steps), then row-by-row comparison of a sample of raw API values against the rows stored in SQLite | identical |
 | Cache → API | Automated checks on the local API: uniqueness of rows, `/records` vs `/metadata/availability` counts, region sums vs province sums, `summary` stock vs `timeseries`, YoY deltas, Lorda ≥ Netta, CSV export vs served rows, sampled values | all green |
 | Cache → official statistics | National per-source totals (Tab. 8), thermoelectric per region (Tab. 18) and per category (Tab. 20) from Terna's yearbook *Dati statistici sull'energia elettrica in Italia* | see below |
-| Province level | The two independent endpoints that publish the same sources (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
+| Province level | The two endpoints that overlap on wind, photovoltaic, geothermal and hydro (`renewable_source_capacity` and `generation_plants`) compared province by province | 297 of 304 pairs identical |
 
 `Lorda ≥ Netta` now holds for every row of every dataset: the handful of
 violations seen before were the duplicate-row bug, where an empty *Lorda* row
@@ -37,12 +37,16 @@ registry series it publishes monthly and independent re-analyses:
 What to do with it:
 
 - **Quoting 2024?** Any dataset works.
-- **Quoting earlier years?** For photovoltaic, wind, bioenergy and geothermal
-  either dataset reproduces the yearbook; for hydro use `generation_plants`,
-  which counts pumped storage the way the yearbook does. The dashboard shows an
-  amber *Partial data* note only for years whose files leave at least three cells
-  empty: it names 2004–2006 (13 values) with the default filters, and **no year
-  after 2014 can trigger it**, together with no photovoltaic year at all.
+- **Quoting earlier years?** For photovoltaic, wind and geothermal either dataset
+  reproduces the yearbook — bioenergy is the exception: it exists **only** in
+  `renewable_source_capacity`, the generation-plants endpoint publishes no such
+  source at all (`GET /records?dataset=generation_plants&source=Bioenergie` →
+  `[]`, and the dashboard's methodology note says the same). For hydro use
+  `generation_plants`, which counts pumped storage the way the yearbook does. The
+  dashboard shows an amber *Partial data* note only for years whose files leave at
+  least three cells empty: it names 2004–2006 (13 values) with the default
+  filters, and **no year after 2014 can trigger it**, together with no
+  photovoltaic year at all.
 - **Quoting thermoelectric?** Use `thermoelectric_capacity`, never the
   `Termoelettrico` series of `generation_plants`.
 - **Comparing with a newspaper?** Check the perimeter first — see
@@ -119,9 +123,11 @@ the dataset can be checked beyond the national total:
 ### Province level, and the two hydro perimeters
 
 `renewable_source_capacity` and `generation_plants` are separate endpoints that
-publish the same four renewable sources. Comparing them province by province for
-2024: **297 of 304 comparable pairs are identical to the decimal**; all seven
-differences are hydro, and they sum to **3.986,301 MW** — exactly the pure
+overlap on four renewable sources — wind, photovoltaic, geothermal and hydro
+(bioenergy exists only in `renewable_source_capacity`; stand-alone storage only in
+`generation_plants`). Comparing them province by
+province for 2024: **297 of 304 comparable pairs are identical to the decimal**;
+all seven differences are hydro, and they sum to **3.986,301 MW** — exactly the pure
 pumped-storage capacity the yearbook lists under `di cui pompaggio puro`
 (3.986,3 MW), in Cuneo, Varese, Caserta, Siracusa, Bologna, Palermo and Bolzano.
 
@@ -247,7 +253,7 @@ the yearbook does:
 | Photovoltaic — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
 | Photovoltaic — *Renewable source capacity* | ✅ | ✅ | ✅ | ✅ |
 | Wind — both datasets | ✅ | ✅ | ✅ | ✅ |
-| Bioenergy — both datasets | ✅ | ✅ | ✅ | ✅ |
+| Bioenergy — *Renewable source capacity* only | ✅ | ✅ | ✅ | ✅ |
 | Geothermal — both datasets | ✅ (≈) | ✅ | ✅ | ✅ |
 | Hydro incl. pumping — *Generation plants* | ✅ | ✅ | ✅ | ✅ |
 | Hydro excl. pumping — *Renewable source capacity* | ⚠️ −3 975,0 | ⚠️ −3 944,3 | ⚠️ −3 986,3 | ⚠️ −3 986,3 |
@@ -279,10 +285,11 @@ Practical consequences:
 
 - **For 2024 everything lines up** with the official publications, whichever
   dataset you pick.
-- **For any year, photovoltaic, wind, bioenergy and geothermal agree cell by cell
-  across datasets**; the two datasets differ only on hydro, where *Generation
-  plants* includes pure pumped storage and *Renewable source capacity* excludes it
-  (the yearbook includes it).
+- **For any year, photovoltaic, wind and geothermal agree cell by cell across
+  datasets**; bioenergy is published only by *Renewable source capacity*, and the
+  two datasets differ only on hydro, where *Generation plants* includes pure
+  pumped storage and *Renewable source capacity* excludes it (the yearbook
+  includes it).
 - Treat the API as a **current** source: re-sync before quoting a year, and fall
   back to the yearbook for historical series.
 

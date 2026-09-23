@@ -19,7 +19,12 @@ import { Progress } from "@/components/ui/Progress";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { useAvailability, useCredentialStatus, useMetadata } from "@/hooks/useMetadata";
-import { useSyncJob } from "@/hooks/useSyncJob";
+import {
+  useSyncJob,
+  failedStepsSummary,
+  syncMessageIsHonest,
+  syncFailureReason,
+} from "@/hooks/useSyncJob";
 import { StoredDataOverview } from "@/components/sync/StoredDataOverview";
 import { cn } from "@/lib/utils";
 import type { DatasetName, SyncStatus } from "@/types";
@@ -83,10 +88,19 @@ export function SyncPage() {
 
   // The default range is what Terna can actually serve: from the first
   // published year (2000) to the last year present in the local cache. The
-  // server publishes the same limits, so UI and API cannot drift apart; the
-  // current year is only a fallback while the availability cache is empty.
+  // server publishes the same limits, so UI and API cannot drift apart; while
+  // the availability cache is empty the range stops at last year, never at the
+  // current one — Terna has not published it yet.
   const firstYear = meta.data?.first_year ?? FALLBACK_FIRST_YEAR;
   const currentYear = meta.data?.current_year ?? new Date().getFullYear();
+  const firstStored = availability.data?.datasets.renewable_source_capacity?.year_min ?? null;
+  // The latest year Terna has published for any dataset: proposing 2025 or
+  // 2026 would only queue steps with nothing to download. `null` means the
+  // cache cannot tell us anything — a first start.
+  const lastPublished = ALL_DATASETS.reduce<number | null>((max, dataset) => {
+    const yearMax = availability.data?.datasets[dataset]?.year_max ?? null;
+    return yearMax != null && (max === null || yearMax > max) ? yearMax : max;
+  }, null);
   const [yearFrom, setYearFrom] = useState<string>("");
   const [yearTo, setYearTo] = useState<string>("");
   // Once a field is edited the defaults must not overwrite it; before that the
@@ -94,19 +108,12 @@ export function SyncPage() {
   const yearsEdited = useRef(false);
 
   useEffect(() => {
-    const datasets = Object.values(availability.data?.datasets ?? {});
-    const firstStored = availability.data?.datasets.renewable_source_capacity?.year_min ?? null;
-    // The latest year Terna has published for any dataset: proposing 2025 or
-    // 2026 would only queue steps with nothing to download.
-    const lastPublished = datasets.reduce<number | null>(
-      (max, dataset) =>
-        dataset?.year_max != null && (max === null || dataset.year_max > max) ? dataset.year_max : max,
-      null,
-    );
     if (yearsEdited.current) return;
     setYearFrom(String(firstStored ?? firstYear));
-    setYearTo(String(lastPublished ?? currentYear));
-  }, [availability.data, firstYear, currentYear]);
+    // Con la cache vuota non sappiamo cosa Terna abbia pubblicato: l'anno
+    // corrente non è ancora uscito, quindi si propone il precedente.
+    setYearTo(String(lastPublished ?? currentYear - 1));
+  }, [firstStored, lastPublished, firstYear, currentYear]);
 
   const startSync = async () => {
     if (sync.loadingExistingJob || sync.starting || sync.running) return;
@@ -136,6 +143,9 @@ export function SyncPage() {
   const job = sync.job;
   const startingUp = sync.starting && !job;
   const pct = job ? Math.round((job.completed_steps / Math.max(1, job.total_steps)) * 100) : 0;
+  // Job concluso con dei passi falliti: i contatori li dà il job, la causa solo
+  // se il server la riporta davvero.
+  const partlyFailed = job?.status === "completed" && (job.failed_steps ?? 0) > 0;
 
   return (
     <div>
@@ -190,6 +200,16 @@ export function SyncPage() {
                   2021 onwards, so those earlier years are skipped for that dataset.
                 </span>
               </p>
+              {lastPublished === null && (
+                <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Nothing is cached yet, so the range ends at {currentYear - 1} rather than{" "}
+                    {currentYear}: years Terna has not published yet come back empty and are reported
+                    as such once the sync ends.
+                  </span>
+                </p>
+              )}
             </FieldSection>
 
             <FieldSection
@@ -260,19 +280,24 @@ export function SyncPage() {
                     <span className="font-mono font-semibold text-ink-700 dark:text-ink-200">{pct}%</span>
                   </div>
                   <p className="surface p-3.5 text-sm leading-relaxed text-ink-700 dark:text-ink-300">
-                    {job.message}
+                    {/* Un server più vecchio annunciava "Sync completed" anche con
+                        dei passi falliti: quel messaggio non va mostrato. */}
+                    {partlyFailed && !syncMessageIsHonest(job)
+                      ? failedStepsSummary(job)
+                      : job.message}
                   </p>
-                  {job.status === "failed" && job.error && (
+                  {job.status === "failed" && (
                     <p className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-3.5 text-sm leading-relaxed text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-                      {job.error}
+                      {syncFailureReason(job)}
                     </p>
                   )}
-                  {job.status === "completed" && (job.failed_steps ?? 0) > 0 && (
+                  {partlyFailed && (
                     <p className="flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-100/60 p-3.5 text-sm leading-relaxed text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300">
                       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>
-                        {job.failed_steps} step{job.failed_steps === 1 ? "" : "s"} skipped due to temporary API
-                        limits. Start another sync to fill the gaps — already downloaded data is safe.
+                        <span className="font-semibold">{failedStepsSummary(job)}</span>
+                        {job.error ? ` — ${job.error}` : ""}. Start another sync to fill the gaps —
+                        already downloaded data is safe.
                       </span>
                     </p>
                   )}

@@ -78,3 +78,27 @@ test("il CSV per fonte usa i gigawatt quando il dataset è quello nazionale", ()
   expect(csv).toContain("type,installed_capacity_gw");
   expect(csv).toContain("Photovoltaic,37.002");
 });
+
+test("le celle che iniziano con una formula non escono eseguibili", () => {
+  const csv = toCsv({
+    columns: [
+      { key: "source", label: "source" },
+      { key: "value", label: "value" },
+    ],
+    rows: [
+      { source: '=HYPERLINK("http://evil")', value: 1 },
+      { source: "+1+cmd", value: 2 },
+      { source: "@SUM(1)", value: 3 },
+      { source: "Fotovoltaico", value: 4 },
+    ],
+  });
+
+  // Excel eseguirebbe queste celle: l'apice le rende testo (e la quotatura
+  // normale resta al suo posto per la virgoletta interna).
+  expect(csv).toContain(`"'=HYPERLINK(""http://evil"")"`);
+  expect(csv).toContain("'+1+cmd");
+  expect(csv).toContain("'@SUM(1)");
+  // I campi normali non guadagnano l'apice.
+  expect(csv).toContain("Fotovoltaico");
+  expect(csv).not.toContain("'Fotovoltaico");
+});

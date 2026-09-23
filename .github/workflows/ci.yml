@@ -8,6 +8,8 @@ on:
 
 jobs:
   check:
+    # Nome storico del job: un rename cambierebbe il check richiesto dalle
+    # branch protection. Il job ora impacchetta e prova anche il prodotto finito.
     name: Tests, types and build
     runs-on: ubuntu-latest
     steps:
@@ -15,7 +17,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -28,3 +30,65 @@ jobs:
 
       - name: Build the interface
         run: bun run build
+
+      # `prepack` è ciò che produce davvero l'artefatto distribuito: `build` più
+      # la copia in `static/`. Il pacchetto si costruisce qui, non solo il dist/.
+      - name: Build the distributed package layout
+        run: bun run prepack
+
+      # Il prodotto finito, non i suoi pezzi: il server parte e serve la SPA
+      # compilata. `--no-window` perché su un runner non c'è nulla da aprire.
+      # Niente `pipefail`: `grep -q` esce al primo match e la SIGPIPE che ne
+      # segue farebbe fallire la pipeline di curl.
+      - name: Smoke test the packaged app
+        shell: bash
+        run: |
+          set -eu
+          bun run server/cli.ts --no-window --port 8899 --data-dir "$RUNNER_TEMP/zapp-smoke" &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8899/health > /dev/null; then break; fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8899/health
+          curl -fsS http://127.0.0.1:8899/ | grep -q "<!doctype html"
+
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+
+  check-windows:
+    name: Tests, types and package (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Tests (server + contract, no network)
+        run: bun test
+
+      - name: Typecheck (interface and server)
+        run: bun run typecheck
+
+      # `clean.ts` e `copy-static.ts` sono nati dai fallimenti di `rmSync` su
+      # Windows (cartelle OneDrive): vanno esercitati su un runner Windows, non
+      # solo su Linux. `prepack` = `build` (che pulisce `dist/`) + copia in
+      # `static/`.
+      - name: Build the distributed package layout
+        run: bun run prepack
+
+      # Ciò che il pacchetto pubblicato deve contenere davvero.
+      - name: Verify the package layout
+        shell: bash
+        run: |
+          set -eu
+          test -f static/index.html
+          test -f server/cli.ts

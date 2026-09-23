@@ -40,6 +40,8 @@ interface JobState {
   emptySteps: number;
   /** Passi mai eseguiti perché quel dataset non pubblica quell'anno. */
   skippedSteps: number;
+  /** Ultimo errore di passo: interno al job, non fa parte di `SyncJobStatus`. */
+  lastStepError: string | null;
 }
 
 /** Il piano di un job: i passi da eseguire e gli anni che nessun dataset pubblica. */
@@ -84,6 +86,12 @@ export function buildPlan(request: SyncRequestPayload): SyncPlan {
   return { steps, dropped };
 }
 
+/** Un errore di Terna può essere lungo quanto una pagina: nello stato del job
+ * serve la causa, non il dump. */
+function truncate(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
 export class SyncManager {
   private readonly jobs = new Map<string, JobState>();
   private queue: Promise<void> = Promise.resolve();
@@ -117,6 +125,7 @@ export class SyncManager {
       failedSteps: 0,
       emptySteps: 0,
       skippedSteps: dropped,
+      lastStepError: null,
     });
     // La coda non deve poter restare bloccata: `run` gestisce già i propri
     // errori, questo è il paracadute perché un job non fermi tutti i successivi.
@@ -160,6 +169,23 @@ export class SyncManager {
         this.update(jobId, { message: step.label });
         await this.runStep(jobId, client, step);
       }
+      const state = this.jobs.get(jobId);
+      const failed = state?.failedSteps ?? 0;
+      if (state && failed > 0) {
+        // Un job con passi falliti non può dire "Sync completed": il messaggio
+        // comincia dal conteggio e porta l'ultima causa, così resta onesto
+        // anche per chi lo filtra con una regex di successo (`useSyncJob`).
+        const detail = state.lastStepError ? ` — last error: ${truncate(state.lastStepError, 200)}` : "";
+        const allFailed = failed === state.totalSteps;
+        this.update(jobId, {
+          status: allFailed ? "failed" : "completed",
+          message: allFailed
+            ? `All ${failed} of ${state.totalSteps} steps failed${detail}`
+            : `${failed} of ${state.totalSteps} steps failed${detail}`,
+          error: allFailed ? truncate(state.lastStepError ?? "unknown error", 200) : null,
+        });
+        return;
+      }
       this.update(jobId, { status: "completed", message: "Sync completed" });
     } catch (error) {
       this.update(jobId, {
@@ -180,9 +206,11 @@ export class SyncManager {
     } catch (error) {
       const state = this.jobs.get(jobId);
       if (state) {
+        const message = (error as Error).message;
         state.failedSteps += 1;
         state.completedSteps += 1;
-        state.message = `${step.label}: ${(error as Error).message}`;
+        state.message = `${step.label}: ${message}`;
+        state.lastStepError = `${step.label}: ${message}`;
       }
       return;
     }

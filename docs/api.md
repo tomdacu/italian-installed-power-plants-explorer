@@ -32,7 +32,9 @@ Accepted by `/records`, `/analytics/*`, `/metadata/data-quality` and `/export/cs
 `q` is a free-text search: a case-insensitive substring match against the
 dimension columns (`region`, `province`, `source`, `category`, `subcategory`,
 `type`, `capacity_type`, `dataset`) and the year, so `q=palermo` returns the
-Palermo rows of every dataset.
+Palermo rows of every dataset. It is capped at **200 characters**: a longer value
+is a `400 {"detail":"q must be at most 200 characters"}` rather than a query the
+connection cannot carry.
 
 An empty or missing parameter is ignored, and *both* spellings behave the same:
 `dataset=` and no `dataset` at all return everything. The exceptions are `sort=`
@@ -41,7 +43,13 @@ default, it is a `400` (`sort must be one of: …`, `Unsupported group_by: `), a
 nothing is returned. A value that is *present but unknown* (`dataset=bogus`,
 `capacity_type=lor-da`, `sort=bogus`) is a `400` too, not a silently ignored
 filter: answering with the whole database is worse than an error. Case is folded
-for enumerated values, so `capacity_type=netta` is accepted and means `Netta`.
+for `capacity_type` only, so `capacity_type=netta` is accepted and means `Netta`.
+`dataset`, `sort` and `group_by` are matched exactly — `dataset=GENERATION_PLANTS`
+answers `400 {"detail":"dataset must be one of: renewable_source_capacity,
+generation_plants, installed_capacity, thermoelectric_capacity"}` and
+`sort=YEAR` a `400` listing the sortable columns. The free-text dimensions are
+not folded either: `source=Eolico` matches 6776 rows, `source=eolico` is a valid
+filter that matches none, not an error.
 
 `limit` (default 5000, at most 100000) and `offset` (default 0) page the result;
 non-numeric values are rejected with `400`. The response carries `x-total-count`
@@ -73,12 +81,20 @@ worth knowing:
 - `/metadata/data-quality` is **outside** that rule: it counts the empty cells of
   the index you select, so a consumer that wants the gaps of one index must pass
   `capacity_type` explicitly (22 cells with it, 64 without).
-- Without a `dataset` filter the MW total spans every MW dataset at once, while
-  the national `/installed-capacity` rows (GW, no `capacity_type`) are left out
-  of it: `GET /analytics/summary` with no filters answers
+- Without a `dataset` filter the MW total spans every MW dataset at once, and
+  those datasets **overlap**: `generation_plants` already carries the four
+  renewable sources and the thermoelectric series, so adding
+  `renewable_source_capacity` and `thermoelectric_capacity` to it counts them a
+  second time. Measured, `capacity_type=Lorda`: **2024**
+  137 598,40 + 74 508,66 + 62 109,90 = **274 216,97 MW**
+  (`latest_total_efficient_power_mw: 274216.9702`), and **2022**
+  123 341,72 + 61 054,19 + 63 210,06 = **247 605,97 MW** — that is 2,1× the
+  118,40 GW the national dataset reports for the same year 2022. The national
+  `/installed-capacity` rows (GW, no `capacity_type`) are left out of the sum
+  instead: `GET /analytics/summary` with no filters answers
   `latest_total_installed_capacity_gw: null`, and the interface shows "—" for the
-  national stock until a dataset is chosen. Pass `dataset` for a meaningful
-  total.
+  national stock until a dataset is chosen. **Always pass `dataset`**: without it
+  the total is a number about nothing.
 
 ## Sync request
 
@@ -118,6 +134,12 @@ returns all three counters plus `status`, `message` and `error`.
   returned.
 - `timeseries` rows always carry every dimension column; the ones not grouped are
   `NULL`.
+- **CSV export**: a field is quoted when it contains a `"`, a comma or a line
+  break (inner quotes are doubled), and a field that starts with `=`, `+`, `-`,
+  `@`, a tab or a carriage return is prefixed with an apostrophe `'`, so a
+  spreadsheet shows it as text instead of evaluating it as a formula
+  (CWE-1236). The apostrophe is part of the exported text — the JSON API does not
+  add it.
 - Numbers are returned **as stored**: a JSON value carries the raw IEEE-754 double
   (`yoy_new_mw: 7683.684599999993`) and the CSV export writes the same unrounded
   value, so a value compared cell by cell between the two never differs by more

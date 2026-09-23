@@ -50,7 +50,7 @@ export function SettingsPage() {
                   "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
                   theme === opt.value
                     ? "bg-white text-ink-900 shadow-card dark:bg-white/[0.10] dark:text-white"
-                    : "text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-100",
+                    : "text-ink-600 hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-100",
                 )}
               >
                 <opt.icon className="h-4 w-4" /> {opt.label}

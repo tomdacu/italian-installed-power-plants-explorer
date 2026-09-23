@@ -57,6 +57,13 @@ async function readJsonBody(c: { req: { json: () => Promise<unknown> } }): Promi
  */
 class FilterError extends Error {}
 
+/**
+ * Oltre questa lunghezza la `q` non arrivava nemmeno ai validatori: la richiesta
+ * falliva a livello di trasporto (505/reset) e il client parlava di «service non
+ * rispondente». Un rifiuto esplicito è più utile di una connessione caduta.
+ */
+const MAX_QUERY_LENGTH = 200;
+
 function filtersFromQuery(query: URLSearchParams): RecordFilters {
   const text = (key: string): string | null => {
     const value = query.get(key);
@@ -78,6 +85,11 @@ function filtersFromQuery(query: URLSearchParams): RecordFilters {
     return match;
   };
 
+  const q = text("q");
+  if (q !== null && q.length > MAX_QUERY_LENGTH) {
+    throw new FilterError(`q must be at most ${MAX_QUERY_LENGTH} characters`);
+  }
+
   return {
     dataset: oneOf<DatasetName>("dataset", DATASETS as readonly DatasetName[]),
     year_from: years("year_from"),
@@ -91,7 +103,7 @@ function filtersFromQuery(query: URLSearchParams): RecordFilters {
     category: text("category"),
     subcategory: text("subcategory"),
     type: text("type"),
-    q: text("q"),
+    q,
   };
 }
 
@@ -136,6 +148,11 @@ export function createApi({ store, settings, sync, logger }: Dependencies): Hono
     logInternalError(error, logger);
     return c.json({ detail: "internal error" }, 500);
   });
+
+  // Senza questo, una rotta API inesistente riceveva il 404 predefinito di Hono,
+  // in `text/plain`: il commento del server promette JSON dappertutto. Gli header
+  // di sicurezza li aggiunge comunque `withSecurityHeaders` in `server/http.ts`.
+  app.notFound((c) => c.json({ detail: "Not found" }, 404));
 
   const credentialStatus = async (): Promise<CredentialStatus> => {
     const current = settings.load();

@@ -262,3 +262,45 @@ test("filtri tipizzati accettano dataset noti e ignorano quelli ignoti", async (
   expect(known).toHaveLength(1);
   expect(unknown).toHaveLength(0);
 });
+
+test("una rotta API inesistente risponde 404 JSON, non testo semplice", async () => {
+  const { app } = buildApp();
+
+  // Il 404 predefinito di Hono era `text/plain`: il server promette JSON ovunque.
+  const missing = await app.request("/recordsssss");
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("content-type")).toContain("application/json");
+  expect(await missing.json()).toEqual({ detail: "Not found" });
+
+  // I 404 già JSON (job inesistente) restano quelli di prima.
+  const job = await app.request("/sync/jobs/inesistente");
+  expect(job.status).toBe(404);
+  expect(await job.json()).toEqual({ detail: "Sync job not found" });
+});
+
+test("una q oltre i 200 caratteri è un 400 esplicito, non una connessione caduta", async () => {
+  const { app } = buildApp();
+
+  // Pre-fix la richiesta falliva a livello di trasporto (505/reset) e il client
+  // mostrava «service non rispondente»: ora il rifiuto è un 400 con il dettaglio.
+  for (const path of ["/records", "/analytics/summary", "/export/csv"]) {
+    const tooLong = await app.request(`${path}?q=${"a".repeat(201)}`);
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toMatchObject({ detail: expect.stringContaining("200") });
+  }
+
+  // Al limite il comportamento non cambia: una `q` di 200 caratteri è accettata.
+  const atLimit = await app.request(`/records?q=${"a".repeat(200)}`);
+  expect(atLimit.status).toBe(200);
+  expect(await atLimit.json()).toEqual([]);
+
+  // E il filtro noto continua a dare gli stessi risultati (substring, senza
+  // distinzione di maiuscole).
+  for (const query of ["Chieti", "chieti"]) {
+    const found = await app.request(`/records?q=${query}`);
+    expect(found.status).toBe(200);
+    const rows = (await found.json()) as { province: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].province).toBe("Chieti");
+  }
+});
