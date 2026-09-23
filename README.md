@@ -60,7 +60,7 @@ bun install
 bun run prepack        # build the interface into dist/ and static/ (needed before serving)
 bun run serve          # local server + browser window on 127.0.0.1:8731
 bun run dev            # Vite dev server with hot reload; run `bun run serve` too
-bun test               # 84 tests
+bun test               # 88 tests
 ```
 
 The interface is built, not committed: without `bun run prepack` (or `bun run

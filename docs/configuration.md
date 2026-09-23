@@ -57,7 +57,7 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 84 tests, no network or credentials required
+bun test                 # 88 tests, no network or credentials required
 bun run typecheck        # interface + server
 bun run build            # production bundle: dist/, and static/ refreshed with it
 ```

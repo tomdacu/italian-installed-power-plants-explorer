@@ -42,17 +42,31 @@ function removeDir(dir: string): void {
 const created: string[] = [];
 let swept = false;
 
-function sweepLeftovers(): void {
-  if (swept) return;
-  swept = true;
+/**
+ * Prefissi che QUESTA suite crea con `mkdtempSync`: lo sweep tocca solo questi.
+ * Con un glob `ice-` generico cancellava anche cartelle di altri processi —
+ * cloni di prova, istanze isolate, dati di lavoro altrui che usano lo stesso
+ * spazio `%TEMP%`. Se aggiungi un `tempDir("ice-…-")` con un prefisso nuovo,
+ * elencalo qui.
+ */
+export const SUITE_PREFIXES = ["ice-api-", "ice-http-", "ice-root-", "ice-settings-", "ice-test-"];
+
+/** Esperto per il test: rimuove i residui dei run precedenti, mai il resto. */
+export function sweepSuiteLeftovers(): void {
   try {
     for (const entry of readdirSync(tmpdir())) {
-      if (!entry.startsWith("ice-")) continue;
+      if (!SUITE_PREFIXES.some((prefix) => entry.startsWith(prefix))) continue;
       removeDir(join(tmpdir(), entry));
     }
   } catch {
     // %TEMP% illeggibile: pazienza.
   }
+}
+
+function sweepLeftovers(): void {
+  if (swept) return;
+  swept = true;
+  sweepSuiteLeftovers();
 }
 
 export function tempDir(prefix: string): string {
