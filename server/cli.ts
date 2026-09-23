@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { inspect } from "node:util";
 
 import { startApp, type LocalApp } from "./app.ts";
-import { appDataDir, ensureDataDir } from "./settings.ts";
+import { appDataDir, ensureDataDir, normalizeDataDirPath } from "./settings.ts";
 
 const BROWSER_CANDIDATES = [
   join(process.env["ProgramFiles(x86)"] ?? "", "Microsoft/Edge/Application/msedge.exe"),
@@ -38,6 +38,16 @@ const ICE_PORT_INVALID = RAW_ICE_PORT !== undefined && RAW_ICE_PORT.trim() !== "
  * d'avvio resta scritto da qualche parte anche senza console. */
 let logTarget: string | null = null;
 
+/**
+ * Righe emesse prima che il log esistesse. L'avviso sulle ACL di
+ * `ensureDataDir` parla proprio della cartella che contiene il log e arriva
+ * **prima** che il file sia aperto: senza questo buffer restava solo su stderr,
+ * cioè invisibile a chi usa la finestra senza console. Si rilasciano in testa al
+ * file appena è aperto; se il log non si apre mai, restano su stderr (l'unica
+ * destinazione disponibile) e non vengono stampati due volte.
+ */
+const pendingLines: string[] = [];
+
 function openLog(path: string): void {
   // Un log che cresce all'infinito (una riga a ogni avvio) non serve a nessuno:
   // oltre il megabyte si riparte da capo.
@@ -55,6 +65,16 @@ function openLog(path: string): void {
   // `logTarget` punterebbe a un percorso su cui non si scriverà mai nulla.
   if (!statSync(path).isFile()) throw new Error(`${path} is a directory, not a log file`);
   logTarget = path;
+  // In testa al file, non in coda: sono le righe più vecchie della sessione
+  // (l'avviso sulle ACL della cartella dati) e vanno lette per prime.
+  if (pendingLines.length > 0) {
+    const buffered = pendingLines.splice(0, pendingLines.length).join("");
+    try {
+      appendFileSync(path, buffered);
+    } catch {
+      // se non si scrive restano su stderr, dove sono già passate
+    }
+  }
 }
 
 function log(message: string): void {
@@ -67,6 +87,9 @@ function log(message: string): void {
     } catch {
       // se il log non è scrivibile resta la console
     }
+  } else {
+    // Log non ancora aperto: la riga aspetta in memoria di essere rilasciata.
+    pendingLines.push(line);
   }
   process.stderr.write(`${message}\n`);
 }
@@ -169,8 +192,11 @@ function main(): void {
 
   // Una sola cartella dati per tutta l'istanza: con `--data-dir D` il log sta in
   // D come il database e le credenziali, non in una sottocartella che nessuno
-  // andrebbe a cercare.
-  const dataDir = options.dataDir ?? appDataDir();
+  // andrebbe a cercare. Il percorso si normalizza **qui**: Git Bash/MSYS
+  // consegna `/c/Users/x`, che su Windows è la radice del volume corrente, e
+  // senza conversione il log finiva in un `C:\c\Users\...` mai creato
+  // (`Log non creato`) mentre la cartella dati vera era altrove.
+  const dataDir = normalizeDataDirPath(options.dataDir ?? appDataDir());
 
   // Il log va aperto **prima** di costruire l'app: un errore d'avvio (cartella
   // dati non scrivibile, database corrotto, porta occupata) spariva su stderr

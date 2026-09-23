@@ -99,8 +99,15 @@ function NavSection({ title, items }: { title: string; items: typeof WORKSPACE }
 export function Sidebar() {
   const { theme, toggle } = useTheme();
 
+  // L'`<aside>` porta un nome accessibile: senza, questo landmark e quello di
+  // una pagina che ne ha un altro (Credentials) restano due landmark
+  // complementari indistinguibili per uno screen reader — axe li segnala come
+  // duplicati (`landmark-unique`).
   return (
-    <aside className="relative flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r border-ink-200/70 bg-white dark:border-transparent dark:bg-forest-950">
+    <aside
+      aria-label="Main navigation"
+      className="relative flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r border-ink-200/70 bg-white dark:border-transparent dark:bg-forest-950"
+    >
       {/* Ambient brand glows — dark theme only: on white they would just wash out */}
       <div className="pointer-events-none absolute inset-0 hidden dark:block" aria-hidden>
         <div className="absolute -top-24 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full bg-brand-500/15 blur-3xl" />

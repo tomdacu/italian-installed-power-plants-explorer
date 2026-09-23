@@ -13,7 +13,7 @@ used the same routes, so anything written against it keeps working.
 | `POST /settings/credentials/test` | OAuth2 round-trip against Terna → `{ok: true}` |
 | `POST /sync/jobs` | start a sync job → `{job_id, status}` |
 | `GET /sync/jobs/latest` | most recent active job, or the last finished job; 404 before any job starts |
-| `GET /sync/jobs/{id}` | `{status, total_steps, completed_steps, failed_steps, empty_steps, skipped_steps, message, error}` — `skipped_steps` is always present; `status` is one of `queued`, `running`, `completed`, `failed`, `cancelled` |
+| `GET /sync/jobs/{id}` | the job status, with every key always present and in the order `SyncJobStatus` (`shared/types.ts`) declares them: `{job_id, status, in_flight, total_steps, completed_steps, message, error, failed_steps, empty_steps, skipped_steps}`. `in_flight` is `true` exactly while the current step is still being awaited — so a reader that has just cancelled a job knows when the counters can still move — and `status` is one of `queued`, `running`, `completed`, `failed`, `cancelled` |
 | `DELETE /sync/jobs/{id}` | cancel a queued or running job → `200` with the resulting status, whose `status` is `"cancelled"`. The step in flight is allowed to finish, the following ones are not executed, and the counters keep what was really done. An unknown id is a `404`; a job that has already finished is not modified and answers `200` with the status it already had |
 | `GET /metadata/options` | canonical sources/types per dataset, stored options, `first_year` (2000), `installed_capacity_first_year` (2021) and `current_year` |
 | `GET /metadata/availability` | row counts per dataset and year actually cached |
@@ -25,13 +25,16 @@ used the same routes, so anything written against it keeps working.
 
 ## Mutating requests
 
-Every `POST` and `DELETE` in the table — the credential routes, `POST /sync/jobs`
-and `DELETE /sync/jobs/{id}` — must be sent with `Content-Type: application/json`,
+The guard covers the four methods that change something — `POST`, `PUT`, `PATCH`
+and `DELETE`, the exact contents of `MUTATING_METHODS` in `server/http.ts` — so
+every mutating request the table shows, the credential routes, `POST /sync/jobs`
+and `DELETE /sync/jobs/{id}`, must be sent with `Content-Type: application/json`,
 **including the requests that carry no body at all** — every `DELETE` in the
 table. The check runs before the route is looked up, so a request without the
 header never reaches the handler: no credential is stored or removed and no job
-is created or cancelled. Measured against a running server, with an id that does
-not exist:
+is created or cancelled. `PUT` and `PATCH` have no route here — with the header
+they are the ordinary `404` of an unknown path — but they are checked just the
+same. Measured against a running server, with an id that does not exist:
 
 ```
 $ curl -i -X DELETE http://127.0.0.1:8731/sync/jobs/00000000-0000-4000-8000-000000000000
@@ -74,22 +77,33 @@ curl -s -X DELETE \
   -H 'Content-Type: application/json' \
   http://127.0.0.1:8731/sync/jobs/9c1a4f1e-0e0f-4d1a-9d6c-3b1e2f7a5c40
 {"job_id":"9c1a4f1e-0e0f-4d1a-9d6c-3b1e2f7a5c40","status":"cancelled",
- "total_steps":4,"completed_steps":1,"failed_steps":0,"empty_steps":0,
- "skipped_steps":0,"message":"Sync cancelled","error":null}
+ "in_flight":true,"total_steps":1,"completed_steps":0,
+ "message":"Sync cancelled","error":null,"failed_steps":0,"empty_steps":0,
+ "skipped_steps":0}
 ```
 
-The id in the second call is the one the first call returned; a made-up UUID is
-the `404` shown above. The cancel is idempotent: a known id always answers `200`,
-and a job that has already finished comes back with the status it already had —
-`completed` or `failed` — instead of being relabelled `cancelled`. The step in
-flight is allowed to finish, so `completed_steps` can still grow after the
-answer: poll `GET /sync/jobs/{id}` until the counters settle.
+One dataset and one year is **one** step, so the plan of that request is
+`total_steps: 1` — the counter counts dataset × year pairs, not years. The id in
+the second call is the one the first call returned; a made-up UUID is the `404`
+shown above. The cancel is idempotent: a known id always answers `200`, and a job
+that has already finished comes back with the status it already had —
+`completed` or `failed` — instead of being relabelled `cancelled`.
+
+The step in flight is allowed to finish, so the answer above is not the end of
+the story: `in_flight` is `true` because the single step was still being awaited
+when the cancel landed, and `completed_steps` is `0`; a moment later the step
+finishes — `in_flight` turns `false`, `completed_steps` reaches `1` and the status
+stays `cancelled`. A cancel that lands before the job starts looks the same with
+`in_flight: false` from the beginning, because no step ever runs. Read
+`GET /sync/jobs/{id}` while `in_flight` is `true` and stop when it turns `false`.
 
 Do not run this against the real credentials just to read the bodies: the two
 JSON shapes printed here are what the code produces — a first `POST` answers
 `200` with `{"job_id": …, "status": "queued"}`, and `cancel()` fills `message`
 with `"Sync cancelled"` and `error` with `null` — while only the `403` and the
 `404` above were measured against a running server, and those need no credential.
+The step count is what `buildPlan` returns for those two arrays: see
+[Sync request](#sync-request) below for how the counters add up.
 
 ## Filters
 
@@ -182,8 +196,9 @@ Three different things can happen to a year you ask for, and the job reports the
 apart:
 
 - **Outside 2000 → the current year** the year is dropped before the job exists
-  and counted in `skipped_steps`; if no year survives the request, the answer is
-  a `422` and no job is created.
+  and counted in `skipped_steps`, once for every dataset selected — the step it
+  never became would have been one per dataset; if no year survives the request,
+  the answer is a `422` and no job is created.
 - **Inside the range but not published for that dataset** — the national endpoint
   starts at 2021 — the year never becomes a step: it is counted in
   `skipped_steps` (`total_steps` does not include it). The per-dataset first year
@@ -191,9 +206,29 @@ apart:
 - **Executed and answered with an empty body** (a year Terna has not published
   yet): the step runs, stores nothing, and is counted in `empty_steps`.
 
-So `total_steps + skipped_steps` covers everything the request asked for —
-out-of-range years included — and a plan never fails because of a year Terna does
-not publish. `GET /sync/jobs/{id}` returns all three counters plus `status`,
+`skipped_steps` is therefore in **step** units, exactly like `total_steps`: a
+year that is dropped — outside the requested range, or not published by the
+selected datasets — costs the step it would have been for each dataset, so the
+two counters always add up:
+
+```
+total_steps + skipped_steps = unique years requested × datasets selected
+```
+
+A step is one dataset and one year, the datasets are the ones in the request
+(all four when `datasets` is omitted, which is what the interface sends), and
+repeated years are deduplicated before the plan is built. Three requests against
+those four datasets:
+
+| Years requested | `total_steps` | `skipped_steps` | Why |
+| --- | --- | --- | --- |
+| `[1999, 2024]` | 4 | 4 | 1999 is out of range: 1 year × 4 datasets, 2024 runs |
+| `[2019, 2024]` | 7 | 1 | 2019 is in range but `installed_capacity` starts in 2021 |
+| `[2024, 2024]` | 4 | 0 | the repeated year is deduplicated |
+
+So the two counters cover everything the request asked for — out-of-range years
+included — and a plan never fails because of a year Terna does not publish.
+`GET /sync/jobs/{id}` returns all the counters plus `status`, `in_flight`,
 `message` and `error`.
 
 ## Conventions

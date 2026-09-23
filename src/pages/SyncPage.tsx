@@ -351,9 +351,9 @@ export function SyncPage() {
                       <p className="flex items-start gap-2 rounded-xl border border-ink-200/70 bg-ink-50/60 p-3.5 text-sm leading-relaxed text-ink-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-ink-300">
                         <Info className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>
-                          {job.skipped_steps} step{job.skipped_steps === 1 ? "" : "s"} skipped: those
-                          years are not published for the selected datasets (the national series
-                          starts in 2021). Everything there is to download was downloaded.
+                          {job.skipped_steps} step{job.skipped_steps === 1 ? "" : "s"} skipped: outside
+                          the requested range or not published by the selected datasets. Everything
+                          there is to download was downloaded.
                         </span>
                       </p>
                     )}

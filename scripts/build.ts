@@ -17,8 +17,10 @@
  *
  *   bun run scripts/build.ts
  *
- * Il bump riconosce il marker anche con apici singoli o doppi e spaziature
- * diverse (vedi `SW_CACHE_PATTERN`), e sostituisce **tutte** le occorrenze.
+ * Il bump riconosce la **dichiarazione** `const CACHE = "ice-shell-v6"` anche
+ * con apici singoli o doppi e spaziature diverse (vedi `SW_CACHE_PATTERN`) e ne
+ * sostituisce la prima occorrenza; una citazione del marker dentro un commento
+ * o dentro una stringa resta intatta.
  *
  * Limite noto dell'harness: le prove di questa build girano su uno specchio in
  * `%TEMP%` (fuori da OneDrive), mentre la build reale gira dentro OneDrive; i
@@ -39,11 +41,13 @@ const stagingDist = join(root, "dist-new");
 const stagingStatic = join(root, "static-new");
 
 /**
- * Nome base della cache in `public/sw.js`; la regex si applica solo
- * all'artefatto. Tollera apici singoli o doppi e spaziature diverse attorno a
+ * Dichiarazione della cache in `public/sw.js`; la regex si applica solo
+ * all'artefatto. È ancorata a **inizio riga** (`m`): un `const CACHE = …`
+ * citato in un commento o dentro una stringa non è la dichiarazione e non va
+ * riscritto. Tollera apici singoli o doppi e spaziature diverse attorno a
  * `const`/`=`: il marker è quel testo, non quella formattazione.
  */
-const SW_CACHE_PATTERN = /const(\s+)CACHE(\s*=\s*)(["'])ice-shell-v6\3(\s*;?)/g;
+const SW_CACHE_PATTERN = /^const\s+CACHE\s*=\s*(["'])ice-shell-v6\1(\s*;?)/m;
 
 // 1. Compila in una cartella di appoggio: `dist/` e `static/` non vengono
 //    toccate finché la build non è riuscita.
@@ -119,10 +123,10 @@ console.log("Build completata: dist/ e static/ sostituite (rename), cache del se
 /**
  * Riscrive la costante `CACHE` nel solo artefatto `sw.js` (mai in
  * `public/sw.js`), suffissandola con gli 8 caratteri iniziali dell'hash di
- * `index.html`: ogni build bumpa il nome della cache. Il marker si riconosce
- * con apici singoli o doppi e con spaziature diverse, e si sostituiscono
- * **tutte** le occorrenze; se il marker non c'è si fallisce in chiaro, dicendo
- * quale testo manca.
+ * `index.html`: ogni build bumpa il nome della cache. La dichiarazione si
+ * riconosce con apici singoli o doppi e con spaziature diverse e si sostituisce
+ * la **prima** occorrenza — la dichiarazione è una sola; se non c'è si fallisce
+ * in chiaro, dicendo quale testo manca.
  */
 function bumpServiceWorkerCache(swPath: string, indexPath: string): void {
   if (!existsSync(swPath)) {
@@ -130,16 +134,67 @@ function bumpServiceWorkerCache(swPath: string, indexPath: string): void {
   }
   const hash = createHash("sha256").update(readFileSync(indexPath)).digest("hex").slice(0, 8);
   const source = readFileSync(swPath, "utf8");
-  const found = source.match(SW_CACHE_PATTERN);
-  if (!found || found.length === 0) {
+  const match = SW_CACHE_PATTERN.exec(blankCommentsAndTemplates(source));
+  if (!match) {
     throw new Error(
       `${swPath} does not contain const CACHE = "ice-shell-v6" (apici singoli o doppi ammessi): the cache name cannot be bumped`,
     );
   }
-  const bumped = source.replace(SW_CACHE_PATTERN, (_match, gapAfterConst, gapAroundEquals, quote, tail) => {
-    return `const${gapAfterConst}CACHE${gapAroundEquals}${quote}ice-shell-v6-${hash}${quote}${tail}`;
-  });
-  writeFileSync(swPath, bumped);
+  const end = match.index + match[0].length;
+  // `match` viene dal testo ripulito, ma gli offset sono quelli del sorgente e
+  // la dichiarazione non è mai dentro un commento: il tratto è identico.
+  const declaration = source.slice(match.index, end).replace("ice-shell-v6", `ice-shell-v6-${hash}`);
+  writeFileSync(swPath, source.slice(0, match.index) + declaration + source.slice(end));
+}
+
+/**
+ * `source` con commenti e template literal sostituiti da spazi, **a parità di
+ * lunghezza**: gli offset restano quelli del sorgente, ma un marker citato
+ * dentro un commento o una stringa multilinea non può più passare per la
+ * dichiarazione. Le stringhe normali (`"…"`, `'…'`) si saltano senza toccarle:
+ * non possono contenere un a capo, e saltarle evita che un `//` al loro interno
+ * (un URL) venga letto come un commento.
+ */
+function blankCommentsAndTemplates(source: string): string {
+  const blanked = source.split("");
+  const blank = (from: number, to: number): void => {
+    for (let index = from; index < to; index += 1) {
+      if (blanked[index] !== "\n") blanked[index] = " ";
+    }
+  };
+  /** Indice subito dopo la chiusura di una stringa aperta in `from`. */
+  const skipQuoted = (from: number, quote: string): number => {
+    let cursor = from + 1;
+    while (cursor < source.length && source[cursor] !== quote) {
+      cursor += source[cursor] === "\\" ? 2 : 1;
+    }
+    return Math.min(cursor + 1, source.length);
+  };
+
+  let index = 0;
+  while (index < source.length) {
+    const pair = source.slice(index, index + 2);
+    if (pair === "//") {
+      const lineEnd = source.indexOf("\n", index);
+      const stop = lineEnd === -1 ? source.length : lineEnd;
+      blank(index, stop);
+      index = stop;
+    } else if (pair === "/*") {
+      const commentEnd = source.indexOf("*/", index + 2);
+      const stop = commentEnd === -1 ? source.length : commentEnd + 2;
+      blank(index, stop);
+      index = stop;
+    } else if (source[index] === "`") {
+      const stop = skipQuoted(index, "`");
+      blank(index, stop);
+      index = stop;
+    } else if (source[index] === '"' || source[index] === "'") {
+      index = skipQuoted(index, source[index]);
+    } else {
+      index += 1;
+    }
+  }
+  return blanked.join("");
 }
 
 /** Cartella che il server servirà adesso: `static/` vince su `dist/`. */

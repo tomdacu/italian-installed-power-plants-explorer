@@ -220,6 +220,73 @@ test("anni duplicati non diventano passi saltati: la deduplica è silenziosa", a
   expect(mixed.skipped_steps).toBe(1);
 });
 
+test("gli anni saltati si contano in passi, non in anni", async () => {
+  const { app } = buildApp();
+  const all = ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"];
+  const counts = async (years: number[]) => {
+    const response = await app.request("/sync/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ years, datasets: all }),
+    });
+    expect(response.status).toBe(200);
+    const { job_id } = (await response.json()) as { job_id: string };
+    return (await (await app.request(`/sync/jobs/${job_id}`)).json()) as {
+      total_steps: number;
+      skipped_steps: number;
+    };
+  };
+
+  // Un anno limato è un passo mai eseguito **per ciascun dataset**: senza la
+  // moltiplicazione `skipped_steps` contava anni e l'identità
+  // `total_steps + skipped_steps = anni unici × dataset` non tornava.
+  const belowFirst = await counts([1999, 2024]);
+  expect(belowFirst.total_steps).toBe(4);
+  expect(belowFirst.skipped_steps).toBe(4); // 4 + 4 = 2 anni × 4 dataset
+
+  // Il 2019 resta nell'intervallo ma `installed_capacity` non lo pubblica: un
+  // solo passo saltato, dal piano e non da `clampYears`.
+  const mixed = await counts([2019, 2024]);
+  expect(mixed.total_steps).toBe(7);
+  expect(mixed.skipped_steps).toBe(1); // 7 + 1 = 2 anni × 4 dataset
+
+  const repeated = await counts([2024, 2024]);
+  expect(repeated.total_steps).toBe(4);
+  expect(repeated.skipped_steps).toBe(0);
+});
+
+test("un anno che non è un intero è un errore che lo nomina", async () => {
+  const { app } = buildApp();
+  const post = (years: unknown[]) =>
+    app.request("/sync/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ years, datasets: ["renewable_source_capacity"] }),
+    });
+  const detailOf = async (years: unknown[]): Promise<string> => {
+    const response = await post(years);
+    expect(response.status).toBe(422);
+    // Forma della risposta d'errore di questa rotta (contratto dell'API).
+    const body = (await response.json()) as { detail: string };
+    return body.detail;
+  };
+
+  // `Number()` silenzioso faceva sparire `"abc"` (contata come zero anni) e
+  // trasformava `null`/`true` in 0/1, cioè in anni mai chiesti.
+  expect(await detailOf(["abc", 2024])).toContain('"abc"');
+  expect(await detailOf([null, 2024])).toContain("null");
+  expect(await detailOf([true, 2024])).toContain("true");
+
+  // Un decimale non è "fuori intervallo": è un anno che non esiste.
+  const decimal = await detailOf([2024.5]);
+  expect(decimal).toContain("2024.5");
+  expect(decimal).toContain("integer");
+  expect(decimal).not.toContain("between");
+
+  // Il caso sano resta com'era.
+  expect((await post([2024])).status).toBe(200);
+});
+
 test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () => {
   const root = tempDir("ice-api-");
   const store = new CapacityStore(join(root, "cache.sqlite"));

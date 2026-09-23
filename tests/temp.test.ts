@@ -8,7 +8,7 @@
  *    due suite simultanee si contenderebbero le stesse `ice-*`. Il marchio
  *    `owner.pid` chiude il caso — un pid che risponde vivo fa passare la dir.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
@@ -24,6 +24,10 @@ const stale = join(tmpdir(), `ice-api-stale-${stamp}`);
 const deadOwned = join(tmpdir(), `ice-api-dead-${stamp}`);
 // Cartella di un altro strumento, mai `ice-`.
 const unrelated = join(tmpdir(), `zapp-unrelated-${stamp}`);
+// Residuo POSIX a sola lettura: `0o555` come la cartella dati di `ensureDataDir`.
+// Creato dentro il suo test, non qui: gli sweep dei test precedenti lo
+// toglierebbero di mezzo prima che qualcuno possa osservarlo.
+let readOnly = "";
 
 for (const dir of [foreign, stale, deadOwned, unrelated]) {
   mkdirSync(dir, { recursive: true });
@@ -42,7 +46,14 @@ const liveOwned = tempDir("ice-api-live-");
 describe("sweep dei residui temporanei", () => {
   afterAll(() => {
     rmSync(liveOwned, { recursive: true, force: true });
-    for (const dir of [foreign, stale, deadOwned, unrelated]) {
+    for (const dir of [foreign, stale, deadOwned, unrelated, readOnly].filter((path) => path !== "")) {
+      // La cartella a sola lettura si rimette scrivibile prima di cancellarla:
+      // altrimenti il fallimento del test lascerebbe il residuo per sempre.
+      try {
+        chmodSync(dir, 0o700);
+      } catch {
+        /* già sparita o niente permessi */
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -81,5 +92,25 @@ describe("sweep dei residui temporanei", () => {
       expect(`ice-qualcosa-${stamp}`.startsWith(prefix)).toBe(false);
       expect(`${prefix}residuo`.startsWith(prefix)).toBe(true);
     }
+  });
+
+  /**
+   * Un residuo con i permessi tolti non si svuota con la sola rimozione dei
+   * figli: su POSIX serve il permesso di scrittura sulla cartella. Su Windows
+   * l'attributo di sola lettura non blocca `rmSync`, quindi qui il test è una
+   * rete solo per POSIX — la stessa asserzione vale su entrambe le piattaforme.
+   */
+  test("un residuo a sola lettura viene comunque rimosso", () => {
+    readOnly = join(tmpdir(), `ice-api-ro-${stamp}`);
+    mkdirSync(readOnly, { recursive: true });
+    // Il file si crea **prima** di togliere il permesso: dentro una cartella
+    // `0o555` non si crea più niente (su POSIX).
+    writeFileSync(join(readOnly, "dati.txt"), "x", "utf8");
+    chmodSync(readOnly, 0o555);
+    expect(statSync(readOnly).isDirectory()).toBe(true);
+
+    sweepSuiteLeftovers();
+
+    expect(existsSync(readOnly)).toBe(false);
   });
 });

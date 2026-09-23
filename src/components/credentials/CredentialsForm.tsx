@@ -61,7 +61,7 @@ export function CredentialsForm({ compact }: { compact?: boolean }) {
             Terna Developer credentials
           </h2>
           <p className="text-sm text-ink-500 dark:text-ink-400">
-            Your <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/[0.07]">client_secret</code>{" "}
+            Your <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-700 dark:bg-white/[0.07] dark:text-ink-200">client_secret</code>{" "}
             stays on this machine.
           </p>
         </div>

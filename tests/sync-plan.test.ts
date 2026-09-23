@@ -246,3 +246,107 @@ test("i job cancellati vengono espulsi dalla mappa come quelli finiti", () => {
   sync.cancel(overflow);
 });
 
+test("in_flight è vero solo mentre un passo è davvero in volo", async () => {
+  const store = {
+    replaceSnapshot() {
+      return 1;
+    },
+  } as unknown as CapacityStore;
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = 0;
+  const client = {
+    renewableSourceCapacity: async () => {
+      started += 1;
+      await gate;
+      return {};
+    },
+    generationPlants: async () => {
+      started += 1;
+      return {};
+    },
+  } as unknown as TernaClient;
+
+  const sync = new SyncManager(store, async () => client);
+  const id = sync.start(
+    buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
+  );
+
+  // Appena accodato non c'è niente in volo: la coda non l'ha ancora raggiunto.
+  expect(sync.status(id)).toMatchObject({ status: "queued", in_flight: false });
+
+  await until(() => started > 0, "il primo passo non è mai partito");
+  expect(sync.status(id)?.in_flight).toBe(true);
+
+  // La cancellazione non interrompe il passo in volo: lo stato è già
+  // `cancelled`, ma `in_flight` resta vero finché la risposta non arriva —
+  // è così che l'interfaccia sa di dover continuare a leggere i contatori.
+  expect(sync.cancel(id)).toMatchObject({ status: "cancelled", in_flight: true });
+
+  release();
+  await until(() => sync.status(id)?.in_flight === false, "in_flight non è mai tornato falso");
+  const status = sync.status(id)!;
+
+  expect(status.status).toBe("cancelled");
+  expect(status.completed_steps).toBe(1); // solo il passo già in volo
+  expect(status.failed_steps).toBe(0);
+  expect(status.in_flight).toBe(false);
+  expect(started).toBe(1); // il secondo passo non è mai partito
+});
+
+test("in_flight torna falso anche quando il passo fallisce", async () => {
+  const store = {
+    replaceSnapshot() {
+      return 0;
+    },
+  } as unknown as CapacityStore;
+  const client = {
+    renewableSourceCapacity: async () => {
+      throw new Error("503 from Terna");
+    },
+  } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
+
+  const status = await settle(sync, id);
+  expect(status).toMatchObject({ status: "failed", in_flight: false });
+});
+
+test("un burst di job accodati non lascia la mappa sopra il tetto", async () => {
+  const store = {
+    replaceSnapshot() {
+      return 0;
+    },
+  } as unknown as CapacityStore;
+  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
+  const sync = new SyncManager(store, async () => client);
+  const plan = () => buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] });
+
+  // Venticinque job accodati **prima** che il primo sia finito: l'espulsione
+  // al solo avvio non trovava niente di terminale da togliere, la mappa
+  // cresceva oltre il tetto e non tornava più giù (venticinque job finiti
+  // restavano in mappa). Il tetto vale anche alla fine di ogni job.
+  const ids = Array.from({ length: 25 }, () => sync.start(plan()));
+
+  // Aspetta che l'intera coda sia passata: i job finiti — o già usciti dalla
+  // mappa — non sono più né `queued` né `running`.
+  let pending = ids.length;
+  for (let attempt = 0; attempt < 5000 && pending > 0; attempt += 1) {
+    await Promise.resolve();
+    pending = ids.filter((id) => {
+      const state = sync.status(id);
+      return state !== null && (state.status === "running" || state.status === "queued");
+    }).length;
+  }
+  expect(pending).toBe(0);
+
+  expect(ids.filter((id) => sync.status(id) !== null)).toHaveLength(20);
+  expect(sync.status(ids[0])).toBeNull(); // i più vecchi sono usciti
+  expect(sync.status(ids[4])).toBeNull();
+  expect(sync.status(ids[5])).not.toBeNull();
+  expect(sync.status(ids[24])).not.toBeNull(); // il più recente resta
+});
+

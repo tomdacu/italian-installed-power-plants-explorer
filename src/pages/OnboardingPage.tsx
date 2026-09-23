@@ -34,8 +34,11 @@ export function OnboardingPage() {
     navigate("/dashboard");
   };
 
+  // `/welcome` sta fuori dalla `Shell`: senza un `<main>` proprio, la pagina non
+  // aveva nessun landmark principale e *tutto* il suo contenuto restava fuori da
+  // qualunque landmark (`landmark-one-main` + `region` su 14 nodi).
   return (
-    <div className="app-bg min-h-full">
+    <main className="app-bg min-h-full">
       <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-8 py-12 lg:grid-cols-[1fr_1.15fr]">
         {/* Hero panel */}
         <div className="relative overflow-hidden rounded-3xl bg-forest-950 p-9 shadow-pop">
@@ -129,6 +132,6 @@ export function OnboardingPage() {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

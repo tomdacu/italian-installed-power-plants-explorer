@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -38,8 +38,15 @@ jobs:
 
       # Il prodotto finito, non i suoi pezzi: il server parte e serve la SPA
       # compilata. `--no-window` perché su un runner non c'è nulla da aprire.
-      # Niente `pipefail`: `grep -q` esce al primo match e la SIGPIPE che ne
-      # segue farebbe fallire la pipeline di curl.
+      #
+      # Il corpo di `GET /` si scarica **su file** e si controlla con `grep -q`
+      # sul file: due comandi separati. Nella vecchia pipeline
+      # (`curl … | grep -q`) l'uscita di curl passava per `grep -q`, che esce al
+      # primo match, e un trasferimento interrotto — curl esce 18
+      # (`partial file`) se il corpo è più corto del `Content-Length` — finiva
+      # per sembrare un `grep` senza match: lo step poteva passare con una
+      # pagina troncata. La teoria della SIGPIPE era falsa — il difetto reale era
+      # accettare un trasferimento interrotto.
       - name: Smoke test the packaged app
         shell: bash
         run: |
@@ -54,7 +61,8 @@ jobs:
           done
 
           curl --max-time 5 -fsS http://127.0.0.1:8899/health
-          curl --max-time 5 -fsS http://127.0.0.1:8899/ | grep -q "<!doctype html"
+          curl --max-time 5 -fsS -o "$RUNNER_TEMP/zapp-page.html" http://127.0.0.1:8899/
+          grep -q "<!doctype html" "$RUNNER_TEMP/zapp-page.html"
 
           kill "$server_pid"
           wait "$server_pid" 2>/dev/null || true
@@ -64,7 +72,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:

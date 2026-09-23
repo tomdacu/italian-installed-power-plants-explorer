@@ -16,7 +16,12 @@ import type { CapacityStore } from "./db.ts";
 import { TernaClient } from "./terna.ts";
 import type { DatasetName, SyncJobStatus, SyncRequestPayload, SyncStatus } from "../shared/types.ts";
 
-const SYNCABLE_DATASETS: readonly DatasetName[] = [
+/**
+ * I dataset che un job può eseguire, nell'ordine in cui li pianifica. L'API li
+ * usa per contare i passi saltati di un anno limato: un anno fuori intervallo è
+ * un passo mai eseguito **per ciascun dataset**, non uno solo.
+ */
+export const SYNCABLE_DATASETS: readonly DatasetName[] = [
   "renewable_source_capacity",
   "generation_plants",
   "installed_capacity",
@@ -42,6 +47,12 @@ interface JobState {
   skippedSteps: number;
   /** Ultimo errore di passo: interno al job, non fa parte di `SyncJobStatus`. */
   lastStepError: string | null;
+  /**
+   * Vero esattamente mentre l'attesa del passo in corso è in volo: fa parte di
+   * `SyncJobStatus` (`in_flight`) e sopravvive alla cancellazione, perché il
+   * passo già partito verso Terna finisce comunque.
+   */
+  inFlight: boolean;
   /**
    * Cancellazione richiesta: il passo in corso finisce, quelli successivi no.
    * Lo stato passa subito a `cancelled` (chi ha chiesto la cancellazione non
@@ -116,17 +127,6 @@ export class SyncManager {
   start(plan: SyncPlan): string {
     const jobId = crypto.randomUUID();
     const { steps, dropped } = plan;
-    // Un job completato serve solo a rispondere al polling dell'interfaccia:
-    // oltre venti, i più vecchi non servono più a nessuno. Vale anche per i
-    // cancellati: l'interfaccia smette di interrogarli appena li vede tali, e
-    // lasciarli nella mappa significava espellere solo i job finiti, cioè non
-    // far mai posto a una lunga serie di cancellazioni.
-    if (this.jobs.size >= 20) {
-      const oldest = [...this.jobs.entries()].find(
-        ([, state]) => state.status === "completed" || state.status === "failed" || state.status === "cancelled",
-      );
-      if (oldest) this.jobs.delete(oldest[0]);
-    }
     this.jobs.set(jobId, {
       jobId,
       status: "queued",
@@ -138,12 +138,42 @@ export class SyncManager {
       emptySteps: 0,
       skippedSteps: dropped,
       lastStepError: null,
+      inFlight: false,
       cancelled: false,
     });
+    // Un job completato serve solo a rispondere al polling dell'interfaccia:
+    // oltre venti, i più vecchi non servono più a nessuno. Vale anche per i
+    // cancellati: l'interfaccia smette di interrogarli appena li vede tali.
+    this.prune();
     // La coda non deve poter restare bloccata: `run` gestisce già i propri
     // errori, questo è il paracadute perché un job non fermi tutti i successivi.
     this.queue = this.queue.then(() => this.run(jobId, steps)).catch(() => undefined);
     return jobId;
+  }
+
+  /** Tetto della mappa: oltre questo numero i job terminali più vecchi escono. */
+  private static readonly MAX_JOBS = 20;
+
+  /**
+   * Riporta la mappa nel tetto espellendo i job più vecchi ormai terminali.
+   *
+   * Chiamata sia all'avvio di un job sia alla fine di ognuno: con la sola
+   * chiamata in `start`, un burst di job accodati prima che i primi
+   * diventassero terminali non trovava niente da espellere (il `find` cercava
+   * solo job finiti), la mappa cresceva oltre il tetto e non tornava più giù —
+   * venticinque job finiti restavano in mappa. Un job cancellato con il passo
+   * ancora in volo resta: la sua `in_flight` è vera e qualcuno lo sta leggendo.
+   */
+  private prune(): void {
+    while (this.jobs.size > SyncManager.MAX_JOBS) {
+      const oldest = [...this.jobs.entries()].find(
+        ([, state]) =>
+          !state.inFlight &&
+          (state.status === "completed" || state.status === "failed" || state.status === "cancelled"),
+      );
+      if (!oldest) return;
+      this.jobs.delete(oldest[0]);
+    }
   }
 
   /**
@@ -170,6 +200,7 @@ export class SyncManager {
     return {
       job_id: state.jobId,
       status: state.status,
+      in_flight: state.inFlight,
       total_steps: state.totalSteps,
       completed_steps: state.completedSteps,
       message: state.message,
@@ -193,9 +224,22 @@ export class SyncManager {
   }
 
   private async run(jobId: string, steps: SyncStep[]): Promise<void> {
+    try {
+      await this.execute(jobId, steps);
+    } finally {
+      // Il job ha appena smesso di lavorare (completato, fallito o cancellato
+      // con il passo in volo finito): è il momento in cui la mappa può rientrare
+      // nel tetto. Senza questa chiamata un burst di job non la svuotava più.
+      this.prune();
+    }
+  }
+
+  private async execute(jobId: string, steps: SyncStep[]): Promise<void> {
     // Cancellato prima che la coda lo raggiungesse: non parte nessun passo e
     // non si torna a `running` (sovrascriverebbe la cancellazione già data).
-    if (this.jobs.get(jobId)?.cancelled) {
+    const initial = this.jobs.get(jobId);
+    if (!initial) return; // espulso dal tetto mentre era in coda: niente da fare
+    if (initial.cancelled) {
       this.update(jobId, { status: "cancelled", message: "Sync cancelled" });
       return;
     }
@@ -253,6 +297,9 @@ export class SyncManager {
 
   private async runStep(jobId: string, client: TernaClient, step: SyncStep): Promise<void> {
     let stored: number;
+    // `in_flight` è vero esattamente mentre l'attesa del passo è in corso —
+    // anche su un job già cancellato, dove il passo in volo finisce comunque.
+    this.update(jobId, { inFlight: true });
     try {
       // Anche la scrittura sta nel try: un errore del database su un passo non
       // deve far cadere l'intero job (gli altri passi restano utili).
@@ -270,6 +317,10 @@ export class SyncManager {
         if (!state.cancelled) state.message = `${step.label}: ${message}`;
       }
       return;
+    } finally {
+      // Nel `finally` e non in coda al percorso felice: anche un passo fallito
+      // deve dichiarare che non c'è più niente in volo.
+      this.update(jobId, { inFlight: false });
     }
     const state = this.jobs.get(jobId);
     if (!state) return;

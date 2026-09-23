@@ -8,6 +8,13 @@ on:
 permissions:
   contents: write
 
+# Due run sullo stesso ref non devono sovrapporsi: una release si crea una
+# volta sola. L'attesa non annulla il run in corso (`cancel-in-progress: false`),
+# perché a metà pubblicazione un annullamento lascerebbe una bozza incompleta.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # L'eseguibile è il prodotto che si scarica dalla release: va costruito e
   # impacchettato su Windows (dove gira) prima di annunciare la release.
@@ -16,7 +23,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -35,8 +42,15 @@ jobs:
       # `GET /` risponde 500 in silenzio: prima di impacchettarlo lo si avvia
       # davvero e gli si chiede l'interfaccia. Su un runner non c'è nulla da
       # aprire (`--no-window`) e la data dir vive in `$RUNNER_TEMP`.
-      # Niente `pipefail` (come in ci.yml): `grep -q` esce al primo match e la
-      # SIGPIPE che ne segue farebbe fallire la pipeline di curl.
+      #
+      # Il corpo di `GET /` si scarica **su file** e si controlla con `grep -q`
+      # sul file: due comandi separati. Nella vecchia pipeline
+      # (`curl … | grep -q`) l'uscita di curl passava per `grep -q`, che esce al
+      # primo match, e un trasferimento interrotto — curl esce 18
+      # (`partial file`) se il corpo è più corto del `Content-Length` — finiva
+      # per sembrare un `grep` senza match: lo step poteva passare con una
+      # pagina troncata. La teoria della SIGPIPE era falsa — il difetto reale era
+      # accettare un trasferimento interrotto.
       - name: Smoke test the executable
         shell: bash
         run: |
@@ -50,8 +64,16 @@ jobs:
             sleep 1
           done
 
-          curl --max-time 5 -fsS http://127.0.0.1:8899/health
-          curl --max-time 5 -fsS http://127.0.0.1:8899/ | grep -q "<!doctype html"
+          # Un rosso senza spiegazione non serve a nessuno: se l'eseguibile non
+          # risponde, prima di uscire si stampa la testa del suo `backend.log`.
+          if ! curl --max-time 5 -fsS http://127.0.0.1:8899/health; then
+            echo "--- $RUNNER_TEMP/zapp-exe-smoke/backend.log (first 40 lines)"
+            sed -n '1,40p' "$RUNNER_TEMP/zapp-exe-smoke/backend.log" || true
+            exit 1
+          fi
+
+          curl --max-time 5 -fsS -o "$RUNNER_TEMP/zapp-exe-page.html" http://127.0.0.1:8899/
+          grep -q "<!doctype html" "$RUNNER_TEMP/zapp-exe-page.html"
 
           kill "$exe_pid"
           wait "$exe_pid" 2>/dev/null || true
@@ -60,6 +82,12 @@ jobs:
       # interfaccia) e i suoi checksum: l'`.exe` nudo non viene allegato, perché
       # da solo, senza la `static/` che gli sta accanto, per chi lo scarica è un
       # 500 silenzioso. Il checksum copre i file allegati, cioè lo zip.
+      #
+      # Il file esce **solo con LF**: `Set-Content` senza `-NoNewline` chiude la
+      # riga con CRLF, e `sha256sum -c` di coreutils 8.32 legge il `\r` come
+      # parte del nome del file e risponde "No such file or directory" (rc=1).
+      # La riga è quindi esplicita, e `-NoNewline` impedisce che se ne aggiunga
+      # una seconda.
       - name: Package the release assets (zip + checksums)
         shell: pwsh
         run: |
@@ -68,13 +96,13 @@ jobs:
           Compress-Archive -Path dist-exe/* -DestinationPath $zip -Force
 
           $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
-          Set-Content -Path SHA256SUMS.txt -Value "$hash  $zip" -Encoding ascii
+          Set-Content -Path SHA256SUMS.txt -Value "$hash  $zip`n" -NoNewline -Encoding ascii
           Get-Content SHA256SUMS.txt
 
       # L'artefatto del job (interno, non un asset pubblico) porta anche
       # l'eseguibile nudo: serve solo a questo run.
       - name: Upload the job artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-exe
           path: |
@@ -89,7 +117,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -105,7 +133,7 @@ jobs:
           bun run build
 
       - name: Download the release assets built on Windows
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-exe
           path: release-assets
@@ -126,19 +154,36 @@ jobs:
             exit 1
           fi
 
+      # Un tag che non corrisponde a `package.json` creerebbe una release che
+      # annuncia una versione diversa da quella del tag (e con un nome di zip
+      # che non corrisponde): stesso guard di publish.yml, prima di allegare
+      # qualsiasi cosa. Vale anche per `workflow_dispatch`: la release si lancia
+      # dal tag `v<versione>`.
+      - name: Check the tag matches package.json
+        run: |
+          version="$(bun -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Ref $GITHUB_REF_NAME does not match the package.json version v$version: tag the release v$version (or bump package.json) and run this workflow from that tag."
+            exit 1
+          fi
+
       # `body_path` resta il corpo curato a mano; `generate_release_notes`
       # aggiunge in coda le note automatiche del tag (PR e commit), così due
       # release consecutive non hanno più lo stesso testo.
       #
       # `files` allega lo **zip** (eseguibile + interfaccia) e i checksum, non
       # l'`.exe` nudo: l'eseguibile da solo non sa servire l'interfaccia.
+      # `fail_on_unmatched_files` perché un glob che non trova nulla
+      # pubblicherebbe una release con meno asset di quelli annunciati, senza
+      # dirlo: meglio un rosso.
       - name: Publish the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           body_path: .github/release-notes.md
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             release-assets/Italian-Renewable-Capacity-Explorer-*-win-x64.zip
             release-assets/SHA256SUMS.txt

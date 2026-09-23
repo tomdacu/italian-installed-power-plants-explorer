@@ -40,7 +40,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [explicit, setExplicit] = useState(() => readStored() !== null);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    // `theme.js` scrive `color-scheme` inline prima del primo paint, e uno stile
+    // inline vince sulla regola `.dark` del foglio: senza questa riga i widget
+    // nativi (menu dei `select`, scrollbar) restavano chiari dopo un cambio di
+    // tema a pagina viva.
+    root.style.colorScheme = theme === "dark" ? "dark" : "light";
     // La barra del titolo della finestra e del browser seguono il tema scelto:
     // il valore scritto in `index.html` è solo il punto di partenza.
     document

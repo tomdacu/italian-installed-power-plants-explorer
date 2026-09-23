@@ -1,10 +1,10 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { cleanupTempDirs, tempDir } from "./temp.ts";
 
-import { appDataDir, SettingsStore } from "../server/settings.ts";
+import { appDataDir, normalizeDataDirPath, SettingsStore } from "../server/settings.ts";
 
 
 afterAll(() => {
@@ -175,30 +175,63 @@ test("se settings.json non si scrive, la rotazione non lascia un id nuovo accant
   const store = new SettingsStore(dataDir);
   await store.saveCredentials("old-client", "OLD-SECRET");
 
-  // Il modo di rendere la scrittura impossibile dipende dalla piattaforma.
-  // Su Windows `chmod 444` mette l'attributo sola-lettura: la scrittura e il
-  // rename del file falliscono con EPERM e il contenuto vecchio resta leggibile.
-  // Su POSIX i permessi del *file* non fermano il rename: a decidere è la
-  // scrittura nella cartella, che resta permessa anche con `settings.json` a
-  // 0444 (il rename sostituisce una voce di directory, non riscrive il file).
-  // Lì si toglie il permesso di scrittura alla cartella dati: il `.tmp` non
-  // nasce e la scrittura fallisce con EACCES prima di toccare `settings.json`.
+  // L'iniezione è la stessa su ogni piattaforma: `settings.json.tmp` piantato
+  // come **cartella** prima della seconda scrittura. `secrets.save` (che lavora
+  // sul suo `secret.bin.tmp`) riesce, poi `writeSettings` trova il temporaneo
+  // occupato da una cartella e fallisce **dentro di sé**: il segreto nuovo è già
+  // stato scritto quando parte il rollback, che è esattamente il caso da
+  // provare. Bloccare la scrittura con i permessi, invece, non è portabile: su
+  // POSIX il `chmod 555` sulla cartella faceva fallire la scrittura del segreto
+  // (EACCES su `secret.bin.tmp`) *prima* di `writeSettings`, e il rollback non
+  // veniva mai esercitato — il test passava per il motivo sbagliato.
   const settingsPath = join(dataDir, "settings.json");
   const before = readFileSync(settingsPath, "utf8");
-  const blocked = process.platform === "win32" ? settingsPath : dataDir;
-  chmodSync(blocked, process.platform === "win32" ? 0o444 : 0o555);
+  const planted = `${settingsPath}.tmp`;
+  mkdirSync(planted);
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
   try {
     await expect(store.saveCredentials("new-client", "NEW-SECRET")).rejects.toThrow();
   } finally {
-    chmodSync(blocked, process.platform === "win32" ? 0o644 : 0o700);
+    console.warn = originalWarn;
   }
 
-  // Il file è rimasto quello di prima, byte per byte, e il segreto è stato
-  // ripristinato: id e segreto appartengono ancora allo stesso client.
+  // Il file è rimasto quello di prima, byte per byte.
   expect(readFileSync(settingsPath, "utf8")).toBe(before);
   expect(store.load().clientId).toBe("old-client");
+  // Il rollback ha rimesso il segreto **vecchio** dopo aver scritto quello
+  // nuovo: senza rollback qui ci sarebbe "NEW-SECRET". E il segreto si legge
+  // anche senza passare l'id, cioè dal client id rimasto nel file.
   expect(await store.getClientSecret("old-client")).toBe("OLD-SECRET");
+  expect(await store.getClientSecret()).toBe("OLD-SECRET");
   expect(await store.hasCredentials()).toBe(true);
-  // Il temporaneo della scrittura fallita non resta sul disco.
-  expect(existsSync(`${settingsPath}.tmp`)).toBe(false);
+  // La cartella piantata non è stata svuotata né cancellata: il temporaneo non
+  // si rimuove, quindi resta nominato nel log.
+  expect(statSync(planted).isDirectory()).toBe(true);
+  expect(warnings.some((line) => line.includes(planted))).toBe(true);
+  rmSync(planted, { recursive: true, force: true });
+  // Nessun temporaneo resta sul disco: né quello delle impostazioni (rimosso
+  // dal test) né quello del segreto, che il rollback non deve abbandonare.
+  expect(readdirSync(dataDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+});
+
+test("un percorso MSYS diventa assoluto su Windows e resta com'è altrove", () => {
+  // Git Bash consegna `--data-dir /c/Users/Public/zapp`: su Windows `/c` è la
+  // radice del volume corrente, quindi la cartella nasceva in `C:\c\Users\...`.
+  expect(normalizeDataDirPath("/c/Users/Public/zapp", "win32")).toBe("C:/Users/Public/zapp");
+  expect(normalizeDataDirPath("/d/Work/dati", "win32")).toBe("D:/Work/dati");
+  expect(normalizeDataDirPath("/c", "win32")).toBe("C:/");
+  expect(normalizeDataDirPath("/c/", "win32")).toBe("C:/");
+  // Già assoluto, relativo, o `/` non seguito da una lettera di volume: intatti.
+  expect(normalizeDataDirPath("C:/Users/Public/zapp", "win32")).toBe("C:/Users/Public/zapp");
+  expect(normalizeDataDirPath("dati\\locali", "win32")).toBe("dati\\locali");
+  expect(normalizeDataDirPath("/tmp/ice", "win32")).toBe("/tmp/ice");
+  expect(normalizeDataDirPath("/ciao/x", "win32")).toBe("/ciao/x");
+  expect(normalizeDataDirPath("/cygdrive/c/Users", "win32")).toBe("/cygdrive/c/Users");
+  // Su POSIX `/c/...` è un percorso assoluto legittimo.
+  expect(normalizeDataDirPath("/c/Users/Public/zapp", "linux")).toBe("/c/Users/Public/zapp");
+  expect(normalizeDataDirPath("/c/Users/Public/zapp", "darwin")).toBe("/c/Users/Public/zapp");
 });

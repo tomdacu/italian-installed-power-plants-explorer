@@ -262,7 +262,9 @@ test("TERNA_MIN_REQUEST_INTERVAL è limitato a 10 secondi, con un avviso", async
   const huge = await intervalFor("1e9");
 
   expect(huge.value).toBe(10);
-  expect(huge.stderr).toContain("TERNA_MIN_REQUEST_INTERVAL=1e9");
+  // Il numero si stampa nella forma interpretata: `1e9` diventa
+  // `1000000000`, cioè il valore che il client avrebbe usato davvero.
+  expect(huge.stderr).toContain("TERNA_MIN_REQUEST_INTERVAL=1000000000");
   expect(huge.stderr).toContain("ceiling");
 
   // Il pavimento: 0 resta legittimo (i test lo usano) e non produce avvisi.

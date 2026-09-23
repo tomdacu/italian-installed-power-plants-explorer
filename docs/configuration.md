@@ -11,8 +11,8 @@ ice [--browser | --no-window] [--port N] [--data-dir DIR]
 | *(none)* | starts the server and opens a browser window in app mode (no tabs, no address bar) |
 | `--browser` | opens the default browser instead |
 | `--no-window` | server only: useful for scripts, tests and headless machines |
-| `--port N` | forces the port (default 8731) |
-| `--data-dir DIR` | alternative data folder |
+| `--port N` | forces the port (default 8731). A value that is not an integer in 1–65535 is ignored — `--port abc` does not start the server on a port nobody asked for: a free port is picked and the log gets `invalid --port value: using port N`, the port actually bound |
+| `--data-dir DIR` | alternative data folder. On Windows a Git Bash/MSYS path such as `/c/Users/x` is read as `C:/Users/x` before anything is created, so the data does not end up in `C:\c\Users\x` |
 | `--help` | usage |
 
 The port stays fixed because the origin of an installed app includes it; if the
@@ -26,7 +26,7 @@ app would have to be reinstalled from.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ICE_PORT` | `8731` | same as `--port` |
+| `ICE_PORT` | `8731` | the port the server tries first, same as `--port` — which wins when both are given. A value that is not an integer in 1–65535 is ignored: the default `8731` is used (a free port if it is busy) and the log gets `invalid ICE_PORT value: using port N`, the port actually bound — a malformed variable must not decide where the app listens |
 | `ICE_STATIC_DIR` | `static/` next to the executable, or `dist/` in a checkout | where the built interface lives |
 | `ICE_DEV_ORIGIN` | – (same-origin only) | one extra **loopback** origin whose state-changing requests are accepted, e.g. `http://localhost:1420` for `bun run dev`; needed because the Vite dev server is on another port |
 | `TERNA_MIN_REQUEST_INTERVAL` | `1.2` | minimum seconds between Terna API calls (the platform allows ~1/second). The accepted range is **0 → 10 s**: a larger value is reduced to 10 with a line in the log, while a value that is not a number, or negative, falls back to the default |
@@ -76,6 +76,32 @@ the secret into a command parser), so for the duration of that call — millisec
 it is visible to other processes that list command lines (`ps`). That is a declared
 compromise, not a silent one: the code says so where the call is made.
 
+### How the data folder is created
+
+The folder is created only when it is missing, and **only then** are its
+permissions set: an existing folder is left exactly as it is, so a second
+instance sharing it does not fight over permissions it did not create and a
+folder shared on purpose stays shared.
+
+- On macOS and Linux it is created with mode `0700` (`mkdirSync(dir, {recursive:
+  true, mode: 0o700})`): the secret file lives next to the database.
+- On Windows it gets a restricted ACL: `icacls` revokes the inherited
+  permissions — the inheritance chain is where `INTERACTIVE`, that is any user
+  logged on to the machine, comes in — and grants full control to the current
+  user (named by SID, so it does not depend on the system language), `SYSTEM` and
+  `Administrators`. It is best effort: if the current user's SID cannot be read
+  the ACL is not touched at all — without the owner in the list the folder would
+  be unreadable for whoever created it — and the log says so.
+
+The data folder can also be an old one. Before the current name it was
+`ItalianInstalledPowerPlantsExplorer`, then `ItalianCapacityExplorer`, then
+`TernaInstalledCapacity` (`LEGACY_APP_DIR_NAMES` in `server/settings.ts`). When
+the current folder does not exist, the first of those three that does is
+**renamed** to `ItalianRenewableCapacityExplorer`: a one-off migration inside the
+same parent folder, so the cache and the stored credentials survive it. If the
+rename fails (a file open, a read-only parent) the old folder keeps being used as
+it is, and the current name wins whenever both exist.
+
 ## Development
 
 ```bash
@@ -83,7 +109,7 @@ bun install
 bun run serve            # server + browser window on :8731
 bun run dev              # Vite dev server on :1420 with hot reload
 bun run serve --no-window --port 8799   # server only, for the Vite proxy
-bun test                 # 114 tests, no network or credentials required
+bun test                 # 121 tests, no network or credentials required
 bun run typecheck        # interface + server
 bun run build            # production bundle: dist/, and static/ refreshed with it
 ```
@@ -138,8 +164,8 @@ tag. Checklist:
 
 1. **Version.** `package.json` `version` is the single source of truth. The tag
    must be `v<version>` — `publish.yml` refuses to publish when `GITHUB_REF_NAME`
-   does not match it — and the first heading of
-   [`.github/release-notes.md`](../.github/release-notes.md) must read
+   does not match it — and the first heading of `.github/release-notes.md` (no
+   link: the file is not part of the npm package) must read
    `## Version <version>`, which is what `release.yml` checks before drafting the
    release (the comparison folds case and trims spaces, so `## version 1.1.0`
    passes too). Both failures name the two values, so they are one line of fix
@@ -165,6 +191,22 @@ tag. Checklist:
    `static/` next to it, it answers `500`. `release.yml` starts the built
    executable and asks it for `/health` and `/` before packaging it, so a broken
    bundle stops the release instead of reaching a download page.
+6. **The release is a draft.** `release.yml` creates it with `draft: true`: it
+   does not appear on the *Releases* page until you open the draft and press
+   *Publish release*, so the notes and the attached zip can be read once more
+   before anybody downloads them. A run started by hand from a branch still
+   builds, tests and packages everything, but the step that creates the release
+   runs only on a tag (`if: startsWith(github.ref, 'refs/tags/')`), so it leaves
+   no release behind — and `publish.yml` is stricter still, since its first check
+   refuses any ref whose name is not `v<version>`: a manual run has to be started
+   from the tag as well.
+7. **`npm publish --ignore-scripts`.** The npm half builds the package layout
+   once, verifies the tarball and then publishes exactly that tarball. The
+   lifecycle scripts are skipped on purpose: without `--ignore-scripts`,
+   `npm publish` would re-run `prepack` (= `bun run build`) and build the
+   interface a **second** time. That costs minutes and can only make the
+   published bundle differ from the one that was checked; one build per workflow
+   is the point.
 
 ## Troubleshooting
 
@@ -173,10 +215,10 @@ tag. Checklist:
 | “Interfaccia non trovata: manca la cartella static/” | the executable was copied without `static/`; keep them together or set `ICE_STATIC_DIR` |
 | The window is a plain browser tab | the browser was not detected for app mode: use your browser's *Install app*, or run with `--browser` |
 | `porta 8731 occupata: uso 64335` (the digits vary) | another instance holds 8731: the server picked a free port, wrote it to `backend.log`, and `GET /health` answers `port_fallback: true`. Close the other instance and restart to get 8731 back; an installed app would need reinstalling on the new origin |
-| Sync reports skipped steps | Those years are either outside 2000 → the current year or not published for the selected datasets (the national series starts in 2021): nothing to download, `skipped_steps` counts them |
+| Sync reports skipped steps | Those years are either outside 2000 → the current year or not published for the selected datasets (the national series starts in 2021): nothing to download, and `skipped_steps` counts one step per dataset for each of them, so `total_steps + skipped_steps` is still the whole request |
 | Sync reports failed steps | Terna refused the calls (quota: `403 Developer Over Rate`, or the network). They are retried with backoff; re-run the sync later, stored rows are upserted and nothing is duplicated |
 | Sync reports many empty steps | years or combinations the API does not publish |
 | Sync fails with `refusing to replace <year> with N of M stored rows` | a Terna response came back much smaller than what is stored for that year, so the cache refuses to overwrite good rows with a half-failed snapshot. Re-run the sync; if the smaller snapshot is really the right one, set `TERNA_ALLOW_YEAR_SHRINK=1` or delete `terna_cache.sqlite` |
-| A job ends as `cancelled` | you pressed *Cancel*: the step in flight was allowed to finish and the following ones were not run. Nothing is lost — stored rows are upserted, so restarting the sync continues from where it stopped |
+| A job ends as `cancelled` | you pressed *Cancel*: the step in flight was allowed to finish and the following ones were not run — the interface keeps reading the job while `in_flight` is `true`, so the counters it shows are the ones that step really produced. Nothing is lost — stored rows are upserted, so restarting the sync continues from where it stopped |
 | Charts show nothing for a dataset | that dataset was never downloaded: run a sync covering its years |
 | “The local data service is not responding” | the server is still starting, or the port changed: check the log file listed above |

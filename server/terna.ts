@@ -45,10 +45,11 @@ function readMinRequestInterval(): number {
   if (!Number.isFinite(parsed) || parsed < 0) return 1.2;
   // Oltre dieci secondi fra due richieste il sync non finirebbe più: il tetto
   // vale come il pavimento, e l'avviso dice che il valore dichiarato è stato
-  // ignorato (la CLI lo scrive in `backend.log`).
+  // ignorato (la CLI lo scrive in `backend.log`). Il numero si stampa **come
+  // interpretato**: `1e9` in forma grezza non si legge, `1000000000` sì.
   if (parsed > MAX_REQUEST_INTERVAL) {
     console.warn(
-      `TERNA_MIN_REQUEST_INTERVAL=${raw} exceeds the ${MAX_REQUEST_INTERVAL}s ceiling: using ${MAX_REQUEST_INTERVAL}`,
+      `TERNA_MIN_REQUEST_INTERVAL=${String(parsed)} exceeds the ${MAX_REQUEST_INTERVAL}s ceiling: using ${MAX_REQUEST_INTERVAL}`,
     );
     return MAX_REQUEST_INTERVAL;
   }

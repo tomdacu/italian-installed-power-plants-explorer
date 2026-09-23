@@ -14,7 +14,7 @@
  *    simultanee (il caso che il vecchio glob di prefissi non copriva) si
  *    rispettano a vicenda; un run crashato lascia comunque residui rimovibili.
  */
-import { mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,15 @@ function removeDir(dir: string): void {
     entries = readdirSync(dir);
   } catch {
     return;
+  }
+  // Un residuo POSIX con i permessi ristretti (`0o555`, come la cartella dati di
+  // `ensureDataDir`) non si svuota: togliere un figlio richiede il permesso di
+  // scrittura **sulla cartella**, non sul file. Il chmod è best effort e su
+  // Windows è un no-op: là l'attributo di sola lettura non blocca la rimozione.
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    // niente permessi: si prova comunque, come prima
   }
   for (const entry of entries) {
     const path = join(dir, entry);

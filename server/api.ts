@@ -17,7 +17,7 @@ import {
 import { createTernaClient } from "./client.ts";
 import { parseGroupBy, RECORD_SORT_FIELDS, type CapacityStore } from "./db.ts";
 import type { SettingsStore } from "./settings.ts";
-import { buildPlan, type SyncManager } from "./sync.ts";
+import { buildPlan, SYNCABLE_DATASETS, type SyncManager } from "./sync.ts";
 import pkg from "../package.json" with { type: "json" };
 import { CAPACITY_TYPES, DATASETS, type CapacityType, type CredentialStatus, type DatasetName, type HealthStatus, type RecordFilters } from "../shared/types.ts";
 
@@ -223,9 +223,20 @@ export function createApi({ store, settings, sync, logger, serverInfo }: Depende
         return c.json({ detail: `unknown datasets: ${unknown.join(", ")}` }, 422);
       }
     }
+    // Ogni voce deve essere un anno intero: `map(Number).filter(isFinite)`
+    // faceva sparire `"abc"` (contata come zero anni) e trasformava `null` e
+    // `true` in 0 e 1, cioè in anni che nessuno aveva chiesto. Il dettaglio
+    // nomina la voce, così si sa quale correggere.
+    const invalid = body.years.findIndex((year) => typeof year !== "number" || !Number.isInteger(year));
+    if (invalid >= 0) {
+      return c.json(
+        { detail: `years[${invalid}] must be an integer year, got ${JSON.stringify(body.years[invalid])}` },
+        422,
+      );
+    }
     // Stessa funzione che usa la UI: un intervallo assurdo (1900-2100) non può
     // trasformarsi in centinaia di richieste e bruciare la quota Terna.
-    const { years, skipped } = clampYears(body.years.map(Number).filter(Number.isFinite));
+    const { years, skipped } = clampYears(body.years);
     if (years.length === 0) {
       return c.json(
         { detail: `no year between ${DATA_FIRST_YEAR} and ${currentYear()} was requested` },
@@ -237,8 +248,11 @@ export function createApi({ store, settings, sync, logger, serverInfo }: Depende
     const plan = buildPlan({ years, datasets: body.datasets });
     // Gli anni limati da `clampYears` sono passi mai eseguiti come quelli che un
     // dataset non pubblica: senza, `skipped_steps` restava a zero e il job
-    // sembrava aver coperto un intervallo che non ha mai chiesto.
-    plan.dropped += skipped;
+    // sembrava aver coperto un intervallo che non ha mai chiesto. `clampYears`
+    // conta **anni**, il piano conta **passi**: un anno limato vale un passo per
+    // ciascun dataset scelto, così `total_steps + skipped_steps` resta
+    // `anni unici × dataset` (docs/api.md).
+    plan.dropped += skipped * (body.datasets ?? SYNCABLE_DATASETS).length;
     // Un piano che non contiene nemmeno un passo (tutti gli anni sotto la soglia
     // del dataset scelto) non è un job: meglio dirlo subito che restituire un
     // "completed" che non ha scaricato niente.

@@ -10,14 +10,23 @@ const ACTIVE = new Set(["queued", "running"]);
  * Ritmo e durata dell'assestamento dopo una cancellazione.
  *
  * Il server legge la cancellazione **fra un passo e l'altro**: quello in volo
- * finisce comunque, e i contatori del job si muovono ancora per qualche
- * secondo. Il pannello deve arrivare al conteggio vero senza che l'utente
- * ricarichi la pagina, quindi si continua a interrogare il job finché i
- * contatori non stanno fermi per `SETTLE_QUIET_MS`, con un tetto di letture.
+ * finisce comunque, e i contatori del job si muovono ancora. Il pannello deve
+ * arrivare al conteggio vero senza che l'utente ricarichi la pagina, quindi:
+ *
+ * 1. finché `in_flight` è vero — il server lo tiene vero esattamente mentre
+ *    l'attesa del passo è in corso — si continua a leggere, **per quanto duri**
+ *    quel passo (una finestra fissa di pochi secondi si chiudeva prima e il
+ *    pannello restava sul conteggio vecchio);
+ * 2. quando `in_flight` è falso si chiude su **due campioni consecutivi
+ *    identici** dei contatori, e il contatore dei campioni riparte da zero a
+ *    ogni cambiamento: una finestra fissa non basta, perché un contatore può
+ *    muoversi dopo che la finestra è scaduta;
+ * 3. il tetto assoluto chiude comunque l'assestamento: il pannello mostra
+ *    quello che ha davvero letto, senza inventare una conclusione.
  */
 const SETTLE_POLL_MS = 1500;
-const SETTLE_QUIET_MS = 5000;
-const SETTLE_MAX_POLLS = 12;
+const SETTLE_STABLE_SAMPLES = 2;
+const SETTLE_MAX_MS = 45_000;
 
 /** I contatori che possono muoversi ancora dopo una cancellazione. */
 function counters(job: SyncJobStatus): string {
@@ -73,7 +82,7 @@ export function useSyncJob() {
   // Job cancellato i cui contatori possono ancora muoversi (passo in volo).
   const [settlingJobId, setSettlingJobId] = useState<string | null>(null);
   const notifiedJobId = useRef<string | null>(null);
-  const settling = useRef<{ id: string; counters: string; lastChangeAt: number; polls: number } | null>(null);
+  const settling = useRef<{ id: string; counters: string; stable: number; startedAt: number } | null>(null);
 
   const latest = useQuery({
     queryKey: ["sync", "latest"],
@@ -91,9 +100,12 @@ export function useSyncJob() {
     refetchInterval: (query) => {
       if (query.state.error) return false;
       const data = query.state.data;
-      // Nessun dato (o job attivo): si segue. Job finito: si smette, tranne se
-      // è quello appena cancellato e i suoi contatori stanno ancora girando.
-      if (!data || ACTIVE.has(data.status)) return SETTLE_POLL_MS;
+      // Nessun dato: si segue. Job attivo **o passo ancora in volo** (`in_flight`
+      // resta vero finché il server non chiude l'attesa del passo, anche su un
+      // job già cancellato): si segue. Job finito: si smette, tranne se è quello
+      // appena cancellato e i contatori non hanno ancora dato due letture
+      // identiche.
+      if (!data || ACTIVE.has(data.status) || data.in_flight) return SETTLE_POLL_MS;
       return settlingJobId === data.job_id ? SETTLE_POLL_MS : false;
     },
   });
@@ -120,19 +132,34 @@ export function useSyncJob() {
     }
   }, [starting, startedJobId, status.data, status.isError, latest.data]);
 
-  // Dopo una cancellazione si smette di interrogare il job solo quando i suoi
-  // contatori sono fermi da un po' (o quando il tetto di letture è raggiunto).
+  // Dopo una cancellazione si smette di interrogare il job solo quando il passo
+  // in volo è finito (`in_flight` falso, quindi i contatori hanno già assorbito
+  // il suo esito) e due letture consecutive dei contatori coincidono. Il tetto
+  // assoluto chiude comunque, e il pannello resta su quello che ha letto.
   useEffect(() => {
     const state = settling.current;
     if (!state || status.data?.job_id !== state.id) return;
-    state.polls += 1;
-    const now = counters(status.data);
-    if (now !== state.counters) {
-      state.counters = now;
-      state.lastChangeAt = Date.now();
+    // Il passo in volo non ha ancora mosso i contatori: contarli adesso
+    // significherebbe fissare il conteggio vecchio. Si continua a leggere.
+    if (status.data.in_flight) return;
+    // Il tetto si controlla **prima** del conteggio dei campioni: se i contatori
+    // si muovono a ogni lettura, il ramo "cambiato" uscirebbe sempre e il tetto
+    // non verrebbe mai valutato — la lettura non finirebbe più.
+    if (Date.now() - state.startedAt >= SETTLE_MAX_MS) {
+      settling.current = null;
+      setSettlingJobId(null);
       return;
     }
-    if (state.polls >= SETTLE_MAX_POLLS || Date.now() - state.lastChangeAt >= SETTLE_QUIET_MS) {
+    const now = counters(status.data);
+    if (now !== state.counters) {
+      // Contatore di letture resettato: la quiete si conta solo fra due letture
+      // identiche consecutive, non dal primo cambiamento in poi.
+      state.counters = now;
+      state.stable = 0;
+      return;
+    }
+    state.stable += 1;
+    if (state.stable >= SETTLE_STABLE_SAMPLES) {
       settling.current = null;
       setSettlingJobId(null);
     }
@@ -244,7 +271,7 @@ export function useSyncJob() {
       notifiedJobId.current = null;
       qc.setQueryData(["sync", "job", cancelledId], updated);
       void qc.invalidateQueries({ queryKey: ["sync", "latest"] });
-      settling.current = { id: cancelledId, counters: counters(updated), lastChangeAt: Date.now(), polls: 0 };
+      settling.current = { id: cancelledId, counters: counters(updated), stable: 0, startedAt: Date.now() };
       setSettlingJobId(cancelledId);
     } catch (error) {
       toast.error("Could not cancel the sync", (error as Error).message);

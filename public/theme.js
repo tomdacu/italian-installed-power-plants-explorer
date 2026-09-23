@@ -11,7 +11,18 @@
   var dark = true;
   try {
     var stored = localStorage.getItem("terna.theme");
-    dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    // Stessa regola di `readStored` in `ThemeContext.tsx`: solo `light` e `dark`
+    // sono valori riconosciuti, qualunque altro (anche `"Dark"`, o una stringa
+    // scritta da una versione precedente) vale come "nessuna scelta" e lascia
+    // decidere la preferenza di sistema. Il confronto secco `stored === "dark"`
+    // faceva divergere i due: il pre-paint dipingeva chiaro e il context, al
+    // mount, passava a scuro — un lampo visibile.
+    dark =
+      stored === "light"
+        ? false
+        : stored === "dark"
+          ? true
+          : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
   } catch (error) {

@@ -5,6 +5,13 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Due run sullo stesso ref non devono sovrapporsi: `npm publish` due volte sulla
+# stessa versione fallisce comunque, ma solo dopo aver speso test e build.
+# L'attesa non annulla il run in corso (`cancel-in-progress: false`).
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   npm:
     name: Publish the package
@@ -14,7 +21,7 @@ jobs:
       contents: read
       id-token: write # richiesto da `npm publish --provenance`
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -23,10 +30,23 @@ jobs:
       # Node serve solo a `npm publish`. `static/` **non** è nel repository
       # (`static/` è in .gitignore): lo produce lo step "Build the package
       # layout" qui sotto, con una `bun run prepack` esplicita.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
+
+      # Un tag senza segreto non è un successo: senza token la pubblicazione non
+      # parte, e il workflow deve dirlo **subito** — prima di spendere test,
+      # typecheck e build per un run che non potrebbe comunque pubblicare.
+      # Stesso messaggio del controllo che proteggeva lo step "Publish".
+      - name: Check NPM_TOKEN is configured
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN is not configured: the npm publish cannot run. Add the repository secret NPM_TOKEN (an npm automation token with publish rights) and re-run this workflow."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -61,8 +81,8 @@ jobs:
           npm pack --dry-run --ignore-scripts --json > "$RUNNER_TEMP/zapp-pack.json"
           grep -q "static/index.html" "$RUNNER_TEMP/zapp-pack.json"
 
-      # Un tag senza segreto non è un successo: senza token la pubblicazione
-      # non parte e il workflow deve dirlo, non uscire con 0.
+      # Il token è già stato verificato subito dopo `setup-node` (step "Check
+      # NPM_TOKEN is configured"): qui serve solo averlo nell'ambiente.
       #
       # `--ignore-scripts` perché `npm publish` da solo rilancerebbe il lifecycle
       # `prepack` (= `bun run build`) e quindi una **seconda** build: la layout è
@@ -72,9 +92,4 @@ jobs:
       - name: Publish (with provenance)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::NPM_TOKEN is not configured: the npm publish cannot run. Add the repository secret NPM_TOKEN (an npm automation token with publish rights) and re-run this workflow."
-            exit 1
-          fi
-          npm publish --ignore-scripts --provenance --access public
+        run: npm publish --ignore-scripts --provenance --access public

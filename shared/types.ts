@@ -124,6 +124,12 @@ export interface SyncJobResponse {
 export interface SyncJobStatus {
   job_id: string;
   status: SyncStatus;
+  /**
+   * Vero esattamente mentre l'attesa di un passo è in corso: i contatori
+   * possono ancora muoversi anche su un job già `cancelled` (il passo in volo
+   * finisce), e chi legge lo stato sa quando smettere di aspettare.
+   */
+  in_flight: boolean;
   total_steps: number;
   completed_steps: number;
   message: string;

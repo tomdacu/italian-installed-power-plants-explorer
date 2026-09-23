@@ -67,7 +67,7 @@ Then, inside the app:
 
 ```bash
 bun run dev            # Vite dev server with hot reload; run `bun run serve` too
-bun test               # 114 tests
+bun test               # 121 tests
 ```
 
 The interface is built, not committed: without `bun run prepack` (or `bun run
@@ -137,8 +137,11 @@ Details in [docs/configuration.md](docs/configuration.md).
 ## Status
 
 Early, single-author project: the server and the interface's logic are covered by
-tests (`bun test`, plus a build in CI) — the same suite exercises `src/lib/*` and
-the API client. What is missing is a DOM/component runner: there is no
+tests (`bun test`, plus a build in CI) — the suite exercises the pure interface
+modules it can run without a browser (`src/lib/csv.ts`, `chart-data.ts` and
+`chart-csv.ts`) and the API client (`src/api/client.ts`). `src/lib/utils.ts`,
+`version.ts` and `constants.ts` are imported only by components and have no test
+of their own. What is missing is a DOM/component runner: there is no
 vitest/jsdom setup, so the React components themselves are verified by hand.
 Known limits and upstream data quirks are listed in
 [docs/data-validation.md](docs/data-validation.md); the practical ones are the

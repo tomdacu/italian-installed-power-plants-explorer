@@ -28,17 +28,20 @@ sync, fewer surprises.
   so a year it has not released yet can still come back empty, and the sync
   reports it as such when it ends. Any year the API accepts can still be entered
   by hand.
-- **Skipped and empty steps are told apart.** Years a dataset does not publish are
-  counted in `skipped_steps` and reported as such ("those years are not published
-  for the selected datasets"), separate from the empty or failed ones — and
-  "All done" only appears when nothing was skipped.
+- **Skipped and empty steps are told apart.** Years outside the range the app
+  accepts, and years a dataset does not publish, are counted in `skipped_steps` —
+  one step per dataset, so `total_steps + skipped_steps` is still the whole
+  request — and reported as such ("outside the requested range or not published
+  by the selected datasets"), separate from the empty or failed ones; "All done"
+  only appears when nothing was skipped.
 - **The CSV export contains every row of the selection.** It used to stop
   silently at 100 000 rows while the documentation promised all of them.
 - **Accessibility**: the primary buttons, the small status labels and the version
   chip now meet WCAG AA contrast in both themes.
 - **Better diagnostics**: runtime errors and startup failures end up in
-  `backend.log`, the startup failure names the data path, and a rejected port
-  logs the port actually used.
+  `backend.log`, the startup failure names the data path, and a rejected or
+  unreadable port (`--port abc`, a malformed `ICE_PORT`) logs the port actually
+  used instead of starting on a port nobody asked for.
 - **Hardening**: an `Origin` without a port is no longer accepted, an HTTP/1.0
   request with no `Host` gets a `403` with the security headers instead of a
   `500`, and a short client id is no longer returned whole by the status route.

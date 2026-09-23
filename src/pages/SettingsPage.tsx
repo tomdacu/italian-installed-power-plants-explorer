@@ -41,7 +41,7 @@ export function SettingsPage() {
       <Topbar title="Settings" subtitle="Personalise the app and learn how to get started" />
       <div className="mx-auto max-w-3xl animate-fade-in space-y-4 p-6 pt-4">
         <section className="card p-5">
-          <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Appearance</h3>
+          <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Appearance</h2>
           <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">Switch between light and dark themes.</p>
           <div className="mt-4 inline-flex rounded-xl border border-ink-200 bg-ink-50 p-1 dark:border-white/10 dark:bg-white/[0.04]">
             {(
@@ -70,7 +70,7 @@ export function SettingsPage() {
         <section className="card p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Getting started</h3>
+              <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">Getting started</h2>
               <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
                 Three steps to explore Italy&apos;s installed renewable capacity.
               </p>
@@ -87,7 +87,7 @@ export function SettingsPage() {
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
-                    <span className="mr-2 font-mono text-xs text-brand-600 dark:text-brand-400">0{i + 1}</span>
+                    <span className="mr-2 font-mono text-xs text-brand-700 dark:text-brand-400">0{i + 1}</span>
                     {s.title}
                   </p>
                   <p className="mt-0.5 text-sm leading-relaxed text-ink-500 dark:text-ink-400">{s.text}</p>
@@ -100,9 +100,9 @@ export function SettingsPage() {
         <section className="card p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">
+              <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">
                 Install as an app
-              </h3>
+              </h2>
               <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
                 Use it in its own window, without browser tabs, with an entry in the Start menu.
               </p>
@@ -132,7 +132,7 @@ export function SettingsPage() {
               <Button onClick={() => void install.install()}>Install as app</Button>
             ) : (
               <p className="text-sm leading-relaxed text-ink-500 dark:text-ink-400">
-                Open this page from the address shown by <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/[0.07]">ice</code>{" "}
+                Open this page from the address shown by <code className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-700 dark:bg-white/[0.07] dark:text-ink-200">ice</code>{" "}
                 (<span className="font-mono text-xs">{appUrl}</span>), then use your
                 browser&apos;s menu → <em>Install app</em>. Chromium-based browsers only.
               </p>
@@ -141,7 +141,7 @@ export function SettingsPage() {
         </section>
 
         <section className="card p-5">
-          <h3 className="font-display text-sm font-semibold text-ink-900 dark:text-white">About</h3>
+          <h2 className="font-display text-sm font-semibold text-ink-900 dark:text-white">About</h2>
           <div className="mt-4 space-y-3.5 text-sm leading-relaxed text-ink-600 dark:text-ink-300">
             <p className="flex items-start gap-2.5">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />

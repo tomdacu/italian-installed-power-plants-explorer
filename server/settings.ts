@@ -110,6 +110,23 @@ function restrictDataDirWindows(dataDir: string): void {
 }
 
 /**
+ * Percorso della cartella dati nella forma che il sistema si aspetta.
+ *
+ * Git Bash/MSYS consegna `--data-dir /c/Users/x`: su Windows `/c` non è un
+ * volume, è la radice del volume corrente, quindi la cartella finiva in
+ * `C:\c\Users\x` — creata e poi cercata in un posto dove nessuno guarda. Sui
+ * sistemi POSIX `/c/...` è un percorso assoluto legittimo e resta com'è: la
+ * conversione vale solo per Windows. Un percorso già Windows, relativo, o che
+ * comincia per `/` senza essere `/lettera` non si tocca.
+ */
+export function normalizeDataDirPath(dataDir: string, targetPlatform: NodeJS.Platform = platform()): string {
+  if (targetPlatform !== "win32") return dataDir;
+  const msys = /^\/([A-Za-z])(?:\/(.*))?$/.exec(dataDir);
+  if (!msys) return dataDir;
+  return `${msys[1].toUpperCase()}:/${msys[2] ?? ""}`;
+}
+
+/**
  * Crea la cartella dati con i permessi giusti **alla creazione**: su POSIX
  * `0700` (il segreto ci vive accanto), su Windows l'ACL ristretta qui sopra.
  * Se la cartella esiste già non si tocca niente: più istanze sulla stessa
@@ -117,9 +134,10 @@ function restrictDataDirWindows(dataDir: string): void {
  * creato loro — e una cartella condivisa di proposito deve restare com'è.
  */
 export function ensureDataDir(dataDir: string): void {
-  if (existsSync(dataDir)) return;
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  if (platform() === "win32") restrictDataDirWindows(dataDir);
+  const target = normalizeDataDirPath(dataDir);
+  if (existsSync(target)) return;
+  mkdirSync(target, { recursive: true, mode: 0o700 });
+  if (platform() === "win32") restrictDataDirWindows(target);
 }
 
 export interface AppSettings {
@@ -190,9 +208,12 @@ export class SettingsStore {
   private readonly secrets: SecretStore;
 
   constructor(dataDir = appDataDir()) {
-    this.dataDir = dataDir;
-    this.settingsPath = join(dataDir, SETTINGS_FILE);
-    this.secrets = createSecretStore(join(dataDir, "secret.bin"));
+    // Lo store normalizza come `ensureDataDir`: con `--data-dir /c/Users/x` il
+    // file delle impostazioni e il segreto finivano in `C:\c\...`, fuori dalla
+    // cartella appena creata e protetta.
+    this.dataDir = normalizeDataDirPath(dataDir);
+    this.settingsPath = join(this.dataDir, SETTINGS_FILE);
+    this.secrets = createSecretStore(join(this.dataDir, "secret.bin"));
   }
 
   private readPayload(): SettingsPayload {
