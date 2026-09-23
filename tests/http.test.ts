@@ -9,17 +9,14 @@
  * `ICE_DEV_ORIGIN`, e solo se è loopback.
  */
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { join } from "node:path";
 
-import { cleanupTempDirs, tempDir } from "./temp.ts";
+import { testServer, type TestServerOptions } from "./harness.ts";
+import { cleanupTempDirs } from "./temp.ts";
 
 import { ApiError, api } from "../src/api/client.ts";
 import { CapacityStore } from "../server/db.ts";
-import { CONTENT_SECURITY_POLICY, startServer, type LocalServer } from "../server/http.ts";
-import { SettingsStore } from "../server/settings.ts";
-import { SyncManager } from "../server/sync.ts";
+import { CONTENT_SECURITY_POLICY, type LocalServer } from "../server/http.ts";
 
 // `getClientSecret` preferisce questa variabile d'ambiente: i test non devono
 // poter usare credenziali vere (né fare richieste a Terna).
@@ -27,6 +24,9 @@ delete process.env.TERNA_CLIENT_SECRET;
 
 const STORES: CapacityStore[] = [];
 const SERVERS: LocalServer[] = [];
+
+/** Lo stesso server di prova per tutto il file: radice `ice-http-`, registri locali. */
+const SERVER = { stores: STORES, servers: SERVERS, prefix: "ice-http-" } satisfies TestServerOptions;
 
 afterAll(async () => {
   for (const server of SERVERS) await server.stop(true);
@@ -40,38 +40,6 @@ afterAll(async () => {
   }
   cleanupTempDirs();
 });
-
-/** Un server vero su una porta libera: la guardia si prova sulla richiesta, non a unità. */
-function startTestServer(options: { logger?: (message: string) => void; shell?: boolean } = {}): {
-  origin: string;
-  port: number;
-  store: CapacityStore;
-} {
-  const root = tempDir("ice-http-");
-  const store = new CapacityStore(join(root, "cache.sqlite"));
-  STORES.push(store);
-  const sync = new SyncManager(store, () => {
-    throw new Error("nessuna credenziale nei test");
-  });
-  // Senza `shell` la cartella `static/` non esiste: è il caso "interfaccia non
-  // costruita" (500). Con `shell: true` c'è una index.html vera da servire.
-  const staticDir = join(root, "static");
-  if (options.shell) {
-    mkdirSync(staticDir, { recursive: true });
-    writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>shell</title>");
-  }
-  const server = startServer({
-    store,
-    settings: new SettingsStore(root),
-    sync,
-    staticDir,
-    port: 0,
-    logger: options.logger,
-  });
-  SERVERS.push(server);
-  const port = server.port;
-  return { origin: `http://127.0.0.1:${port}`, port, store };
-}
 
 /** Richiesta scritta a mano: `fetch` non lascia né omettere né falsificare `Host`. */
 function rawRequest(port: number, lines: string[]): Promise<string> {
@@ -102,7 +70,7 @@ function mutation(port: number, method: string, path: string, headers: string[] 
 const statusOf = (response: string): number => Number(response.split(" ")[1]);
 
 test("R1: le chiamate senza corpo della SPA attraversano la guardia Content-Type", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
   const spaHeaders = [
     `Origin: http://127.0.0.1:${port}`,
     "Sec-Fetch-Site: same-origin",
@@ -122,7 +90,7 @@ test("R1: le chiamate senza corpo della SPA attraversano la guardia Content-Type
 });
 
 test("R1: il client della SPA manda da sé il Content-Type sulle chiamate senza corpo", async () => {
-  const { origin } = startTestServer();
+  const { origin } = testServer(SERVER);
   // Il comando esterno punta l'API con `window.__TERNA_API_BASE__`; nel test è
   // l'unico modo per far parlare il client vero con il server di prova.
   const host = globalThis as unknown as { window?: { __TERNA_API_BASE__?: string } };
@@ -145,7 +113,7 @@ test("R1: il client della SPA manda da sé il Content-Type sulle chiamate senza 
 });
 
 test("R3: l'origine del dev server è accettata solo se dichiarata e loopback", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
   const devOrigin = ["Origin: http://localhost:1420", "Sec-Fetch-Site: same-origin", "Content-Type: application/json"];
 
   // Senza variabile vale il comportamento stretto: Vite non scrive.
@@ -172,7 +140,7 @@ test("R3: l'origine del dev server è accettata solo se dichiarata e loopback", 
 });
 
 test("l'origine esterna, il cross-site e il loopback senza porta non scrivono", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
 
   expect(
     statusOf(await mutation(port, "POST", "/settings/credentials/test", ["Content-Type: application/json", "Origin: https://example.com"])),
@@ -202,7 +170,7 @@ test("l'origine esterna, il cross-site e il loopback senza porta non scrivono", 
 });
 
 test("un Host che non è il loopback è respinto", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
 
   const rebinding = await rawRequest(port, ["GET /health HTTP/1.1", "Host: evil.example", "Connection: close"]);
   expect(statusOf(rebinding)).toBe(403);
@@ -214,7 +182,7 @@ test("un Host che non è il loopback è respinto", async () => {
 });
 
 test("una richiesta HTTP/1.0 senza Host è un 403 con gli header di sicurezza", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
 
   // Senza `Host` il parse dell'URL falliva: 500 «Invalid URL» prima della guardia.
   const response = await rawRequest(port, ["GET /health HTTP/1.0"]);
@@ -224,7 +192,7 @@ test("una richiesta HTTP/1.0 senza Host è un 403 con gli header di sicurezza", 
 });
 
 test("anche il 500 porta gli header di sicurezza", async () => {
-  const { port } = startTestServer();
+  const { port } = testServer(SERVER);
 
   // Nessuna interfaccia costruita: la shell SPA manca e il server lo dice con un 500.
   const response = await rawRequest(port, ["GET /dashboard HTTP/1.1", `Host: 127.0.0.1:${port}`, "Connection: close"]);
@@ -235,7 +203,7 @@ test("anche il 500 porta gli header di sicurezza", async () => {
 
 test("un handler che fallisce è un 500 nel log, non solo a schermo", async () => {
   const messages: string[] = [];
-  const { origin, store } = startTestServer({ logger: (message) => messages.push(message) });
+  const { origin, store } = testServer({ ...SERVER, logger: (message) => messages.push(message) });
   // Il database non risponde più: `store.records` solleva dentro l'handler.
   store.close();
 
@@ -249,7 +217,7 @@ test("un handler che fallisce è un 500 nel log, non solo a schermo", async () =
 });
 
 test("le rotte SPA accettano solo GET e HEAD: ogni altro metodo è un 405", async () => {
-  const { origin } = startTestServer({ shell: true });
+  const { origin } = testServer({ ...SERVER, shell: true });
 
   // Pre-fix il ramo statico non guardava il metodo: `POST`/`OPTIONS` su una rotta
   // dell'app ricevevano 200 con l'HTML della shell.

@@ -1,8 +1,8 @@
 /**
- * Pianificazione ed esecuzione dei job di sync.
+ * Esecuzione dei job di sync: la macchina a stati.
  * Porting fedele di `backend/src/terna_backend/sync.py`: il piano si costruisce
  * prima dell'esecuzione (così il totale dei passi è sempre esatto) e un passo
- * fallito non interrompe il job.
+ * fallito non interrompe il job. Il piano è puro e vive in `plan.ts`.
  */
 import {
   generationPlantsRows,
@@ -11,26 +11,17 @@ import {
   thermoelectricCapacityRows,
   type CapacityRow,
 } from "./normalize.ts";
-import { firstYearFor } from "./constants.ts";
 import type { CapacityStore } from "./db.ts";
 import { TernaClient } from "./terna.ts";
-import { DATASETS, type DatasetName, type SyncJobStatus, type SyncRequestPayload, type SyncStatus } from "../shared/types.ts";
+import type { SyncJobStatus, SyncStatus } from "../shared/types.ts";
+import type { SyncPlan, SyncStep } from "./plan.ts";
 
 /**
- * I dataset che un job può eseguire, nell'ordine in cui li pianifica. È lo
- * stesso array di `DATASETS` (`shared/types.ts`), non una seconda lista da
- * tenere allineata a mano: le due copie potevano divergere in silenzio e un
- * dataset nuovo non entrava nel sync. L'API li usa per contare i passi saltati
- * di un anno limato: un anno fuori intervallo è un passo mai eseguito **per
- * ciascun dataset**, non uno solo.
+ * La pianificazione è pura e sta in `plan.ts`: questi nomi restano l'API di
+ * `sync.ts` per chi li importa da qui (`server/api.ts`, i test).
  */
-export const SYNCABLE_DATASETS: readonly DatasetName[] = DATASETS;
-
-interface SyncStep {
-  label: string;
-  dataset: DatasetName;
-  year: number;
-}
+export { buildPlan, SYNCABLE_DATASETS } from "./plan.ts";
+export type { SyncPlan, SyncStep } from "./plan.ts";
 
 interface JobState {
   jobId: string;
@@ -58,48 +49,6 @@ interface JobState {
    * restano onesti e continuano a contare il passo già in volo.
    */
   cancelled: boolean;
-}
-
-/** Il piano di un job: i passi da eseguire e gli anni che nessun dataset pubblica. */
-export interface SyncPlan {
-  steps: SyncStep[];
-  dropped: number;
-}
-
-/**
- * Un solo passo per dataset e anno: Terna restituisce in una risposta tutte le
- * fonti e tutti gli indici (verificato sul payload reale — `renewable-source-capacity`
- * 2023 senza filtri torna 1.160 righe, `thermoelectric-capacity` 1.192). Il
- * vecchio piano chiedeva anno × fonte × indice, cioè 27 richieste per anno, ed
- * è così che si finiva contro il limite di richieste dell'API.
- *
- * Gli anni che un dataset non può servire vengono saltati e contati in
- * `dropped`: `/installed-capacity` rifiuta tutto ciò che precede il 2021.
- */
-export function buildPlan(request: SyncRequestPayload): SyncPlan {
-  const steps: SyncStep[] = [];
-  const datasets = (request.datasets ?? [...SYNCABLE_DATASETS]).filter((dataset) =>
-    SYNCABLE_DATASETS.includes(dataset),
-  );
-  const labels: Record<string, string> = {
-    renewable_source_capacity: "Renewable capacity",
-    generation_plants: "Generation plants",
-    installed_capacity: "Installed capacity (national)",
-    thermoelectric_capacity: "Thermoelectric capacity",
-  };
-  let dropped = 0;
-
-  for (const year of request.years) {
-    for (const dataset of datasets) {
-      if (year < firstYearFor(dataset)) {
-        dropped += 1;
-        continue;
-      }
-      steps.push({ label: `${labels[dataset]} ${year}`, dataset, year });
-    }
-  }
-
-  return { steps, dropped };
 }
 
 /** Un errore di Terna può essere lungo quanto una pagina: nello stato del job

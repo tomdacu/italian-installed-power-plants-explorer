@@ -2,65 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
-import type { SyncJobStatus, SyncRequest } from "@/types";
+import type { SyncRequest } from "@/types";
 import { INVALIDATE_AFTER_SYNC, queryKeys } from "@/lib/query-keys";
+import { SETTLE_POLL_MS, settleWindow, type Settling } from "@/lib/sync-settling";
+// I messaggi (e le frasi che li compongono) vivono in `@/lib/sync-messages`,
+// puri: li difende `tests/sync-messages.test.ts` senza tirare dentro i componenti.
+import { SYNC_MESSAGES } from "@/lib/sync-messages";
 
 const ACTIVE = new Set(["queued", "running"]);
-
-/**
- * Ritmo e durata dell'assestamento dopo una cancellazione.
- *
- * Il server legge la cancellazione **fra un passo e l'altro**: quello in volo
- * finisce comunque, e i contatori del job si muovono ancora. Il pannello deve
- * arrivare al conteggio vero senza che l'utente ricarichi la pagina, quindi:
- *
- * 1. finché `in_flight` è vero — il server lo tiene vero esattamente mentre
- *    l'attesa del passo è in corso — si continua a leggere, **per quanto duri**
- *    quel passo (una finestra fissa di pochi secondi si chiudeva prima e il
- *    pannello restava sul conteggio vecchio);
- * 2. quando `in_flight` è falso si chiude su **due campioni consecutivi
- *    identici** dei contatori, e il contatore dei campioni riparte da zero a
- *    ogni cambiamento: una finestra fissa non basta, perché un contatore può
- *    muoversi dopo che la finestra è scaduta;
- * 3. il tetto assoluto chiude comunque l'assestamento: il pannello mostra
- *    quello che ha davvero letto, senza inventare una conclusione.
- */
-const SETTLE_POLL_MS = 1500;
-const SETTLE_STABLE_SAMPLES = 2;
-const SETTLE_MAX_MS = 45_000;
-
-/** I contatori che possono muoversi ancora dopo una cancellazione. */
-function counters(job: SyncJobStatus): string {
-  return `${job.completed_steps}/${job.failed_steps}/${job.empty_steps}/${job.message}`;
-}
-
-// Un server più vecchio annunciava "Sync completed" anche con dei passi
-// falliti: il messaggio si crede solo quando non contraddice i contatori.
-const COMPLETED_CLAIM = /^sync (?:completed|finished|succeeded)\b/i;
-
-/** Il messaggio del job non afferma un successo smentito da `failed_steps`. */
-export function syncMessageIsHonest(job: SyncJobStatus): boolean {
-  return (job.failed_steps ?? 0) === 0 || !COMPLETED_CLAIM.test((job.message ?? "").trim());
-}
-
-/**
- * Conteggio onesto dei passi falliti, nella forma usata da toast e pannello.
- * Non dice *perché* sono falliti: la causa la conosce solo il server.
- */
-export function failedStepsSummary(job: SyncJobStatus): string {
-  const failed = job.failed_steps ?? 0;
-  const total = job.total_steps ?? 0;
-  if (total > 0) return `${failed} of ${total} steps failed`;
-  return `${failed} step${failed === 1 ? "" : "s"} failed`;
-}
-
-/** Perché un job è fallito: l'errore del server, o il suo messaggio se onesto. */
-export function syncFailureReason(job: SyncJobStatus): string {
-  const error = job.error?.trim();
-  if (error) return error;
-  if (syncMessageIsHonest(job) && (job.message ?? "").trim()) return job.message.trim();
-  return failedStepsSummary(job);
-}
 
 /** A job runs on the server; this hook only follows its progress while mounted. */
 export function useSyncJob() {
@@ -83,7 +32,7 @@ export function useSyncJob() {
   // Job cancellato i cui contatori possono ancora muoversi (passo in volo).
   const [settlingJobId, setSettlingJobId] = useState<string | null>(null);
   const notifiedJobId = useRef<string | null>(null);
-  const settling = useRef<{ id: string; counters: string; stable: number; startedAt: number } | null>(null);
+  const settling = useRef<Settling | null>(null);
 
   const latest = useQuery({
     queryKey: queryKeys.syncLatest(),
@@ -137,49 +86,27 @@ export function useSyncJob() {
   // in volo è finito (`in_flight` falso, quindi i contatori hanno già assorbito
   // il suo esito) e due letture consecutive dei contatori coincidono. Il tetto
   // assoluto chiude comunque, e il pannello resta su quello che ha letto.
+  // Le regole stanno in `settleWindow`: qui si conserva solo la finestra.
   useEffect(() => {
     const state = settling.current;
-    if (!state || status.data?.job_id !== state.id) return;
-    // Il passo in volo non ha ancora mosso i contatori: contarli adesso
-    // significherebbe fissare il conteggio vecchio. Si continua a leggere.
-    if (status.data.in_flight) return;
-    // Il tetto si controlla **prima** del conteggio dei campioni: se i contatori
-    // si muovono a ogni lettura, il ramo "cambiato" uscirebbe sempre e il tetto
-    // non verrebbe mai valutato — la lettura non finirebbe più.
-    if (Date.now() - state.startedAt >= SETTLE_MAX_MS) {
-      settling.current = null;
-      setSettlingJobId(null);
-      return;
-    }
-    const now = counters(status.data);
-    if (now !== state.counters) {
-      // Contatore di letture resettato: la quiete si conta solo fra due letture
-      // identiche consecutive, non dal primo cambiamento in poi.
-      state.counters = now;
-      state.stable = 0;
-      return;
-    }
-    state.stable += 1;
-    if (state.stable >= SETTLE_STABLE_SAMPLES) {
-      settling.current = null;
-      setSettlingJobId(null);
-    }
+    if (state === null || !status.data) return;
+    const next = settleWindow(state, status.data, Date.now());
+    if (next === state) return;
+    settling.current = next;
+    if (next === null) setSettlingJobId(null);
   }, [status.data, status.dataUpdatedAt]);
 
   useEffect(() => {
     if (latest.isError) {
       // "Try reopening Data sync" incolpava la pagina quando la causa è il
       // servizio locale spento: il testo dice quello che sappiamo davvero.
-      toast.error(
-        "Could not load sync status",
-        "The local data service is not responding. If the app was just opened, give it a few seconds.",
-      );
+      toast.error(SYNC_MESSAGES.statusUnavailable.title, SYNC_MESSAGES.statusUnavailable.description);
     }
   }, [latest.isError, toast]);
 
   useEffect(() => {
     if (connectionLost) {
-      toast.error("Connection lost", "Could not reach the sync service. Reconnect to check the job.");
+      toast.error(SYNC_MESSAGES.connectionLost.title, SYNC_MESSAGES.connectionLost.description);
     }
   }, [connectionLost, toast]);
 
@@ -196,22 +123,19 @@ export function useSyncJob() {
         if (job.status === "cancelled") {
           // Cancellare non è un errore: nessun toast rosso, e nessuna
           // affermazione di successo.
-          toast.info(
-            "Sync cancelled",
-            `${job.completed_steps} of ${job.total_steps} steps had already completed and are kept.`,
-          );
+          toast.info(SYNC_MESSAGES.cancelled.title, SYNC_MESSAGES.cancelled.description(job));
         } else if (job.failed_steps > 0) {
           // Mai "limiti API temporanei": la causa la riporta il job stesso.
           toast.warning(
-            "Sync partly completed",
-            `${failedStepsSummary(job)}. Retry the download to fill the gaps.`,
+            SYNC_MESSAGES.partlyCompleted.title,
+            SYNC_MESSAGES.partlyCompleted.description(job),
           );
         } else {
-          toast.success("Sync completed", "The dashboard is up to date.");
+          toast.success(SYNC_MESSAGES.completed.title, SYNC_MESSAGES.completed.description);
         }
       }
     } else if (startedJobId === job.job_id) {
-      toast.error("Sync failed", syncFailureReason(job));
+      toast.error(SYNC_MESSAGES.failed.title, SYNC_MESSAGES.failed.description(job));
     }
   }, [job, running, startedJobId, qc, toast]);
 
@@ -222,13 +146,13 @@ export function useSyncJob() {
       const response = await api.startSync(request);
       notifiedJobId.current = null;
       setStartedJobId(response.job_id);
-      toast.info("Sync started", `Job ${response.job_id.slice(0, 8)} queued`);
+      toast.info(SYNC_MESSAGES.started.title, SYNC_MESSAGES.started.description(response.job_id));
       // Niente `finally`: `starting` resta vero finché lo stato del job creato
       // non risponde (l'effetto qui sopra lo abbassa). È la finestra in cui un
       // doppio click faceva partire un secondo job.
     } catch (error) {
       markStarting(false);
-      toast.error("Sync failed to start", (error as Error).message);
+      toast.error(SYNC_MESSAGES.failedToStart.title, (error as Error).message);
     }
   };
 
@@ -261,8 +185,8 @@ export function useSyncJob() {
         qc.setQueryData(queryKeys.syncLatest(), other);
         qc.setQueryData(queryKeys.syncJob(other.job_id), other);
         toast.info(
-          "Another sync is running",
-          `Job ${cancelledId.slice(0, 8)} was cancelled, but job ${other.job_id.slice(0, 8)} is already running — this page now follows it.`,
+          SYNC_MESSAGES.anotherRunning.title,
+          SYNC_MESSAGES.anotherRunning.description(cancelledId, other.job_id),
         );
         return;
       }
@@ -272,10 +196,10 @@ export function useSyncJob() {
       notifiedJobId.current = null;
       qc.setQueryData(queryKeys.syncJob(cancelledId), updated);
       void qc.invalidateQueries({ queryKey: queryKeys.syncLatest() });
-      settling.current = { id: cancelledId, counters: counters(updated), stable: 0, startedAt: Date.now() };
+      settling.current = settleWindow(null, updated, Date.now());
       setSettlingJobId(cancelledId);
     } catch (error) {
-      toast.error("Could not cancel the sync", (error as Error).message);
+      toast.error(SYNC_MESSAGES.cancelFailed.title, (error as Error).message);
     } finally {
       setCancelling(false);
     }

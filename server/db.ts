@@ -3,6 +3,12 @@
  * Porting fedele di `backend/src/terna_backend/storage.py` — stesso schema,
  * stesse chiavi, stessa semantica di "stock" (mai somme fra anni o fra indici).
  *
+ * Questo modulo resta la facciata del negozio — `CapacityStore`, `parseGroupBy`
+ * e `RECORD_SORT_FIELDS` si importano da qui come prima — e tiene
+ * l'orchestrazione: apertura del database, upsert, query e export. Il DDL e le
+ * forme delle righe lette stanno in `server/db/schema.ts`, filtri, ordinamenti
+ * e paginazione in `server/db/query-params.ts`.
+ *
  * Le query passano da `prepare()` e le righe vengono lette tramite interfacce
  * dichiarate: bun:sqlite restituisce valori non tipizzati, quindi il cast
  * avviene una volta per query dentro una costante nominata.
@@ -14,87 +20,32 @@ import { dirname } from "node:path";
 
 import { DEFAULT_CAPACITY_TYPE } from "./constants.ts";
 import { rowKey, type CapacityRow } from "./normalize.ts";
+import { buildWhere, parseGroupBy, recordsOrderAndPage, type Bindings } from "./db/query-params.ts";
+import {
+  createSchema,
+  type AvailabilityRow,
+  type CountRow,
+  type OptionRow,
+  type SummaryBaseRow,
+  type TotalsRow,
+  type YearRow,
+} from "./db/schema.ts";
 import { CSV_BOM, csvField } from "../shared/csv.ts";
-import { GROUP_BY_FIELDS } from "../shared/types.ts";
-import type {
-  AggregatePoint,
-  Availability,
-  AvailabilityDataset,
-  CapacityRecord,
-  DataQualityYear,
-  DatasetName,
-  RecordFilters,
-  Summary,
+import {
+  GROUP_BY_FIELDS,
+  type AggregatePoint,
+  type Availability,
+  type AvailabilityDataset,
+  type CapacityRecord,
+  type DataQualityYear,
+  type DatasetName,
+  type RecordFilters,
+  type Summary,
 } from "../shared/types.ts";
 
-const EXACT_FIELDS = [
-  "dataset",
-  "region",
-  "province",
-  "source",
-  "capacity_type",
-  "category",
-  "subcategory",
-  "type",
-] as const;
-
-type Bindings = Record<string, string | number | null>;
-
-interface CountRow {
-  n: number;
-}
-interface OptionRow {
-  value: string | number;
-}
-interface AvailabilityRow {
-  dataset: DatasetName;
-  year: number;
-  rows: number;
-  sources: string | null;
-  capacity_types: string | null;
-  last_fetched: string | null;
-}
-interface TotalsRow {
-  mw: number | null;
-  gw: number | null;
-}
-interface YearRow {
-  y: number | null;
-}
-interface SummaryBaseRow {
-  row_count: number;
-  year_min: number | null;
-  year_max: number | null;
-}
-
-/** Colonne ordinabili di `/records`: whitelist, mai interpolazione libera. */
-export const RECORD_SORT_FIELDS = [
-  "dataset",
-  "year",
-  "region",
-  "province",
-  "source",
-  "capacity_type",
-  "type",
-  "efficient_power_mw",
-  "installed_capacity_gw",
-] as const;
-
-export function parseGroupBy(raw: string): string[] {
-  const parts = (raw || "")
-    .split(/[,+;\s]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const seen: string[] = [];
-  for (const part of parts) {
-    if (!(GROUP_BY_FIELDS as readonly string[]).includes(part)) {
-      throw new Error(`Unsupported group_by: ${raw}`);
-    }
-    if (!seen.includes(part)) seen.push(part);
-  }
-  if (seen.length === 0) throw new Error(`Unsupported group_by: ${raw}`);
-  return seen;
-}
+// La facciata conserva gli export storici: chi li importava da `server/db.ts`
+// continua a trovarli qui.
+export { parseGroupBy, RECORD_SORT_FIELDS } from "./db/query-params.ts";
 
 function recordKey(row: CapacityRow | Record<string, unknown>): string {
   return createHash("sha256").update(rowKey(row)).digest("hex");
@@ -113,31 +64,7 @@ export class CapacityStore {
     // next to the app) must wait for the write lock instead of failing a step
     // straight away with SQLITE_BUSY.
     this.db.exec("PRAGMA busy_timeout = 5000");
-    this.createSchema();
-  }
-
-  private createSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS capacity_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        record_key TEXT NOT NULL UNIQUE,
-        dataset TEXT NOT NULL,
-        year INTEGER NOT NULL,
-        capacity_type TEXT,
-        region TEXT,
-        province TEXT,
-        source TEXT,
-        category TEXT,
-        subcategory TEXT,
-        type TEXT,
-        efficient_power_mw REAL,
-        installed_capacity_gw REAL,
-        fetched_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_capacity_filters
-        ON capacity_records (dataset, year, region, province, source, capacity_type);
-      CREATE INDEX IF NOT EXISTS idx_capacity_year ON capacity_records (year);
-    `);
+    createSchema(this.db);
   }
 
   /** Cache delle opzioni: cambiano solo quando arrivano righe nuove. */
@@ -232,55 +159,9 @@ export class CapacityStore {
     return rows.length;
   }
 
-  private where(filters: RecordFilters): { clause: string; params: Bindings } {
-    const clauses: string[] = [];
-    const params: Bindings = {};
-    for (const field of EXACT_FIELDS) {
-      const value = filters[field];
-      if (value) {
-        clauses.push(`${field} = $${field}`);
-        params[`$${field}`] = value;
-      }
-    }
-    if (filters.year_from !== null && filters.year_from !== undefined) {
-      clauses.push("year >= $year_from");
-      params.$year_from = filters.year_from;
-    }
-    // Ricerca libera: la fa il database, così la tabella non deve tenere in
-    // memoria migliaia di righe solo per filtrarle nel browser.
-    //
-    // `instr(lower(...), lower($q))` invece di `LIKE`: nessun carattere jolly da
-    // proteggere e niente `ESCAPE` da dichiarare nove volte. (Con `LIKE` e
-    // l'escape era comunque corretto: una ricerca di "_" torna tutto perché
-    // `renewable_source_capacity` contiene davvero degli underscore.)
-    const search = filters.q?.trim().toLowerCase();
-    if (search) {
-      const columns = [
-        "region",
-        "province",
-        "source",
-        "category",
-        "subcategory",
-        "type",
-        "capacity_type",
-        "dataset",
-        "CAST(year AS TEXT)",
-      ];
-      clauses.push(
-        `(${columns.map((column) => `instr(lower(coalesce(${column}, '')), $q) > 0`).join(" OR ")})`,
-      );
-      params.$q = search;
-    }
-    if (filters.year_to !== null && filters.year_to !== undefined) {
-      clauses.push("year <= $year_to");
-      params.$year_to = filters.year_to;
-    }
-    return { clause: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
-  }
-
   /** Righe che i filtri selezionano: serve a dire "50 di 12.330" nell'interfaccia. */
   countRecords(filters: RecordFilters): number {
-    const { clause, params } = this.where(filters);
+    const { clause, params } = buildWhere(filters);
     const row = this.db
       .prepare(`SELECT COUNT(*) AS n FROM capacity_records ${clause}`)
       .get(params) as CountRow | null;
@@ -293,19 +174,13 @@ export class CapacityStore {
     offset = 0,
     sort: { column: string; direction: "asc" | "desc" } = { column: "year", direction: "asc" },
   ): CapacityRecord[] {
-    const { clause, params } = this.where(filters);
-    const column = (RECORD_SORT_FIELDS as readonly string[]).includes(sort.column) ? sort.column : "year";
-    const direction = sort.direction === "desc" ? "DESC" : "ASC";
+    const { clause, params } = buildWhere(filters);
     const rows = this.db
       .prepare(
         `SELECT dataset, year, capacity_type, region, province, source, category,
                 subcategory, type, efficient_power_mw, installed_capacity_gw, fetched_at
          FROM capacity_records ${clause}
-         -- Le colonne di spareggio rendono l'ordine totale: senza, due pagine
-         -- consecutive potevano ripetere o saltare righe.
-         ORDER BY ${column} ${direction}, dataset, year, region, province, source,
-                  capacity_type, category, subcategory, type
-         LIMIT $limit OFFSET $offset`,
+         ${recordsOrderAndPage(sort)}`,
       )
       .all({ ...params, $limit: limit, $offset: offset });
     return rows as CapacityRecord[];
@@ -399,7 +274,7 @@ export class CapacityStore {
    * essendo SQLite sincrono, bloccava tutto il server.
    */
   dataQuality(filters: RecordFilters): DataQualityYear[] {
-    const { clause, params } = this.where(filters);
+    const { clause, params } = buildWhere(filters);
     const filtered = clause ? `${clause} ` : "";
     const value = (prefix: string) =>
       `(CASE WHEN ${prefix}dataset = 'installed_capacity' THEN ${prefix}installed_capacity_gw ELSE ${prefix}efficient_power_mw END)`;
@@ -448,7 +323,7 @@ export class CapacityStore {
   ): { mw: number | null; gw: number | null } {
     const scoped: RecordFilters = { ...filters, year_from: year, year_to: year };
     if (applied) scoped.capacity_type = applied as RecordFilters["capacity_type"];
-    const { clause, params } = this.where(scoped);
+    const { clause, params } = buildWhere(scoped);
     const row = this.db
       .prepare(
         `SELECT SUM(efficient_power_mw) AS mw, SUM(installed_capacity_gw) AS gw
@@ -460,7 +335,7 @@ export class CapacityStore {
 
   private previousYear(filters: RecordFilters, latest: number): number | null {
     const scoped: RecordFilters = { ...filters, year_to: latest - 1 };
-    const { clause, params } = this.where(scoped);
+    const { clause, params } = buildWhere(scoped);
     const row = this.db
       .prepare(`SELECT MAX(year) AS y FROM capacity_records ${clause}`)
       .get(params) as YearRow | null;
@@ -474,7 +349,7 @@ export class CapacityStore {
     const scoped = applied
       ? { ...filters, capacity_type: applied as RecordFilters["capacity_type"] }
       : filters;
-    const { clause, params } = this.where(scoped);
+    const { clause, params } = buildWhere(scoped);
     const base = this.db
       .prepare(
         `SELECT COUNT(*) AS row_count,
@@ -537,7 +412,7 @@ export class CapacityStore {
     // `capacity_type` somma Lorda e Netta e raddoppia ogni megawatt.
     const applied = this.capacityApplied(filters);
     const scoped: RecordFilters = applied ? { ...filters, capacity_type: applied as RecordFilters["capacity_type"] } : filters;
-    const { clause, params } = this.where(scoped);
+    const { clause, params } = buildWhere(scoped);
     const scopedClause = latestOnly
       ? clause
         ? `${clause} AND year = (SELECT MAX(year) FROM capacity_records ${clause})`

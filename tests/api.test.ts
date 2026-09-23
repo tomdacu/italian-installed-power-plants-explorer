@@ -1,18 +1,18 @@
 import { afterAll, expect, test } from "bun:test";
-import { join } from "node:path";
 
-import { cleanupTempDirs, tempDir } from "./temp.ts";
+import { testApp, type TestAppOptions } from "./harness.ts";
+import { cleanupTempDirs } from "./temp.ts";
 
-import { createApi } from "../server/api.ts";
 import { CapacityStore } from "../server/db.ts";
-import type { CapacityRow } from "../server/normalize.ts";
-import { SettingsStore } from "../server/settings.ts";
-import { SyncManager, type SyncPlan } from "../server/sync.ts";
+import type { SyncPlan } from "../server/sync.ts";
 import type { TernaClient } from "../server/terna.ts";
 import type { RecordFilters } from "../shared/types.ts";
 import pkg from "../package.json" with { type: "json" };
 
 const STORES: CapacityStore[] = [];
+
+/** La stessa app di prova per tutto il file: radice `ice-api-`, registro locale. */
+const APP = { stores: STORES, prefix: "ice-api-" } satisfies TestAppOptions;
 
 afterAll(() => {
   // Prima le connessioni: su Windows rimuovere un database aperto è EBUSY.
@@ -26,44 +26,9 @@ afterAll(() => {
   cleanupTempDirs();
 });
 
-const FETCHED = "2026-01-01T00:00:00+00:00";
-
-function buildApp(serverInfo: () => { port: number; port_fallback: boolean } = () => ({
-  port: 8731,
-  port_fallback: false,
-})) {
-  const root = tempDir("ice-api-");
-  const store = new CapacityStore(join(root, "cache.sqlite"));
-  STORES.push(store);
-  const settings = new SettingsStore(root);
-  const sync = new SyncManager(store, () => {
-    throw new Error("nessuna credenziale nei test");
-  });
-
-  const rows: CapacityRow[] = [
-    {
-      dataset: "renewable_source_capacity",
-      year: 2024,
-      capacity_type: "Lorda",
-      region: "Abruzzo",
-      province: "Chieti",
-      source: "Fotovoltaico",
-      category: null,
-      subcategory: null,
-      type: null,
-      efficient_power_mw: 351.403,
-      installed_capacity_gw: null,
-      fetched_at: FETCHED,
-    },
-  ];
-  store.upsertRecords(rows);
-
-  return { app: createApi({ store, settings, sync, serverInfo }), store, sync };
-}
-
 test("GET /health dice versione, porta effettiva e ripiego sulla porta libera", async () => {
   let info = { port: 8731, port_fallback: false };
-  const { app } = buildApp(() => info);
+  const { app } = testApp({ ...APP, serverInfo: () => info });
 
   const response = await app.request("/health");
   expect(response.status).toBe(200);
@@ -86,7 +51,7 @@ test("GET /health dice versione, porta effettiva e ripiego sulla porta libera", 
 });
 
 test("GET /records applica i filtri della query", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const response = await app.request("/records?dataset=renewable_source_capacity&region=Abruzzo");
   const rows = (await response.json()) as { source: string; efficient_power_mw: number }[];
 
@@ -95,7 +60,7 @@ test("GET /records applica i filtri della query", async () => {
 });
 
 test("GET /analytics/summary restituisce lo stock dell'indice singolo", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const summary = (await (await app.request("/analytics/summary?dataset=renewable_source_capacity")).json()) as {
     latest_year: number;
     latest_total_efficient_power_mw: number;
@@ -108,7 +73,7 @@ test("GET /analytics/summary restituisce lo stock dell'indice singolo", async ()
 });
 
 test("GET /analytics/timeseries valida group_by", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
 
   const bad = await app.request("/analytics/timeseries?group_by=year%3B%20DROP%20TABLE%20x");
   expect(bad.status).toBe(400);
@@ -120,7 +85,7 @@ test("GET /analytics/timeseries valida group_by", async () => {
 });
 
 test("GET /metadata/options espone le liste canoniche e i limiti degli anni", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const options = (await (await app.request("/metadata/options")).json()) as {
     known_sources: string[];
     default_capacity_type: string;
@@ -140,7 +105,7 @@ test("GET /metadata/options espone le liste canoniche e i limiti degli anni", as
 });
 
 test("un job di sync fuori dagli anni pubblicati viene rifiutato", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const response = await app.request("/sync/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -152,7 +117,7 @@ test("un job di sync fuori dagli anni pubblicati viene rifiutato", async () => {
 });
 
 test("gli anni fuori intervallo vengono limati, non richiesti a Terna", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const response = await app.request("/sync/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -168,7 +133,7 @@ test("gli anni fuori intervallo vengono limati, non richiesti a Terna", async ()
 });
 
 test("gli anni limati finiscono in skipped_steps invece di sparire", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const response = await app.request("/sync/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -190,7 +155,7 @@ test("gli anni limati finiscono in skipped_steps invece di sparire", async () =>
 });
 
 test("anni duplicati non diventano passi saltati: la deduplica è silenziosa", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const post = (years: number[]) =>
     app.request("/sync/jobs", {
       method: "POST",
@@ -221,7 +186,7 @@ test("anni duplicati non diventano passi saltati: la deduplica è silenziosa", a
 });
 
 test("gli anni saltati si contano in passi, non in anni", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const all = ["renewable_source_capacity", "generation_plants", "installed_capacity", "thermoelectric_capacity"];
   const counts = async (years: number[]) => {
     const response = await app.request("/sync/jobs", {
@@ -256,7 +221,7 @@ test("gli anni saltati si contano in passi, non in anni", async () => {
 });
 
 test("un anno che non è un intero è un errore che lo nomina", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const post = (years: unknown[]) =>
     app.request("/sync/jobs", {
       method: "POST",
@@ -288,9 +253,6 @@ test("un anno che non è un intero è un errore che lo nomina", async () => {
 });
 
 test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () => {
-  const root = tempDir("ice-api-");
-  const store = new CapacityStore(join(root, "cache.sqlite"));
-  STORES.push(store);
   // Un passo che non torna mai: il job resta in corsa finché non lo si cancella.
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {
@@ -302,13 +264,8 @@ test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () =
       return {};
     },
   } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
-  const app = createApi({
-    store,
-    settings: new SettingsStore(root),
-    sync,
-    serverInfo: () => ({ port: 8731, port_fallback: false }),
-  });
+  // Nessuna riga in cache: il test conta i record, quindi la cache parte vuota.
+  const { app, store } = testApp({ ...APP, seed: false, client: async () => client });
 
   const created = await app.request("/sync/jobs", {
     method: "POST",
@@ -340,7 +297,7 @@ test("DELETE /sync/jobs/:jobId cancella il job, 404 su un id ignoto", async () =
 });
 
 test("GET /export/csv risponde con nome file e contenuto", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const response = await app.request("/export/csv?dataset=renewable_source_capacity");
 
   expect(response.headers.get("content-disposition")).toContain("italian-renewable-capacity-records.csv");
@@ -348,20 +305,20 @@ test("GET /export/csv risponde con nome file e contenuto", async () => {
 });
 
 test("le credenziali non configurate danno configured:false", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const status = (await (await app.request("/settings/credentials/status")).json()) as { configured: boolean };
 
   expect(status.configured).toBe(false);
 });
 
 test("un job di sync inesistente risponde 404", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   expect((await app.request("/sync/jobs/inesistente")).status).toBe(404);
   expect((await app.request("/sync/jobs/latest")).status).toBe(404);
 });
 
 test("tutte le route filtrate rispondono 400 a un dataset sconosciuto", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   for (const path of [
     "/records",
     "/metadata/data-quality",
@@ -375,7 +332,7 @@ test("tutte le route filtrate rispondono 400 a un dataset sconosciuto", async ()
 });
 
 test("il job più recente resta recuperabile dopo aver lasciato la pagina", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
   const created = await app.request("/sync/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -388,7 +345,7 @@ test("il job più recente resta recuperabile dopo aver lasciato la pagina", asyn
 });
 
 test("GET /records ordina per la colonna della tabella e rifiuta i campi ignoti", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
 
   // La colonna "Type" della tabella manda `sort=type`: senza `type` nella
   // whitelist la tabella veniva sostituita dall'errore (R2, regressione).
@@ -401,7 +358,7 @@ test("GET /records ordina per la colonna della tabella e rifiuta i campi ignoti"
 });
 
 test("GET /records rifiuta limit e offset fuori intervallo invece di limarli in silenzio", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
 
   // `limit=0` tornava una riga e `offset=-1` diventava 0: entrambi indistinguibili
   // da un filtro rispettato.
@@ -416,7 +373,7 @@ test("GET /records rifiuta limit e offset fuori intervallo invece di limarli in 
 });
 
 test("un job senza passi eseguibili non arriva mai a sync.start", async () => {
-  const { app, sync } = buildApp();
+  const { app, sync } = testApp(APP);
   // L'ordine è il punto: pre-fix il job entrava nella mappa e la risposta era
   // comunque 422, lasciando un job che nessuno avrebbe mai eseguito.
   let started = 0;
@@ -448,7 +405,7 @@ test("un job senza passi eseguibili non arriva mai a sync.start", async () => {
 });
 
 test("filtri tipizzati accettano dataset noti e ignorano quelli ignoti", async () => {
-  const { store } = buildApp();
+  const { store } = testApp(APP);
   const known = store.records({ dataset: "renewable_source_capacity" } satisfies RecordFilters);
   const unknown = store.records({ dataset: "inesistente" as never } satisfies RecordFilters);
 
@@ -457,7 +414,7 @@ test("filtri tipizzati accettano dataset noti e ignorano quelli ignoti", async (
 });
 
 test("una rotta API inesistente risponde 404 JSON, non testo semplice", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
 
   // Il 404 predefinito di Hono era `text/plain`: il server promette JSON ovunque.
   const missing = await app.request("/recordsssss");
@@ -472,7 +429,7 @@ test("una rotta API inesistente risponde 404 JSON, non testo semplice", async ()
 });
 
 test("una q oltre i 200 caratteri è un 400 esplicito, non una connessione caduta", async () => {
-  const { app } = buildApp();
+  const { app } = testApp(APP);
 
   // Pre-fix la richiesta falliva a livello di trasporto (505/reset) e il client
   // mostrava «service non rispondente»: ora il rifiuto è un 400 con il dettaglio.

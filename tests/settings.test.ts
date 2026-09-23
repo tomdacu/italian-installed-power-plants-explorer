@@ -2,9 +2,10 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { testSettings } from "./harness.ts";
 import { cleanupTempDirs, tempDir } from "./temp.ts";
 
-import { appDataDir, normalizeDataDirPath, SettingsStore } from "../server/settings.ts";
+import { appDataDir, normalizeDataDirPath } from "../server/settings.ts";
 
 
 afterAll(() => {
@@ -60,8 +61,8 @@ test("le credenziali salvano il client id nel file e il segreto nel portachiavi"
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const dataDir = tempDir("ice-settings-");
-  const store = new SettingsStore(dataDir);
+  const store = testSettings("ice-settings-");
+  const dataDir = store.dataDir;
 
   await store.saveCredentials("client-abc", "segreto-di-prova");
   const payload = JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")) as Record<string, unknown>;
@@ -83,7 +84,7 @@ test("senza variabili d'ambiente valgono le credenziali salvate", async () => {
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const store = new SettingsStore(tempDir("ice-settings-"));
+  const store = testSettings("ice-settings-");
 
   expect(store.load().clientId).toBeNull();
   expect(await store.hasCredentials()).toBe(false);
@@ -97,7 +98,7 @@ test("senza variabili d'ambiente valgono le credenziali salvate", async () => {
 
 test("con entrambe le variabili d'ambiente vince l'ambiente", async () => {
   delete process.env.TERNA_APP_DATA_DIR;
-  const store = new SettingsStore(tempDir("ice-settings-"));
+  const store = testSettings("ice-settings-");
   await store.saveCredentials("stored-id", "stored-secret");
 
   process.env.TERNA_CLIENT_ID = "env-id";
@@ -112,7 +113,7 @@ test("una coppia di variabili d'ambiente incompleta è ignorata, con un avviso",
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const store = new SettingsStore(tempDir("ice-settings-"));
+  const store = testSettings("ice-settings-");
   await store.saveCredentials("stored-id", "stored-secret");
   // Lettura senza variabili: azzera la memoria dell'avviso già emesso, così
   // l'asserzione qui sotto non dipende dall'ordine dei test.
@@ -143,7 +144,7 @@ test("l'id da ambiente non basta da solo a farsi usare", async () => {
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const store = new SettingsStore(tempDir("ice-settings-"));
+  const store = testSettings("ice-settings-");
   await store.saveCredentials("stored-id", "stored-secret");
   store.load();
 
@@ -157,7 +158,7 @@ test("la rotazione riscrive segreto e client id insieme", async () => {
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const store = new SettingsStore(tempDir("ice-settings-"));
+  const store = testSettings("ice-settings-");
 
   await store.saveCredentials("client-a", "secret-a");
   await store.saveCredentials("client-b", "secret-b");
@@ -171,8 +172,8 @@ test("se settings.json non si scrive, la rotazione non lascia un id nuovo accant
   delete process.env.TERNA_APP_DATA_DIR;
   delete process.env.TERNA_CLIENT_ID;
   delete process.env.TERNA_CLIENT_SECRET;
-  const dataDir = tempDir("ice-settings-");
-  const store = new SettingsStore(dataDir);
+  const store = testSettings("ice-settings-");
+  const dataDir = store.dataDir;
   await store.saveCredentials("old-client", "OLD-SECRET");
 
   // L'iniezione è la stessa su ogni piattaforma: `settings.json.tmp` piantato

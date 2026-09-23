@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
 
-import { cleanupTempDirs, tempDir } from "./temp.ts";
+import { FETCHED, testStore } from "./harness.ts";
+import { cleanupTempDirs } from "./temp.ts";
 
 import { CapacityStore, parseGroupBy } from "../server/db.ts";
 import { PLACE_FIXES } from "../server/normalize.ts";
@@ -21,8 +21,6 @@ afterAll(() => {
   }
   cleanupTempDirs();
 });
-
-const FETCHED = "2026-01-01T00:00:00+00:00";
 
 function row(overrides: Partial<CapacityRow> & { year: number; source: string; efficient_power_mw: number }): CapacityRow {
   return {
@@ -58,12 +56,6 @@ function seed(store: CapacityStore): void {
   store.upsertRecords(rows);
 }
 
-function freshStore(): CapacityStore {
-  const store = new CapacityStore(join(tempDir("ice-test-"), "cache.sqlite"));
-  STORES.push(store);
-  return store;
-}
-
 describe("parseGroupBy", () => {
   test("accetta compound e il vecchio separatore +", () => {
     expect(parseGroupBy("year,source")).toEqual(["year", "source"]);
@@ -81,7 +73,7 @@ describe("CapacityStore", () => {
   let store: CapacityStore;
 
   beforeEach(() => {
-    store = freshStore();
+    store = testStore(STORES, "ice-test-");
   });
 
   test("supporta anche un database SQLite in memoria", () => {

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 
+import { emptyClient, testSync } from "./harness.ts";
+
 import { DATA_FIRST_YEAR, INSTALLED_CAPACITY_FIRST_YEAR, clampYears, currentYear } from "../server/constants.ts";
-import { buildPlan, SyncManager } from "../server/sync.ts";
+import { buildPlan, type SyncManager } from "../server/sync.ts";
 import type { CapacityStore } from "../server/db.ts";
 import type { TernaClient } from "../server/terna.ts";
 import type { SyncJobStatus } from "../shared/types.ts";
@@ -108,7 +110,7 @@ test("una cancellazione ferma i passi successivi e lascia i contatori onesti", a
     },
   } as unknown as TernaClient;
 
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(
     buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
   );
@@ -142,8 +144,8 @@ test("cancellare un job già finito non cambia niente, un id ignoto è null", as
       return 1;
     },
   } as unknown as CapacityStore;
-  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const client = emptyClient();
+  const sync = testSync(store, client);
   const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
 
   expect((await settle(sync, id)).status).toBe("completed");
@@ -162,7 +164,7 @@ test("un payload Terna inatteso fallisce il passo invece di apparire vuoto", asy
   const client = {
     renewableSourceCapacity: async () => ({ error: "unexpected response" }),
   } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
   expect(sync.latestStatus()?.job_id).toBe(id);
 
@@ -187,7 +189,7 @@ test("un job misto resta completed ma dice quanti passi sono caduti", async () =
     renewableSourceCapacity: async () => ({}),
     generationPlants: async () => { throw new Error("503 from Terna"); },
   } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(
     buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
   );
@@ -209,7 +211,7 @@ test("un job senza errori resta il messaggio di sempre", async () => {
     renewableSourceCapacity: async () => ({}),
     generationPlants: async () => ({}),
   } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(
     buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
   );
@@ -224,8 +226,8 @@ test("i job cancellati vengono espulsi dalla mappa come quelli finiti", () => {
       return 0;
     },
   } as unknown as CapacityStore;
-  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const client = emptyClient();
+  const sync = testSync(store, client);
   const plan = () => buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] });
 
   // Ventuno «cancellati» di fila: con lo stato nuovo la mappa di venti non si
@@ -270,7 +272,7 @@ test("in_flight è vero solo mentre un passo è davvero in volo", async () => {
     },
   } as unknown as TernaClient;
 
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(
     buildPlan({ years: [2024], datasets: ["renewable_source_capacity", "generation_plants"] }),
   );
@@ -308,7 +310,7 @@ test("in_flight torna falso anche quando il passo fallisce", async () => {
       throw new Error("503 from Terna");
     },
   } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const sync = testSync(store, client);
   const id = sync.start(buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] }));
 
   const status = await settle(sync, id);
@@ -321,8 +323,8 @@ test("un burst di job accodati non lascia la mappa sopra il tetto", async () => 
       return 0;
     },
   } as unknown as CapacityStore;
-  const client = { renewableSourceCapacity: async () => ({}) } as unknown as TernaClient;
-  const sync = new SyncManager(store, async () => client);
+  const client = emptyClient();
+  const sync = testSync(store, client);
   const plan = () => buildPlan({ years: [2024], datasets: ["renewable_source_capacity"] });
 
   // Venticinque job accodati **prima** che il primo sia finito: l'espulsione
