@@ -5,8 +5,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Solo lettura a livello di workflow: i checkout e i download di artefatti non
+# scrivono nulla. Il permesso di scrittura vive nel solo job che lo usa (vedi
+# `release.permissions`): compilare l'eseguibile non richiede accesso in
+# scrittura al repository.
 permissions:
-  contents: write
+  contents: read
 
 # Due run sullo stesso ref non devono sovrapporsi: una release si crea una
 # volta sola. L'attesa non annulla il run in corso (`cancel-in-progress: false`),
@@ -116,6 +120,10 @@ jobs:
     needs: build-exe
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Il solo posto che crea la release e ne allega gli asset: `contents: write`
+    # serve a `softprops/action-gh-release`, non a nessun altro step.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 

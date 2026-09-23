@@ -6,6 +6,19 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Il solo permesso che checkout usa: il job non scrive nel repo, e un token
+# amplo in un workflow che esegue codice di PR sarebbe solo un rischio extra.
+permissions:
+  contents: read
+
+# Un push successivo annulla il run precedente dello stesso ref: due CI sulla
+# stessa cima non dicono niente di diverso e sprecano runner. Le release
+# (publish.yml/release.yml) tengono invece `cancel-in-progress: false` per
+# motivi opposti — annullare a metà pubblicazione lascia stati incoerenti.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     # Nome storico del job: un rename cambierebbe il check richiesto dalle
