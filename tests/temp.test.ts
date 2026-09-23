@@ -41,6 +41,7 @@ const liveOwned = tempDir("ice-api-live-");
 
 describe("sweep dei residui temporanei", () => {
   afterAll(() => {
+    rmSync(liveOwned, { recursive: true, force: true });
     for (const dir of [foreign, stale, deadOwned, unrelated]) {
       rmSync(dir, { recursive: true, force: true });
     }
