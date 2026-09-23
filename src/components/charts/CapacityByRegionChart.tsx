@@ -17,6 +17,7 @@ import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { ChartEmptyState } from "./ChartEmptyState";
+import { axisProps, axisTick, axisTickSmall, gridVertical, legendProps, tooltipCursor } from "./chart-theme";
 
 /**
  * Stock dell'ultimo anno per area, con la barra divisa per fonte: si vede a
@@ -60,25 +61,19 @@ export function CapacityByRegionChart({
       ) : top.length > 0 && hasValue ? (
         <ResponsiveContainer width="100%" height={Math.max(240, top.length * 30)}>
           <BarChart data={top} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="24%">
-            <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" horizontal={false} />
+            <CartesianGrid {...gridVertical} />
             <XAxis
+              {...axisProps}
+              tick={axisTick}
               type="number"
-              stroke="currentColor"
-              className="text-ink-500 dark:text-ink-400"
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
-              tick={{ fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
             />
             <YAxis
+              {...axisProps}
+              tick={axisTickSmall}
               type="category"
               dataKey="area"
-              stroke="currentColor"
-              className="text-ink-500 dark:text-ink-400"
-              tick={{ fontSize: 10.5 }}
               width={150}
-              axisLine={false}
-              tickLine={false}
             />
             <Tooltip
               formatter={(value: number, name: string) => [`${fmt(value)} ${unit}`, name]}
@@ -86,15 +81,9 @@ export function CapacityByRegionChart({
                 const total = (payload?.[0]?.payload as AreaRow | undefined)?.total;
                 return total ? `${label} — ${fmt(total)} ${unit} total` : String(label);
               }}
-              cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
+              cursor={tooltipCursor}
             />
-            <Legend
-              iconType="circle"
-              iconSize={8}
-              // Lo swatch resta del colore della serie, il testo no: il giallo
-              // del fotovoltaico su bianco sta a 2.15:1.
-              formatter={(value) => <span className="text-ink-500 dark:text-ink-400">{value}</span>}
-            />
+            <Legend {...legendProps} />
             {series.names.map((source, index) => (
               <Bar key={source} dataKey={source} stackId="area" fill={colorFor(source, index, filters.dataset)} maxBarSize={26} />
             ))}

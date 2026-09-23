@@ -28,9 +28,8 @@ import {
 import { StoredDataOverview } from "@/components/sync/StoredDataOverview";
 import { cn } from "@/lib/utils";
 import { ALL_DATASETS } from "@/lib/constants";
+import { resolveYearWindow } from "@/lib/year-bounds";
 import type { SyncStatus } from "@/types";
-
-const FALLBACK_FIRST_YEAR = 2000;
 
 const STATUS_VARIANT: Record<SyncStatus, "neutral" | "brand" | "success" | "rose"> = {
   queued: "neutral",
@@ -88,8 +87,9 @@ export function SyncPage() {
   // server publishes the same limits, so UI and API cannot drift apart; while
   // the availability cache is empty the range stops at last year, never at the
   // current one — Terna has not published it yet.
-  const firstYear = meta.data?.first_year ?? FALLBACK_FIRST_YEAR;
-  const currentYear = meta.data?.current_year ?? new Date().getFullYear();
+  // I tre limiti che questa pagina e il pannello filtri derivano allo stesso
+  // modo dal metadata vivono in `src/lib/year-bounds.ts`.
+  const { firstYear, currentYear, fallbackLastYear } = resolveYearWindow(meta.data);
   const firstStored = availability.data?.datasets.renewable_source_capacity?.year_min ?? null;
   // The latest year Terna has published for any dataset: proposing 2025 or
   // 2026 would only queue steps with nothing to download. `null` means the
@@ -116,8 +116,8 @@ export function SyncPage() {
     if (toEdited.current) return;
     // Con la cache vuota non sappiamo cosa Terna abbia pubblicato: l'anno
     // corrente non è ancora uscito, quindi si propone il precedente.
-    setYearTo(String(lastPublished ?? currentYear - 1));
-  }, [lastPublished, currentYear]);
+    setYearTo(String(lastPublished ?? fallbackLastYear));
+  }, [lastPublished, fallbackLastYear]);
 
   const startSync = async () => {
     // `busy` è la stessa condizione che spegne i bottoni: guardia e `disabled`

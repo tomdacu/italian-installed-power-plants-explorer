@@ -14,6 +14,7 @@ import { MethodologyNote } from "@/components/dashboard/MethodologyNote";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/api/client";
 import { downloadString } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/components/ui/Toast";
 import type { CapacityType, RecordFilters } from "@/types";
 
@@ -77,7 +78,7 @@ export function DashboardPage() {
   }, [filters]);
 
   const summary = useQuery({
-    queryKey: ["summary", apiFilters],
+    queryKey: queryKeys.summary(apiFilters),
     queryFn: () => api.summary(apiFilters),
   });
 

@@ -98,19 +98,10 @@ plus the usual IEEE-754 noise, never a different measurement.
 ## Which dataset to trust
 
 The API does not revise older years the way the published yearbook does, and two
-endpoints overlap with different perimeters. Status per dataset, measured against
-the yearbook:
-
-| Dataset | Series | Aligned? |
-| --- | --- | --- |
-| `generation_plants` | wind, photovoltaic, geothermal, hydro | ✅ every year (hydro includes pumped storage) |
-| `thermoelectric_capacity` | national, per region, per category | ✅ to the decimal |
-| `renewable_source_capacity` | wind, bioenergy | ✅ every year |
-| `renewable_source_capacity` | geothermal | ✅ 2022 onwards (2021 is 4 MW lower) |
-| `renewable_source_capacity` | photovoltaic | ✅ every year |
-| `renewable_source_capacity` | hydro | ⚠️ excludes pure pumped storage by design (−3.986,3 MW in 2024) |
-| `generation_plants` | thermoelectric series | ✅ matches the yearbook (62.109,905 MW in 2024) |
-| `installed_capacity` | national GW by type | ❌ own perimeter, rounded; comparable only with itself |
+endpoints overlap with different perimeters. The per-dataset alignment status —
+series by series, measured against the yearbook, with the detail behind every
+✅/⚠️/❌ — is in
+[data-validation.md → Dataset alignment at a glance](data-validation.md#dataset-alignment-at-a-glance).
 
 Rules of thumb:
 

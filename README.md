@@ -65,22 +65,10 @@ Then, inside the app:
 
 ### Development
 
-```bash
-bun run dev            # Vite dev server with hot reload; run `bun run serve` too
-bun test               # 121 tests
-```
-
-The interface is built, not committed: without `bun run prepack` (or `bun run
-build`) the server answers 500 "Interfaccia non trovata" — it has the API but
-nothing to show. The dev server proxies the API to `127.0.0.1:8799` by default,
-so start the local server with `bun run serve --port 8799` if you use `bun run
-dev`, and set `ICE_DEV_ORIGIN=http://localhost:1420` on it: the interface is then
-served from another origin, and without that variable every mutating request
-(*Save*, *Test connection*, *Remove*, sync) is rejected with `403`. See
+`bun run dev` starts the Vite dev server with hot reload (run `bun run serve` too) and `bun test`
+runs the suite. Everything else — the build the server needs before it can serve the interface, the
+dev proxy and `ICE_DEV_ORIGIN`, the standalone executable, flags and troubleshooting — is in
 [docs/configuration.md](docs/configuration.md#development).
-
-To get a single executable: `bun run compile` writes `dist-exe/ice.exe` **with
-its `static/` folder next to it** — the two must travel together.
 
 ## How it works
 
@@ -136,15 +124,18 @@ Details in [docs/configuration.md](docs/configuration.md).
 
 ## Status
 
-Early, single-author project: the server and the interface's logic are covered by
-tests (`bun test`, plus a build in CI) — the suite exercises the pure interface
-modules it can run without a browser (`src/lib/csv.ts`, `chart-data.ts` and
-`chart-csv.ts`) and the API client (`src/api/client.ts`). `src/lib/utils.ts`,
-`version.ts` and `constants.ts` are imported only by components and have no test
-of their own. What is missing is a DOM/component runner: there is no
-vitest/jsdom setup, so the React components themselves are verified by hand.
-Known limits and upstream data quirks are listed in
-[docs/data-validation.md](docs/data-validation.md); the practical ones are the
+Early, single-author project: 121 tests across 9 files (`bun test`, plus a build
+in CI) cover the server modules — HTTP routes, storage, settings, sync planning,
+the Terna client against an injected `fetch` — and the interface's pure modules
+that run without a browser (`src/lib/csv.ts`, `chart-data.ts`, `chart-csv.ts`)
+together with the API client (`src/api/client.ts`). Coverage is not uniform:
+`src/lib/utils.ts` has no test of its own — it sits on a tested path only through
+`src/lib/chart-data.ts`, which imports `formatMw` and `formatGw`, and its
+formatters are never asserted directly — while `src/lib/version.ts` and
+`src/lib/constants.ts` are imported only by components. What is missing is a
+DOM/component runner: there is no vitest/jsdom setup, so the React components
+themselves are verified by hand. Known limits and upstream data quirks are listed
+in [docs/data-validation.md](docs/data-validation.md); the practical ones are the
 Terna request limits (one call per second, plus a broader quota the client waits
 out) and the two hydro perimeters.
 

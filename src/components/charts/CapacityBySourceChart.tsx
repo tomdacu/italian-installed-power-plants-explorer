@@ -17,6 +17,7 @@ import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { ChartEmptyState } from "./ChartEmptyState";
+import { axisProps, axisTick, gridVertical, tooltipCursor } from "./chart-theme";
 
 /** Stock dell'ultimo anno per fonte (o per tipo sul dataset nazionale). */
 export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
@@ -49,29 +50,23 @@ export function CapacityBySourceChart({ filters }: { filters: RecordFilters }) {
       ) : records.length > 0 && hasValue ? (
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={records} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="28%">
-            <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" horizontal={false} />
+            <CartesianGrid {...gridVertical} />
             <XAxis
+              {...axisProps}
+              tick={axisTick}
               type="number"
-              stroke="currentColor"
-              className="text-ink-500 dark:text-ink-400"
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
-              tick={{ fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
             />
             <YAxis
+              {...axisProps}
+              tick={axisTick}
               type="category"
               dataKey={splitKey}
-              stroke="currentColor"
-              className="text-ink-500 dark:text-ink-400"
-              tick={{ fontSize: 11 }}
               width={120}
-              axisLine={false}
-              tickLine={false}
             />
             <Tooltip
               formatter={(value: number) => [`${fmt(value)} ${unit}`, isInstalled ? "Installed capacity" : "Efficient power"]}
-              cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
+              cursor={tooltipCursor}
             />
             <Bar dataKey={valueKey} name={isInstalled ? `Installed capacity ${unit}` : `Efficient power ${unit}`} radius={[0, 8, 8, 0]} maxBarSize={26}>
               {records.map((record, index) => (

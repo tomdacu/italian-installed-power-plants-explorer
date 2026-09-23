@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { Availability, DataQuality, MetadataOptions, RecordFilters } from "@/types";
+import { queryKeys } from "@/lib/query-keys";
 
 export function useMetadata() {
   return useQuery<MetadataOptions>({
-    queryKey: ["metadata"],
+    queryKey: queryKeys.metadata(),
     queryFn: () => api.metadataOptions(),
     staleTime: 60_000,
   });
@@ -12,7 +13,7 @@ export function useMetadata() {
 
 export function useAvailability() {
   return useQuery<Availability>({
-    queryKey: ["availability"],
+    queryKey: queryKeys.availability(),
     queryFn: () => api.availability(),
     staleTime: 30_000,
     // Un errore di rete all'avvio non deve congelare la UI per sempre: finché
@@ -27,7 +28,7 @@ export function useAvailability() {
  */
 export function useDataQuality(filters: RecordFilters) {
   return useQuery<DataQuality>({
-    queryKey: ["data-quality", filters],
+    queryKey: queryKeys.dataQuality(filters),
     queryFn: () => api.dataQuality(filters),
     staleTime: 30_000,
   });
@@ -35,7 +36,7 @@ export function useDataQuality(filters: RecordFilters) {
 
 export function useCredentialStatus() {
   return useQuery({
-    queryKey: ["credentials", "status"],
+    queryKey: queryKeys.credentialStatus(),
     queryFn: () => api.credentialStatus(),
     staleTime: 30_000,
     // Il banner offline deve tornare verde da solo: se la query è in errore
@@ -47,7 +48,7 @@ export function useCredentialStatus() {
 
 export function useHealth() {
   return useQuery({
-    queryKey: ["health"],
+    queryKey: queryKeys.health(),
     queryFn: () => api.health(),
     staleTime: 15_000,
     retry: false,

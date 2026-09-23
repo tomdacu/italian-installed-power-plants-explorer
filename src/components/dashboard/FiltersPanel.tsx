@@ -5,6 +5,7 @@ import { DATASET_LABELS } from "@/api/client";
 import { useAvailability, useMetadata } from "@/hooks/useMetadata";
 import type { CapacityType, DatasetName, RecordFilters } from "@/types";
 import { cn } from "@/lib/utils";
+import { resolveYearWindow } from "@/lib/year-bounds";
 
 export interface DashboardFilters extends RecordFilters {
   dataset: DatasetName;
@@ -64,22 +65,25 @@ export function FiltersPanel({
   // Il nazionale è l'unico dataset con un primo anno *per-dataset* nel
   // metadata: finché l'availability non lo conferma l'altro capo è ignoto e il
   // massimo globale (2024) offriva anni che il nazionale non ha.
+  // I due limiti comuni alla pagina Sync vivono in `src/lib/year-bounds.ts`;
+  // qui restano quelli che solo questo pannello conosce.
+  const { firstYear, fallbackLastYear } = resolveYearWindow(meta.data);
+
   const perDatasetFirstYear = (dataset: DatasetName): number | undefined =>
     dataset === "installed_capacity" ? meta.data?.installed_capacity_first_year : undefined;
 
   const yearBounds = (dataset: DatasetName): { minYear: number; maxYear: number; known: boolean } => {
     const stored = availability.data?.datasets[dataset];
-    const minYear = stored?.year_min ?? perDatasetFirstYear(dataset) ?? meta.data?.first_year ?? 2000;
+    const minYear = stored?.year_min ?? perDatasetFirstYear(dataset) ?? firstYear;
     // Senza availability il massimo non supera mai l'ultimo anno davvero
     // presente nel database né l'anno corrente: proporne uno che Terna non ha
     // ancora pubblicato svuota la dashboard.
     const lastStoredYear = (db.years ?? [])
       .filter((year) => year >= minYear)
       .reduce<number | null>((max, year) => (max === null || year > max ? year : max), null);
-    const currentYear = meta.data?.current_year ?? new Date().getFullYear();
     return {
       minYear,
-      maxYear: stored?.year_max ?? lastStoredYear ?? currentYear - 1,
+      maxYear: stored?.year_max ?? lastStoredYear ?? fallbackLastYear,
       known: stored?.year_min != null && stored?.year_max != null,
     };
   };

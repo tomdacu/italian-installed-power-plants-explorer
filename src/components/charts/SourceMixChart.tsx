@@ -16,6 +16,7 @@ import { LoadingOverlay } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/EmptyState";
 import { ChartCard } from "./ChartCard";
 import { ChartEmptyState } from "./ChartEmptyState";
+import { axisProps, axisTick, gridHorizontal, legendProps, tooltipCursor } from "./chart-theme";
 
 /** Barre impilate: stessa serie del grafico nel tempo, qui per leggere le quote. */
 export function SourceMixChart({ filters }: { filters: RecordFilters }) {
@@ -42,29 +43,20 @@ export function SourceMixChart({ filters }: { filters: RecordFilters }) {
       ) : data && data.data.length > 0 ? (
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data.data} margin={{ top: 8, right: 16, bottom: 4, left: 4 }} barCategoryGap="24%">
-            <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-ink-200/60 dark:text-white/[0.06]" vertical={false} />
-            <XAxis dataKey="year" stroke="currentColor" className="text-ink-500 dark:text-ink-400" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <CartesianGrid {...gridHorizontal} />
+            <XAxis {...axisProps} tick={axisTick} dataKey="year" />
             <YAxis
-              stroke="currentColor"
-              className="text-ink-500 dark:text-ink-400"
-              tick={{ fontSize: 11 }}
+              {...axisProps}
+              tick={axisTick}
               tickFormatter={(value) => `${fmt(value as number)} ${unit}`}
               width={88}
-              axisLine={false}
-              tickLine={false}
             />
             <Tooltip
               formatter={(value: number) => [`${fmt(value)} ${unit}`, undefined]}
               labelFormatter={(label) => `Year ${label}`}
-              cursor={{ fill: "currentColor", className: "text-ink-200/40 dark:text-white/[0.04]" }}
+              cursor={tooltipCursor}
             />
-            <Legend
-              iconType="circle"
-              iconSize={8}
-              // Lo swatch resta del colore della serie, il testo no: il giallo
-              // del fotovoltaico su bianco sta a 2.15:1.
-              formatter={(value) => <span className="text-ink-500 dark:text-ink-400">{value}</span>}
-            />
+            <Legend {...legendProps} />
             {data.names.map((source, index) => (
               <Bar key={source} dataKey={source} stackId="mix" fill={colorFor(source, index, filters.dataset ?? undefined)} radius={[4, 4, 0, 0]} maxBarSize={42} />
             ))}

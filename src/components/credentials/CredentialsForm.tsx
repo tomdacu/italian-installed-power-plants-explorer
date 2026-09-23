@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { useCredentialStatus } from "@/hooks/useMetadata";
 import { api, ApiError } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 
 export function CredentialsForm() {
   const qc = useQueryClient();
@@ -27,7 +28,7 @@ export function CredentialsForm() {
       toast.success("Credentials saved", "They are stored securely on this device.");
       setClientSecret("");
       setClientId("");
-      qc.invalidateQueries({ queryKey: ["credentials"] });
+      qc.invalidateQueries({ queryKey: queryKeys.credentials() });
     },
     onError: (e: Error) => toast.error("Could not save credentials", e.message),
   });
@@ -45,7 +46,7 @@ export function CredentialsForm() {
     mutationFn: () => api.deleteCredentials(),
     onSuccess: () => {
       toast.info("Credentials removed");
-      qc.invalidateQueries({ queryKey: ["credentials"] });
+      qc.invalidateQueries({ queryKey: queryKeys.credentials() });
     },
     onError: (e: Error) => toast.error("Could not remove credentials", e.message),
   });

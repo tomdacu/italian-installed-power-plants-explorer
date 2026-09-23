@@ -4,7 +4,14 @@
  * tutto), quindi queste liste servono alla UI: etichette, menu dei filtri e
  * colori delle serie.
  */
+import { DATA_FIRST_YEAR } from "../shared/constants.ts";
 import type { DatasetName } from "../shared/types";
+
+/**
+ * Il pavimento d'anno è condiviso con la SPA (`shared/constants.ts`): qui resta
+ * solo il nome pubblico, così nessun importatore del server cambia.
+ */
+export { DATA_FIRST_YEAR };
 
 const RENEWABLE_SOURCES = [
   "Bioenergie",
@@ -44,14 +51,6 @@ export const DEFAULT_CAPACITY_TYPE = "Lorda" as const;
 
 /** Righe restituite da `/records` quando il client non chiede una pagina. */
 export const DEFAULT_RECORD_LIMIT = 5000;
-
-/**
- * Primo anno pubblicato dagli endpoint della generazione. Verificato con le
- * chiavi reali: `renewable-source-capacity` risponde con 832 righe per il 2000
- * e con un 406 per il 1999; la documentazione Terna dice la stessa cosa
- * ("data are represented by region and province from 2000 onwards").
- */
-export const DATA_FIRST_YEAR = 2000;
 
 /**
  * `/installed-capacity` è più giovane: rifiuta con un 406 tutto ciò che precede

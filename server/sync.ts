@@ -14,19 +14,17 @@ import {
 import { firstYearFor } from "./constants.ts";
 import type { CapacityStore } from "./db.ts";
 import { TernaClient } from "./terna.ts";
-import type { DatasetName, SyncJobStatus, SyncRequestPayload, SyncStatus } from "../shared/types.ts";
+import { DATASETS, type DatasetName, type SyncJobStatus, type SyncRequestPayload, type SyncStatus } from "../shared/types.ts";
 
 /**
- * I dataset che un job può eseguire, nell'ordine in cui li pianifica. L'API li
- * usa per contare i passi saltati di un anno limato: un anno fuori intervallo è
- * un passo mai eseguito **per ciascun dataset**, non uno solo.
+ * I dataset che un job può eseguire, nell'ordine in cui li pianifica. È lo
+ * stesso array di `DATASETS` (`shared/types.ts`), non una seconda lista da
+ * tenere allineata a mano: le due copie potevano divergere in silenzio e un
+ * dataset nuovo non entrava nel sync. L'API li usa per contare i passi saltati
+ * di un anno limato: un anno fuori intervallo è un passo mai eseguito **per
+ * ciascun dataset**, non uno solo.
  */
-export const SYNCABLE_DATASETS: readonly DatasetName[] = [
-  "renewable_source_capacity",
-  "generation_plants",
-  "installed_capacity",
-  "thermoelectric_capacity",
-];
+export const SYNCABLE_DATASETS: readonly DatasetName[] = DATASETS;
 
 interface SyncStep {
   label: string;

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingOverlay } from "@/components/ui/Spinner";
 import { api } from "@/api/client";
-import { formatGw, formatMw, formatNumber } from "@/lib/utils";
+import { downloadString, formatGw, formatMw, formatNumber } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/components/ui/Toast";
 import type { CapacityRecord, RecordFilters } from "@/types";
 
@@ -72,7 +73,7 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
   }
 
   const recordsQuery = useQuery({
-    queryKey: ["records", filters, search, sortKey, order, page],
+    queryKey: queryKeys.records(filters, search, sortKey, order, page),
     queryFn: () =>
       api.recordsPage(filters, PAGE_SIZE, page * PAGE_SIZE, {
         column: sortKey,
@@ -125,15 +126,7 @@ export function DataTable({ filters, resetToken = 0 }: { filters: RecordFilters;
       const text = await api.exportCsv({ ...filters, q: search });
       const stamp = new Date().toISOString().slice(0, 10);
       const name = `capacity-records-${stamp}.csv`;
-      const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = name;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      downloadString(text, name, "text/csv;charset=utf-8");
       toast.success("CSV downloaded", `${name} is in your downloads`);
     } catch (error) {
       toast.error("Export failed", (error as Error).message);

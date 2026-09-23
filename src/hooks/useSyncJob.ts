@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
 import type { SyncJobStatus, SyncRequest } from "@/types";
+import { INVALIDATE_AFTER_SYNC, queryKeys } from "@/lib/query-keys";
 
 const ACTIVE = new Set(["queued", "running"]);
 
@@ -85,14 +86,14 @@ export function useSyncJob() {
   const settling = useRef<{ id: string; counters: string; stable: number; startedAt: number } | null>(null);
 
   const latest = useQuery({
-    queryKey: ["sync", "latest"],
+    queryKey: queryKeys.syncLatest(),
     queryFn: api.latestSyncStatus,
     refetchOnMount: "always",
     retry: false,
   });
   const jobId = startedJobId ?? latest.data?.job_id ?? null;
   const status = useQuery({
-    queryKey: ["sync", "job", jobId],
+    queryKey: queryKeys.syncJob(jobId),
     queryFn: () => api.syncStatus(jobId!),
     enabled: jobId !== null,
     retry: 5,
@@ -188,8 +189,8 @@ export function useSyncJob() {
     if (job.status === "completed" || job.status === "cancelled") {
       // I passi già completati hanno scritto nel database: la dashboard va
       // riletta anche dopo una cancellazione.
-      for (const key of ["metadata", "availability", "summary", "records", "timeseries", "data-quality"]) {
-        void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of INVALIDATE_AFTER_SYNC) {
+        void qc.invalidateQueries({ queryKey: key });
       }
       if (startedJobId === job.job_id) {
         if (job.status === "cancelled") {
@@ -257,8 +258,8 @@ export function useSyncJob() {
         // lasciare l'utente convinto che non stia scaricando più niente.
         notifiedJobId.current = null;
         setStartedJobId(other.job_id);
-        qc.setQueryData(["sync", "latest"], other);
-        qc.setQueryData(["sync", "job", other.job_id], other);
+        qc.setQueryData(queryKeys.syncLatest(), other);
+        qc.setQueryData(queryKeys.syncJob(other.job_id), other);
         toast.info(
           "Another sync is running",
           `Job ${cancelledId.slice(0, 8)} was cancelled, but job ${other.job_id.slice(0, 8)} is already running — this page now follows it.`,
@@ -269,8 +270,8 @@ export function useSyncJob() {
       // effetto) e si continua a leggere il job finché il passo in volo non si
       // chiude, così il conteggio mostrato è quello vero.
       notifiedJobId.current = null;
-      qc.setQueryData(["sync", "job", cancelledId], updated);
-      void qc.invalidateQueries({ queryKey: ["sync", "latest"] });
+      qc.setQueryData(queryKeys.syncJob(cancelledId), updated);
+      void qc.invalidateQueries({ queryKey: queryKeys.syncLatest() });
       settling.current = { id: cancelledId, counters: counters(updated), stable: 0, startedAt: Date.now() };
       setSettlingJobId(cancelledId);
     } catch (error) {

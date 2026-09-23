@@ -14,6 +14,7 @@ import { dirname } from "node:path";
 
 import { DEFAULT_CAPACITY_TYPE } from "./constants.ts";
 import { rowKey, type CapacityRow } from "./normalize.ts";
+import { CSV_BOM, csvField } from "../shared/csv.ts";
 import { GROUP_BY_FIELDS } from "../shared/types.ts";
 import type {
   AggregatePoint,
@@ -97,19 +98,6 @@ export function parseGroupBy(raw: string): string[] {
 
 function recordKey(row: CapacityRow | Record<string, unknown>): string {
   return createHash("sha256").update(rowKey(row)).digest("hex");
-}
-
-function csvField(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const text = String(value);
-  // Un numero finito non è una formula: il meno di `-1234.567` è il segno, non
-  // l'inizio di un'espressione, e l'apice lo trasformava in testo (Excel
-  // smetteva di sommare la colonna: l'export perdeva i valori negativi). Solo
-  // le stringhe possono iniziare con `=`, `+`, `-`, `@`, tab o CR e vanno
-  // disinnescate (CWE-1236): il BOM che prepariamo per gli accenti non basta.
-  const numeric = typeof value === "number" && Number.isFinite(value);
-  const safe = !numeric && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export class CapacityStore {
@@ -612,7 +600,7 @@ export class CapacityStore {
     }
     // UTF-8 BOM: without it Excel on Windows reads the accented place names
     // ("Forlì-Cesena", "Vallée d'Aoste") as mojibake.
-    return `\uFEFF${lines.join("\r\n")}\r\n`;
+    return `${CSV_BOM}${lines.join("\r\n")}\r\n`;
   }
 
   /**

@@ -45,5 +45,6 @@ export interface TimeseriesOptions {
 /** Richiesta di sync come la manda la SPA (il server accetta anche i soli anni). */
 export interface SyncRequest {
   years: number[];
-  datasets: DatasetName[];
+  /** È la costante condivisa `ALL_DATASETS`: la SPA non la modifica. */
+  datasets: readonly DatasetName[];
 }
